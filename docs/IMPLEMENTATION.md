@@ -9,7 +9,7 @@ Accepted design: native Rust core shared by a Tauri menu-bar/browser application
 - Rust core/server, new-schema migrations, local ingest/drain CLI, health/readiness.
 - Transactional source record/job insertion; immutable observations and revisions; unchanged-content deduplication.
 - Per-object ordered jobs, concurrent independent jobs, leases/heartbeat, stale-token fencing and atomic projection/ack.
-- Six real PostgreSQL integration tests and a fresh-cluster test harness; Rust format/check/clippy pass.
+- PostgreSQL integration tests and a fresh-cluster harness, including message batching and auth HTTP tests; see DATA_PATHS.md and validation commands.
 - Dockerfile, isolated Compose configuration, CI test workflow. Docker daemon unavailable locally; image execution not yet verified.
 
 ## Next implementation order
@@ -27,8 +27,16 @@ Accepted design: native Rust core shared by a Tauri menu-bar/browser application
 
 ## Important limits
 
-- HTTP business API, production auth, CRM semantics, GUI, adapter lifecycle and benchmark comparison are not implemented yet.
+- Full CRM API/semantics, GUI, adapter lifecycle and Python/NAS benchmark comparison remain pending. Authentication operations have local HTTP regression coverage, with full legacy differential parity pending.
 - Current object UUID and JSON hash scheme is provisional; do not load old data or claim legacy compatibility.
 - Current projection table is a testable durable storage vertical slice, not the final CRM data model.
 - Public distribution signing, old-data migration, two-way synchronization and production rollout remain outside this test stage.
 - Preserve original checkouts and never copy their .env, archive/session data, build directories or uncommitted branches into this repository.
+
+## 2026-11-11 follow-up
+
+Implemented the first performance redesign: separate bounded immutable message path, typed compact conversation state/summaries, generation-coalesced work with stale lease fencing, active/history separation for mutable jobs, and removal of the global sequence watermark. Added adaptive streaming batches and three-round SQL/WAL/10x synthetic scaling measurements. Added real authentication HTTP routes and regressions for TOTP, consumed recovery codes, session revocation, Origin/Host/CSRF and login throttling.
+
+The user's full-backend objective remains unfinished. Do not describe these changes as complete backend delivery. DATA_PATHS.md explicitly separates implemented behavior from correction paths, scheduler/resource budgets, media/CRM APIs and cache work still needed.
+
+Manual profile operations now have authenticated HTTP smoke tests: creation/listing, field editing/history/restore, tags and memberships. Full profile details, source provenance/manual-priority integration and structured employment/school filters remain incomplete (unsupported filters return 501 instead of misleading unfiltered results). SQLx migration rebuild tracking now watches the migrations directory, including newly added files.

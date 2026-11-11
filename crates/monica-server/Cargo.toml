@@ -13,3 +13,11 @@ sqlx.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+serde.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+argon2 = "0.5"
+fernet = { version = "0.2", default-features = false, features = ["rustcrypto"] }
+base64 = "0.22"
+totp-rs = { version = "5", features = ["otpauth", "gen_secret"] }
+subtle = "2"

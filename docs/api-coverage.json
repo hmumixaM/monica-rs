@@ -312,14 +312,16 @@
     "path": "/api/v1/profiles",
     "source": "services/api/app/main.py",
     "handler": "profiles",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "POST",
     "path": "/api/v1/profiles",
     "source": "services/api/app/main.py",
     "handler": "create_profile_endpoint",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "GET",
@@ -340,14 +342,16 @@
     "path": "/api/v1/profiles/{profile_id}/fields",
     "source": "services/api/app/main.py",
     "handler": "edit_field",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "GET",
     "path": "/api/v1/profiles/{profile_id}/history",
     "source": "services/api/app/main.py",
     "handler": "field_history",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "GET",
@@ -368,7 +372,8 @@
     "path": "/api/v1/profiles/{profile_id}/history/{revision_id}/restore",
     "source": "services/api/app/main.py",
     "handler": "restore_field_revision",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "POST",
@@ -487,28 +492,32 @@
     "path": "/api/v1/tags",
     "source": "services/api/app/main.py",
     "handler": "create_tag",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "GET",
     "path": "/api/v1/tags",
     "source": "services/api/app/main.py",
     "handler": "list_tags",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "POST",
     "path": "/api/v1/profiles/{profile_id}/tags/{tag_id}",
     "source": "services/api/app/main.py",
     "handler": "attach_tag",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "DELETE",
     "path": "/api/v1/profiles/{profile_id}/tags/{tag_id}",
     "source": "services/api/app/main.py",
     "handler": "detach_tag",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "POST",
@@ -662,77 +671,88 @@
     "path": "/api/v1/auth/bootstrap",
     "source": "services/api/app/routers/auth.py",
     "handler": "bootstrap",
-    "status": "pending"
+    "status": "implemented_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "GET",
     "path": "/api/v1/auth/csrf",
     "source": "services/api/app/routers/auth.py",
     "handler": "csrf_token",
-    "status": "pending"
+    "status": "implemented_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "POST",
     "path": "/api/v1/auth/login",
     "source": "services/api/app/routers/auth.py",
     "handler": "login",
-    "status": "pending"
+    "status": "implemented_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "POST",
     "path": "/api/v1/auth/totp/setup",
     "source": "services/api/app/routers/auth.py",
     "handler": "totp_setup",
-    "status": "pending"
+    "status": "implemented_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "POST",
     "path": "/api/v1/auth/totp/verify",
     "source": "services/api/app/routers/auth.py",
     "handler": "totp_verify",
-    "status": "pending"
+    "status": "implemented_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "GET",
     "path": "/api/v1/auth/totp/status",
     "source": "services/api/app/routers/auth.py",
     "handler": "totp_status",
-    "status": "pending"
+    "status": "implemented_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "POST",
     "path": "/api/v1/auth/logout",
     "source": "services/api/app/routers/auth.py",
     "handler": "logout",
-    "status": "pending"
+    "status": "implemented_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "GET",
     "path": "/api/v1/me",
     "source": "services/api/app/routers/auth.py",
     "handler": "me",
-    "status": "pending"
+    "status": "implemented_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "GET",
     "path": "/api/v1/auth/sessions",
     "source": "services/api/app/routers/auth.py",
     "handler": "sessions",
-    "status": "pending"
+    "status": "implemented_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "POST",
     "path": "/api/v1/auth/sessions/{session_id}/revoke",
     "source": "services/api/app/routers/auth.py",
     "handler": "revoke_session",
-    "status": "pending"
+    "status": "implemented_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "GET",
     "path": "/api/v1/audit/events",
     "source": "services/api/app/routers/auth.py",
     "handler": "audit_events",
-    "status": "pending"
+    "status": "implemented_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "GET",

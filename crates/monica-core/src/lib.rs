@@ -1,4 +1,5 @@
-//! Durable source ingestion and ordered projection. No production credentials or adapters.
+pub mod messages;
+// Durable source ingestion and ordered projection. No production credentials or adapters.
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -149,10 +150,9 @@ pub struct Lease {
 pub async fn claim(pool: &PgPool) -> Result<Option<Lease>> {
     let token = Uuid::new_v4();
     let row=sqlx::query("WITH candidate AS (
-        SELECT j.id FROM crm.jobs j
+        SELECT j.id FROM crm.jobs j LEFT JOIN crm.projections p ON p.provider=j.provider AND p.object_id=j.object_id
         WHERE (j.state='queued' OR (j.state='running' AND j.lease_until < now()))
-        AND NOT EXISTS (SELECT 1 FROM crm.jobs p WHERE p.provider=j.provider
-          AND p.object_id=j.object_id AND p.version<j.version AND p.state <> 'complete')
+        AND j.version=coalesce(p.version,0)+1
         ORDER BY j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1)
         UPDATE crm.jobs j SET state='running',token=$1,lease_until=now()+interval '2 minutes',attempts=attempts+1
         FROM candidate c WHERE j.id=c.id RETURNING j.*")
@@ -191,14 +191,14 @@ pub async fn project(pool: &PgPool, lease: &Lease) -> Result<()> {
     .await?;
     sqlx::query("INSERT INTO crm.projections VALUES($1,$2,$3,$4) ON CONFLICT(provider,object_id) DO UPDATE SET version=excluded.version,payload=excluded.payload WHERE crm.projections.version<excluded.version")
         .bind(s).bind(lease.object).bind(lease.version).bind(payload).execute(&mut *tx).await?;
-    sqlx::query("SELECT nextval('crm.projection_generation')")
-        .execute(&mut *tx)
-        .await?;
+
     let n=sqlx::query("UPDATE crm.jobs SET state='complete',token=NULL,lease_until=NULL WHERE id=$1 AND token=$2 AND lease_until>clock_timestamp()")
         .bind(lease.id).bind(lease.token).execute(&mut *tx).await?.rows_affected();
     if n != 1 {
         bail!("lease expired before commit");
     }
+    sqlx::query("WITH removed AS (DELETE FROM crm.jobs WHERE id=$1 AND token IS NULL AND state='complete' RETURNING *) INSERT INTO crm.job_history SELECT * FROM removed")
+        .bind(lease.id).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(())
 }

@@ -1,0 +1,78 @@
+{
+  "environment": "Local macOS; isolated PostgreSQL 16; Rust debug build; synthetic inputs only",
+  "scope": "Warm compact-summary SQL query, not complete page/API performance; WAL includes isolated-cluster background work; SQL counts from pg_stat_statements exclude probes and are not wire-roundtrip counts",
+  "results": [
+    {
+      "batch_records": 1000,
+      "conversations": 100,
+      "ingest_seconds": 0.382508375,
+      "messages": 10000,
+      "notes": "warm SQL query; not full page/API; WAL is cluster-wide in isolated test; Rust debug build",
+      "round": 1,
+      "sql_calls_per_1000": 4.4,
+      "summary_query_p95_ms": 0.35016600000000003,
+      "summary_query_p99_ms": 0.38975000000000004,
+      "wal_bytes_per_1000": 505747.2
+    },
+    {
+      "batch_records": 1000,
+      "conversations": 100,
+      "ingest_seconds": 4.505396708,
+      "messages": 100000,
+      "notes": "warm SQL query; not full page/API; WAL is cluster-wide in isolated test; Rust debug build",
+      "round": 1,
+      "sql_calls_per_1000": 4.01,
+      "summary_query_p95_ms": 0.277833,
+      "summary_query_p99_ms": 0.303166,
+      "wal_bytes_per_1000": 522781.36
+    },
+    {
+      "batch_records": 1000,
+      "conversations": 100,
+      "ingest_seconds": 0.395891792,
+      "messages": 10000,
+      "notes": "warm SQL query; not full page/API; WAL is cluster-wide in isolated test; Rust debug build",
+      "round": 2,
+      "sql_calls_per_1000": 4.0,
+      "summary_query_p95_ms": 0.345917,
+      "summary_query_p99_ms": 0.367125,
+      "wal_bytes_per_1000": 501738.4
+    },
+    {
+      "batch_records": 1000,
+      "conversations": 100,
+      "ingest_seconds": 4.551808,
+      "messages": 100000,
+      "notes": "warm SQL query; not full page/API; WAL is cluster-wide in isolated test; Rust debug build",
+      "round": 2,
+      "sql_calls_per_1000": 4.0,
+      "summary_query_p95_ms": 0.28654100000000005,
+      "summary_query_p99_ms": 0.30824999999999997,
+      "wal_bytes_per_1000": 522781.2
+    },
+    {
+      "batch_records": 1000,
+      "conversations": 100,
+      "ingest_seconds": 0.377758958,
+      "messages": 10000,
+      "notes": "warm SQL query; not full page/API; WAL is cluster-wide in isolated test; Rust debug build",
+      "round": 3,
+      "sql_calls_per_1000": 4.0,
+      "summary_query_p95_ms": 0.31220899999999996,
+      "summary_query_p99_ms": 0.360625,
+      "wal_bytes_per_1000": 501738.4
+    },
+    {
+      "batch_records": 1000,
+      "conversations": 100,
+      "ingest_seconds": 4.478748084,
+      "messages": 100000,
+      "notes": "warm SQL query; not full page/API; WAL is cluster-wide in isolated test; Rust debug build",
+      "round": 3,
+      "sql_calls_per_1000": 4.0,
+      "summary_query_p95_ms": 0.306333,
+      "summary_query_p99_ms": 0.337833,
+      "wal_bytes_per_1000": 522782.0
+    }
+  ]
+}

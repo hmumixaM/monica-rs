@@ -1,3 +1,5 @@
+mod auth;
+mod profiles;
 use anyhow::Result;
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 use clap::{Parser, Subcommand};
@@ -19,8 +21,16 @@ enum Command {
     Serve {
         #[arg(long, default_value = "127.0.0.1:17494")]
         listen: SocketAddr,
+        #[arg(long, env = "MONICA_SESSION_SECRET", hide_env_values = true)]
+        session_secret: String,
+        #[arg(long, env = "MONICA_ORIGIN")]
+        origin: Option<String>,
     },
     Ingest {
+        file: PathBuf,
+    },
+    AppendMessages {
+        provider: String,
         file: PathBuf,
     },
     Drain,
@@ -58,8 +68,26 @@ async fn main() -> Result<()> {
             while let Some(lease) = monica_core::claim(&pool).await? {
                 monica_core::project(&pool, &lease).await?;
             }
+            while let Some(lease) = monica_core::messages::claim(&pool).await? {
+                let snapshot = monica_core::messages::snapshot(&pool, &lease).await?;
+                monica_core::messages::finish(&pool, &lease, &snapshot).await?;
+            }
         }
-        Command::Serve { listen } => {
+        Command::AppendMessages { provider, file } => {
+            let provider = serde_json::from_value(serde_json::Value::String(provider))?;
+            append_file(&pool, provider, file).await?;
+        }
+        Command::Serve {
+            listen,
+            session_secret,
+            origin,
+        } => {
+            let state = auth::AppState::new(
+                pool.clone(),
+                &session_secret,
+                origin.unwrap_or_else(|| format!("http://{listen}")),
+            )
+            .await?;
             let app = Router::new()
                 .route(
                     "/health",
@@ -72,9 +100,10 @@ async fn main() -> Result<()> {
                     get(|| async { Json(json!({"status":"ok"})) }),
                 )
                 .route("/api/v1/ready", get(ready))
-                .with_state(pool.clone());
+                .with_state(pool.clone())
+                .merge(auth::routes(state));
             let listener = tokio::net::TcpListener::bind(listen).await?;
-            tracing::info!(address=%listener.local_addr()?,"server ready; business API is not yet implemented");
+            tracing::info!(address=%listener.local_addr()?,"server ready; authentication enabled, business API in progress");
             axum::serve(listener, app)
                 .with_graceful_shutdown(async {
                     let _ = tokio::signal::ctrl_c().await;
@@ -83,5 +112,59 @@ async fn main() -> Result<()> {
         }
     }
     pool.close().await;
+    Ok(())
+}
+
+async fn append_file(pool: &PgPool, provider: monica_core::Provider, path: PathBuf) -> Result<()> {
+    use monica_core::messages::{self, BatchBudget, MAX_BYTES, Message};
+    use tokio::io::AsyncBufReadExt;
+    let mut reader = tokio::io::BufReader::new(tokio::fs::File::open(path).await?);
+    let mut line = Vec::new();
+    let mut records: Vec<Message> = Vec::new();
+    let mut bytes = 2;
+    let mut budget = BatchBudget::default();
+    let mut added = 0;
+    loop {
+        let chunk = reader.fill_buf().await?;
+        let eof = chunk.is_empty();
+        let n = chunk
+            .iter()
+            .position(|x| *x == b'\n')
+            .map(|x| x + 1)
+            .unwrap_or(chunk.len());
+        anyhow::ensure!(
+            line.len() + n <= MAX_BYTES,
+            "message line exceeds byte limit"
+        );
+        line.extend_from_slice(&chunk[..n]);
+        reader.consume(n);
+        if !eof && !line.ends_with(b"\n") {
+            continue;
+        }
+        if !line.iter().all(u8::is_ascii_whitespace) {
+            let record: Message = serde_json::from_slice(&line)?;
+            let size = serde_json::to_vec(&record)?.len() + 1;
+            anyhow::ensure!(size + 2 <= MAX_BYTES, "encoded message exceeds byte limit");
+            if !records.is_empty() && (records.len() >= budget.records || bytes + size > MAX_BYTES)
+            {
+                let start = std::time::Instant::now();
+                added += messages::append(pool, provider, &records).await?;
+                budget.observe(start.elapsed());
+                records.clear();
+                bytes = 2;
+                tokio::task::yield_now().await;
+            }
+            records.push(record);
+            bytes += size;
+        }
+        line.clear();
+        if eof {
+            break;
+        }
+    }
+    if !records.is_empty() {
+        added += messages::append(pool, provider, &records).await?;
+    }
+    tracing::info!(inserted = added, "message batches committed");
     Ok(())
 }

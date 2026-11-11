@@ -20,3 +20,11 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --locked
+      - name: HTTP authentication regression
+        env:
+          MONICA_DATABASE_URL: postgres://postgres:synthetic-ci-only@localhost/monica_http_test
+        run: |
+          cargo build --locked -p monica-server
+          psql "$DATABASE_URL" -c 'CREATE DATABASE monica_http_test'
+          target/debug/monica-server migrate
+          python3 scripts/smoke-http.py

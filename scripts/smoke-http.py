@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """Exercise actual HTTP readiness and cooperative exit against the isolated cluster."""
+import os
 import signal
 import socket
 import subprocess
 import time
 import urllib.request
+import runpy
 
 with socket.socket() as sock:
     sock.bind(('127.0.0.1', 0))
     port = sock.getsockname()[1]
+os.environ['MONICA_SESSION_SECRET'] = 'synthetic-test-secret-not-for-production-0000'
 process = subprocess.Popen(['target/debug/monica-server', 'serve', '--listen', f'127.0.0.1:{port}'])
 try:
     for attempt in range(100):
@@ -25,6 +28,7 @@ try:
     with urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=1) as response:
         assert response.status == 200
         assert b'"status":"ok"' in response.read()
+    runpy.run_path('scripts/smoke-auth.py')['run'](f'http://127.0.0.1:{port}')
 finally:
     if process.poll() is None:
         process.send_signal(signal.SIGINT)
