@@ -25,6 +25,8 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
+    pub media_root: std::path::PathBuf,
+    pub media_io: Arc<Semaphore>,
     cipher: Fernet,
     passwords: Arc<Semaphore>,
     dummy: String,
@@ -32,7 +34,12 @@ pub struct AppState {
     secure: bool,
 }
 impl AppState {
-    pub async fn new(pool: PgPool, secret: &str, origin: String) -> anyhow::Result<Self> {
+    pub async fn new(
+        pool: PgPool,
+        secret: &str,
+        origin: String,
+        media_root: std::path::PathBuf,
+    ) -> anyhow::Result<Self> {
         anyhow::ensure!(
             secret.len() >= 32,
             "MONICA_SESSION_SECRET must contain at least 32 bytes"
@@ -42,6 +49,12 @@ impl AppState {
         let secure = origin.starts_with("https://");
         Ok(Self {
             pool,
+            media_root,
+            media_io: Arc::new(Semaphore::new(if cfg!(target_os = "macos") {
+                2
+            } else {
+                1
+            })),
             cipher,
             passwords: Arc::new(Semaphore::new(2)),
             dummy,
@@ -156,6 +169,7 @@ pub fn routes(state: AppState) -> Router {
         .route("/api/v1/auth/sessions/{id}/revoke", post(revoke))
         .route("/api/v1/audit/events", get(audit))
         .merge(crate::profiles::routes())
+        .merge(crate::media::routes())
         .layer(axum::extract::DefaultBodyLimit::max(65536))
         .layer(middleware::from_fn_with_state(state.clone(), boundary))
         .with_state(state)

@@ -1,4 +1,5 @@
 mod auth;
+mod media;
 mod profiles;
 use anyhow::Result;
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
@@ -25,6 +26,12 @@ enum Command {
         session_secret: String,
         #[arg(long, env = "MONICA_ORIGIN")]
         origin: Option<String>,
+        #[arg(
+            long,
+            env = "MONICA_MEDIA_ROOT",
+            default_value = ".local-validation/media"
+        )]
+        media_root: PathBuf,
     },
     Ingest {
         file: PathBuf,
@@ -81,11 +88,13 @@ async fn main() -> Result<()> {
             listen,
             session_secret,
             origin,
+            media_root,
         } => {
             let state = auth::AppState::new(
                 pool.clone(),
                 &session_secret,
                 origin.unwrap_or_else(|| format!("http://{listen}")),
+                media_root,
             )
             .await?;
             let app = Router::new()

@@ -53,6 +53,40 @@ def run(base):
     tag_path = f'/api/v1/profiles/{profile_id}/tags/{tag["id"]}'
     request(tag_path, {})
     assert request('/api/v1/tags')[0]['people'] == 1
+    content = b'Synthetic media body\n' * 5000
+    boundary = 'monica-synthetic-boundary'
+    body = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="fixture.txt"\r\nContent-Type: text/plain\r\n\r\n'.encode()
+            + content + f'\r\n--{boundary}--\r\n'.encode())
+
+    def upload():
+        req = urllib.request.Request(base + '/api/v1/media', data=body, headers={
+            'Content-Type': f'multipart/form-data; boundary={boundary}', 'X-CSRF-Token': csrf, 'Origin': base})
+        with opener.open(req, timeout=10) as response:
+            assert response.status == 201
+            return json.load(response)
+
+    media = upload()
+    assert media['sha256'] == hashlib.sha256(content).hexdigest()
+    assert upload()['id'] == media['id']
+    media_path = base + '/api/v1/media/' + media['id']
+    with opener.open(media_path) as response:
+        assert response.read() == content
+        assert response.headers['Content-Disposition'].startswith('attachment;')
+        etag = response.headers['ETag']
+    with opener.open(urllib.request.Request(media_path, headers={'Range': 'bytes=0-3'})) as response:
+        assert response.status == 206
+        assert response.read() == content[:4]
+    try:
+        opener.open(urllib.request.Request(media_path, headers={'If-None-Match': etag}))
+        raise AssertionError('expected 304')
+    except urllib.error.HTTPError as response:
+        assert response.code == 304
+        response.close()
+    photos = f'/api/v1/profiles/{profile_id}/photos'
+    request(photos, {'media_ids': [media['id']]}, status=201)
+    assert request(photos)[0]['media_id'] == media['id']
+    request(photos + '/' + media['id'], {}, status=204, method='DELETE')
+    assert request(photos) == []
     assert request(f'/api/v1/profiles?tag={tag["id"]}')[0]['id'] == profile_id
     request(tag_path, {}, status=204, method='DELETE')
     assert request('/api/v1/tags')[0]['people'] == 0

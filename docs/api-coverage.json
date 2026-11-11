@@ -885,35 +885,40 @@
     "path": "/api/v1/profiles/{profile_id}/photos",
     "source": "services/api/app/routers/media.py",
     "handler": "profile_photos",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "POST",
     "path": "/api/v1/profiles/{profile_id}/photos",
     "source": "services/api/app/routers/media.py",
     "handler": "attach_profile_photos",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "DELETE",
     "path": "/api/v1/profiles/{profile_id}/photos/{media_id}",
     "source": "services/api/app/routers/media.py",
     "handler": "remove_profile_photo",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "POST",
     "path": "/api/v1/media",
     "source": "services/api/app/routers/media.py",
     "handler": "upload_media",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "GET",
     "path": "/api/v1/media/{media_id}",
     "source": "services/api/app/routers/media.py",
     "handler": "download_media",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending"
   },
   {
     "method": "GET",

@@ -29,7 +29,7 @@ cargo run -p monica-server -- drain
 cargo run -p monica-server -- serve
 ```
 
-Server binds 127.0.0.1:17494 and exposes health/readiness and authentication. Set MONICA_ORIGIN to the browser origin when using a proxy; session cookies are Secure for HTTPS origins. Ingestion is a local development CLI, not a replacement for the signed Import API. The record hash/UUID format is provisional and must pass legacy golden vectors before compatibility is claimed.
+Server binds 127.0.0.1:17494 and exposes health/readiness, authentication, manual profile/tag operations and multipart media upload/download/profile attachments. Set MONICA_ORIGIN to the browser origin when using a proxy; session cookies are Secure for HTTPS origins. Ingestion is a local development CLI, not a replacement for the signed Import API. The record hash/UUID format is provisional and must pass legacy golden vectors before compatibility is claimed.
 
 ## Remaining delivery gates
 
@@ -44,3 +44,5 @@ Copied frontend/collectors are source inputs and are not yet integrated. No Mac 
 ## Data-path validation
 
 See docs/DATA_PATHS.md for the immutable/mutable split, coalescing protocol and remaining architectural work. Run `MONICA_BENCH=1 sh scripts/test.sh` for the isolated 10x-scale microbenchmark. The streaming append command is `monica-server append-messages wechat messages.jsonl`; `drain` publishes both object projections and conversation summaries. Dedicated message correction/deletion, full CRM API and a production scheduler are still pending.
+
+Set MONICA_MEDIA_ROOT to an independent test-media directory. The Compose test instance mounts its own named media volume. Multipart uploads stream and deduplicate by SHA-256; downloads authenticate before streaming and support Range/ETag. Complete profile detail, structured filters, source linkage, resumable upload and the rest of the API are still unfinished; see the per-route inventory rather than assuming parity from a route's presence.

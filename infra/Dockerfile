@@ -5,7 +5,7 @@ COPY crates ./crates
 COPY migrations ./migrations
 RUN cargo build --release --locked -p monica-server
 FROM debian:bookworm-slim
-RUN useradd --create-home --uid 10001 monica
+RUN useradd --create-home --uid 10001 monica && mkdir -p /data/media && chown -R monica:monica /data
 COPY --from=build /src/target/release/monica-server /usr/local/bin/monica-server
 USER monica
 ENTRYPOINT ["monica-server"]

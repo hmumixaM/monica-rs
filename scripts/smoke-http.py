@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise actual HTTP readiness and cooperative exit against the isolated cluster."""
 import os
+import tempfile
 import signal
 import socket
 import subprocess
@@ -11,6 +12,8 @@ import runpy
 with socket.socket() as sock:
     sock.bind(('127.0.0.1', 0))
     port = sock.getsockname()[1]
+media_dir = tempfile.TemporaryDirectory(prefix='monica-rs-media-')
+os.environ['MONICA_MEDIA_ROOT'] = media_dir.name
 os.environ['MONICA_SESSION_SECRET'] = 'synthetic-test-secret-not-for-production-0000'
 process = subprocess.Popen(['target/debug/monica-server', 'serve', '--listen', f'127.0.0.1:{port}'])
 try:
@@ -38,5 +41,6 @@ finally:
             process.kill()
             process.wait()
             raise RuntimeError('cooperative shutdown failed')
+media_dir.cleanup()
 assert process.returncode == 0
 print('100-record CLI ingestion/projection and HTTP lifecycle smoke passed')

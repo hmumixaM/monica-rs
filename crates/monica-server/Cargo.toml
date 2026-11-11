@@ -6,7 +6,7 @@ edition.workspace = true
 [dependencies]
 monica-core = { path = "../monica-core" }
 anyhow.workspace = true
-axum.workspace = true
+axum = { workspace = true, features = ["multipart"] }
 clap.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
@@ -21,3 +21,8 @@ fernet = { version = "0.2", default-features = false, features = ["rustcrypto"] 
 base64 = "0.22"
 totp-rs = { version = "5", features = ["otpauth", "gen_secret"] }
 subtle = "2"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs"] }
+tempfile = "3"
+infer = "0.19"
+percent-encoding = "2"
