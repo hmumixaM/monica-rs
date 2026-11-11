@@ -1,7 +1,7 @@
 "use client";
 
 import { LayoutGrid, Plus, Rows3, Tags } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "@/router/navigation";
 import { type KeyboardEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import { type DirectorySort, useDirectorySearch } from "../../lib/directory";
@@ -10,7 +10,7 @@ import { Button, Kbd } from "../ui/button";
 import { Chip } from "../ui/chip";
 import { SearchInput, Select } from "../ui/field";
 import { PersonLink } from "../ui/person-link";
-import { Avatar, EmptyState, formatNumber, Page, PageHeader, Skeleton } from "../ui/primitives";
+import { Avatar, EmptyState, Failure, formatNumber, Page, PageHeader, Skeleton } from "../ui/primitives";
 import { Segmented } from "../ui/segmented";
 import { ContactList, type ContactListHandle } from "./contact-list";
 import styles from "./contacts.module.css";
@@ -36,7 +36,7 @@ export function ContactsView() {
   const schoolId = params.get("school") ?? undefined;
   const sort = (params.get("sort") as DirectorySort | null) ?? (query ? "relevance" : "last_contact");
   const view = params.get("view") === "grid" ? "grid" : "table";
-  const { directory, results, isPending } = useDirectorySearch(query, { type, tagIds, companyId, schoolId }, sort);
+  const { directory, results, isPending, isError, retrySearch } = useDirectorySearch(query, { type, tagIds, companyId, schoolId }, sort);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [creating, setCreating] = useState(params.get("create") === "1");
   const [active, setActive] = useState(-1);
@@ -139,7 +139,7 @@ export function ContactsView() {
     </div>}
     {tagsOpen && <TagBrowser type={type} selected={tagIds} onChange={setTags} />}
 
-    {isPending && !directory ? <Skeleton height="60dvh" />
+    {isError ? <Failure onRetry={() => void retrySearch()}>联系人读取失败，请重试。</Failure> : isPending && !directory ? <Skeleton height="60dvh" />
       : !results.length ? <EmptyState title={query ? `没有找到「${query}」` : "这里还没有人"}>
         {query ? "试试拼音、首字母，或对方在群里的昵称。" : "换一个筛选条件看看。"}</EmptyState>
       : view === "grid"

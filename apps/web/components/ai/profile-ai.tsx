@@ -1,7 +1,7 @@
 "use client";
 
 import { RefreshCw, Sparkles } from "lucide-react";
-import Link from "next/link";
+import Link from "@/router/link";
 
 import { type PersonWeeklyUpdate, type WeeklySource, useProfileAi, useRefreshProfileAi } from "../../lib/ai";
 import { weekRange } from "../digest/week";

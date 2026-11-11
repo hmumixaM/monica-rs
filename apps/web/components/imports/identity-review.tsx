@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/router/link";
 import {ArrowRight} from "lucide-react";
 import {useEffect, useState} from "react";
 import {apiFetch} from "../../lib/api";

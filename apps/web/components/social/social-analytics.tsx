@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3 } from "lucide-react";
-import Link from "next/link";
+import Link from "@/router/link";
 import { type CSSProperties, useMemo, useState } from "react";
 
 import { fetchJson } from "../../lib/queries";

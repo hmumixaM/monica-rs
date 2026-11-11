@@ -1,7 +1,7 @@
 "use client";
 
 import { Heart, MessageCircle, X } from "lucide-react";
-import Link from "next/link";
+import Link from "@/router/link";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 import { linkedinPostUrl } from "../../lib/linkedin-post";

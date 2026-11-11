@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, EyeOff, ScanFace, UserRoundX, UserRoundPlus } from "lucide-react";
-import Link from "next/link";
+import Link from "@/router/link";
 import { useState } from "react";
 
 import { type FaceDecision, type FaceGroup, useDecideFaces, useFaceGroups, useFaceSummary, useRestoreFaces } from "../../lib/faces";

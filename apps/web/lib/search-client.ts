@@ -10,7 +10,7 @@ class SearchClient {
   constructor(readonly kind: "people" | "posts") {}
   start() {
     if (this.worker) return this.worker;
-    const worker = new Worker(new URL("./search.worker.ts", import.meta.url));
+    const worker = new Worker(new URL("./search.worker.ts", import.meta.url), { type: "module" });
     worker.onmessage = ({ data }) => {
       const pending = this.pending.get(data.id);
       if (!pending) return;

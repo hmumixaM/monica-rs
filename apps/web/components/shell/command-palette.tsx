@@ -2,7 +2,7 @@
 
 import { Command } from "cmdk";
 import { CornerDownLeft, Monitor, Moon, Plus, Search, Sun } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/router/navigation";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { matchedGroupName, useDirectory, usePersonPicker, usePostSearch } from "../../lib/directory";

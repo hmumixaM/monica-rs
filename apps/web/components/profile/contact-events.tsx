@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowLeftRight, Phone } from "lucide-react";
-import Link from "next/link";
+import Link from "@/router/link";
 import { useEffect, useRef, useState } from "react";
 
 import type { CallSummary, MoneySummary } from "../../lib/api-types";

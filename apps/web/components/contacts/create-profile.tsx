@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/router/navigation";
 import { type FormEvent, useState } from "react";
 
 import { apiFetch } from "../../lib/api";

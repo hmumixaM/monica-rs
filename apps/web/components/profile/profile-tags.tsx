@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, Tags, X } from "lucide-react";
-import Link from "next/link";
+import Link from "@/router/link";
 import { type FormEvent, type KeyboardEvent, useState } from "react";
 
 import { useTagCounts } from "../../lib/directory";

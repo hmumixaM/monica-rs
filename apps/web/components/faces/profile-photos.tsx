@@ -2,8 +2,8 @@
 
 import { type InfiniteData, useQueryClient } from "@tanstack/react-query";
 import { Images, ScanFace } from "lucide-react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import Link from "@/router/link";
+import { useSearchParams } from "@/router/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { type FaceDecision, type FaceState, useDecideFaces, useRestoreFaces } from "../../lib/faces";

@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Edit3, Plus, RotateCcw } from "lucide-react";
-import Link from "next/link";
+import Link from "@/router/link";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../../lib/api";

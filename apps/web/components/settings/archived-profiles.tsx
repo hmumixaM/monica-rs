@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
+import Link from "@/router/link";
 import { apiFetch } from "../../lib/api";
 import { clearDirectory } from "../../lib/directory";
 import { Button } from "../ui/button";

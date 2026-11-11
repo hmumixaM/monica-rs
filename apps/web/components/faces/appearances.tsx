@@ -1,7 +1,7 @@
 "use client";
 
 import { ScanFace } from "lucide-react";
-import Link from "next/link";
+import Link from "@/router/link";
 
 import { useAppearances } from "../../lib/faces";
 import { LoadMore } from "../ui/load-more";

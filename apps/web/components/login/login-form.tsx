@@ -1,7 +1,7 @@
 "use client";
 
 import {ArrowRight, ShieldCheck} from "lucide-react";
-import {useRouter} from "next/navigation";
+import {useRouter} from "@/router/navigation";
 import {type FormEvent, useState} from "react";
 import {Button} from "../ui/button";
 import {Field, Input} from "../ui/field";
@@ -40,7 +40,7 @@ export function LoginForm() {
   return <form className={styles.form} onSubmit={(event) => void submit(event)}>
     <header>
       <h1>欢迎回来</h1>
-      <p>你的数据保留在自己的 NAS 上。</p>
+      <p>你的数据保留在自己的设备上。</p>
     </header>
     <Field label="邮箱">
       <Input type="email" name="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required autoFocus />

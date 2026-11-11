@@ -1,8 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Link from "@/router/link";
+import { useRouter } from "@/router/navigation";
 import { type CSSProperties, useMemo, useState } from "react";
 
 import { useMediaQuery } from "../../lib/media-query";

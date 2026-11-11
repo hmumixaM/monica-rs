@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import Link from "next/link";
+import Link from "@/router/link";
 import { type CSSProperties, useEffect, useMemo, useRef } from "react";
 
 import { continuousMonths } from "../../lib/months";

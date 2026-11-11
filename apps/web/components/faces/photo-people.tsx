@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/router/link";
 
 import { useFacesInMedia } from "../../lib/faces";
 import { PersonLink } from "../ui/person-link";

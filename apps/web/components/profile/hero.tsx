@@ -1,7 +1,7 @@
 "use client";
 
 import { Cake, ChevronLeft, Edit3, ExternalLink, Link2, MapPin, MessageCircle, MessagesSquare, MoreHorizontal } from "lucide-react";
-import Link from "next/link";
+import Link from "@/router/link";
 import { type MouseEvent, useState } from "react";
 
 import { localMediaUrl } from "../../lib/media";

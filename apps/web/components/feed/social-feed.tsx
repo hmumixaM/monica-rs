@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "@/router/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { monthLabel } from "../../lib/months";

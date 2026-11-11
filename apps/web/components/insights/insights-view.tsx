@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import Link from "@/router/link";
+import { useRouter, useSearchParams } from "@/router/navigation";
 import { useState } from "react";
 
 import type { HomePerson, OrganizationCount } from "../../lib/api-types";

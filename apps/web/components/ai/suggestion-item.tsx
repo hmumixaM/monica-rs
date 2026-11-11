@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/router/link";
 import { type FormEvent, useState } from "react";
 
 import { type Evidence, type ProfileSuggestion, type SuggestionDecision, useDecideSuggestion } from "../../lib/ai";

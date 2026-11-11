@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Monica Rust",
+  "version": "0.1.0",
+  "identifier": "org.monica.rust.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1421",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "settings",
+        "title": "Monica Rust \u8bbe\u7f6e",
+        "width": 760,
+        "height": 700,
+        "minWidth": 520,
+        "minHeight": 550
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost; img-src 'self' data:; object-src 'none'; frame-src 'none'; base-uri 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app"
+    ],
+    "resources": {
+      "../runtime/": "runtime/"
+    },
+    "category": "Productivity",
+    "macOS": {
+      "minimumSystemVersion": "26.0",
+      "signingIdentity": "-"
+    },
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.icns"
+    ]
+  }
+}

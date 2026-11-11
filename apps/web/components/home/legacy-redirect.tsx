@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/router/navigation";
 import { useEffect } from "react";
 
 const CARRIED = ["provider", "month", "event"];

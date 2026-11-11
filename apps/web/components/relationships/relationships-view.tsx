@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "@/router/navigation";
 
 import { Page, PageHeader } from "../ui/primitives";
 import { Segmented } from "../ui/segmented";

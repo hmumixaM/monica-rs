@@ -1,8 +1,8 @@
 "use client";
 
 import { MessagesSquare, NotebookPen, Search } from "lucide-react";
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import Link from "@/router/link";
+import { useRouter, useSearchParams } from "@/router/navigation";
 import { type ReactNode, useDeferredValue, useEffect, useMemo, useState } from "react";
 
 import type { SearchHit } from "../../lib/api-types";

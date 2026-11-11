@@ -2,7 +2,7 @@
 
 import { scaleSqrt } from "d3-scale";
 import { area, curveMonotoneX } from "d3-shape";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/router/navigation";
 import { type KeyboardEvent, type PointerEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { continuousMonths, monthLabel } from "../../lib/months";

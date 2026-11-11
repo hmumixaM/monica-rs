@@ -1,7 +1,7 @@
 "use client";
 
 import { Link2, Unlink } from "lucide-react";
-import Link from "next/link";
+import Link from "@/router/link";
 import { useEffect, useState } from "react";
 
 import { apiFetch } from "../../lib/api";

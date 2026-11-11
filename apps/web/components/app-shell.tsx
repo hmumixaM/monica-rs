@@ -2,8 +2,8 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { LogOut, Monitor, Moon, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Search, Sun } from "lucide-react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Link from "@/router/link";
+import { useRouter } from "@/router/navigation";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { apiFetch } from "../lib/api";

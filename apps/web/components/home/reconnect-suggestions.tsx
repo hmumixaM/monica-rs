@@ -1,7 +1,7 @@
 "use client";
 
 import { AlarmClock, Check, Copy, MessageCircleHeart, Shuffle, X } from "lucide-react";
-import Link from "next/link";
+import Link from "@/router/link";
 import { useState } from "react";
 
 import { type ReconnectAction, type ReconnectPerson, useReconnectAction } from "../../lib/ai";

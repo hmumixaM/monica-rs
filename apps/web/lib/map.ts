@@ -51,7 +51,7 @@ export async function createMap(container: HTMLElement, view = WORLD_VIEW) {
   host.style.cssText = "position:absolute;inset:0";
   container.style.position = "relative";
   container.append(host);
-  const [{ default: maplibregl }, { style, offline }] = await Promise.all([import("maplibre-gl"), basemap()]);
+  const [maplibregl, { style, offline }] = await Promise.all([import("maplibre-gl"), basemap()]);
   const map = new maplibregl.Map({
     container: host, style, ...view, minZoom: 0, maxZoom: 18,
     attributionControl: { compact: true }, dragRotate: false, pitchWithRotate: false, fadeDuration: 150,

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/router/link";
 import {useInfiniteQuery} from "@tanstack/react-query";
 import {fetchJson} from "../../lib/queries";
 import {Search} from "lucide-react";

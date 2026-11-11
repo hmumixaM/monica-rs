@@ -1,7 +1,7 @@
 "use client";
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import Link from "next/link";
+import Link from "@/router/link";
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { fetchJson } from "../../lib/queries";

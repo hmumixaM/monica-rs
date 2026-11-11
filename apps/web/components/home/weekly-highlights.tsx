@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/router/link";
 
 import { Sparkles } from "lucide-react";
 

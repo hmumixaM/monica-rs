@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRight, Newspaper } from "lucide-react";
-import Link from "next/link";
+import Link from "@/router/link";
 
 import { useDigests } from "../../lib/ai";
 import { weekRange } from "./week";

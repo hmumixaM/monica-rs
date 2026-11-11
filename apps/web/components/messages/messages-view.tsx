@@ -1,8 +1,8 @@
 "use client";
 
 import { ArrowLeft, Link2, MessagesSquare, UserRound } from "lucide-react";
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import Link from "@/router/link";
+import { useRouter, useSearchParams } from "@/router/navigation";
 import { useDeferredValue, useState } from "react";
 
 import type { ConversationItem } from "../../lib/api-types";

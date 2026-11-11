@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/router/link";
 import type { ButtonHTMLAttributes, ComponentProps, ReactNode } from "react";
 
 import styles from "./controls.module.css";

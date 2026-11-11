@@ -1,8 +1,8 @@
 "use client";
 
 import { Baby, Briefcase, Cake, CalendarDays, GraduationCap, Heart, HeartHandshake, House, Plane, RefreshCw, Sparkles, UserPlus } from "lucide-react";
-import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import Link from "@/router/link";
+import { usePathname, useRouter, useSearchParams } from "@/router/navigation";
 import type { CSSProperties, ReactNode } from "react";
 
 import { type Digest, type DigestPerson, type LifeEventKind, useDigest, useDigests, useRunAiJob, useWeeklyPeople } from "../../lib/ai";

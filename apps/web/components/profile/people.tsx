@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronRight, Link2, MessageCircle, ShieldCheck, UsersRound } from "lucide-react";
-import Link from "next/link";
+import Link from "@/router/link";
 import { useState } from "react";
 
 import { useProfileTab } from "../../lib/queries";

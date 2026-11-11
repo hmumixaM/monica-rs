@@ -2,8 +2,8 @@
 
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Search, X } from "lucide-react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import Link from "@/router/link";
+import { useSearchParams } from "@/router/navigation";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { monthLabel } from "../../lib/months";

@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Pause, Play, X } from "lucide-react";
-import Link from "next/link";
+import Link from "@/router/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { type Atlas, type AtlasPoint, monthIndexes, monthLabel } from "../../lib/footprint";

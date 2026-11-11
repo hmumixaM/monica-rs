@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/router/link";
 import {useDeferredValue, useEffect, useState} from "react";
 import {SearchInput} from "../ui/field";
 import {Avatar, formatNumber, SourceMark} from "../ui/primitives";

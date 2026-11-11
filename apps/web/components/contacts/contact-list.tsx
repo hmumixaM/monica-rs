@@ -1,7 +1,7 @@
 "use client";
 
 import { defaultRangeExtractor, type Range, useWindowVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/router/navigation";
 import { type Ref, useCallback, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { type DirectoryProfile, matchedGroupName } from "../../lib/directory";

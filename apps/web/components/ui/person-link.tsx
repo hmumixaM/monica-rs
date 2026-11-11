@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Link from "@/router/link";
+import { useRouter } from "@/router/navigation";
 import type { ComponentProps, MouseEvent } from "react";
 
 import { isModifiedClick, transitionTo } from "../../lib/transitions";

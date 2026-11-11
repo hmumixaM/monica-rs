@@ -2,8 +2,8 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { UserX } from "lucide-react";
-import dynamic from "next/dynamic";
-import { useRouter, useSearchParams } from "next/navigation";
+import dynamic from "@/router/dynamic";
+import { useRouter, useSearchParams } from "@/router/navigation";
 import { useEffect, useState } from "react";
 
 import { queryKeys, useProfile, useProfileSummary } from "../../lib/queries";

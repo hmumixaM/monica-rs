@@ -1,7 +1,7 @@
 "use client";
 
 import { Cake, CalendarDays, Heart, MessageCircleHeart } from "lucide-react";
-import Link from "next/link";
+import Link from "@/router/link";
 
 import { useReconnect } from "../../lib/ai";
 import type { DateKind, HomePerson, InsightsSummary } from "../../lib/api-types";
