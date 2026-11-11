@@ -1,0 +1,15 @@
+[package]
+name = "monica-server"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+monica-core = { path = "../monica-core" }
+anyhow.workspace = true
+axum.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

@@ -1,0 +1,1766 @@
+[
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/Dockerfile",
+    "sha256": "70661996142927860eb8094aad3a1f5e64486a5d3bbc405e018ec58f7569982b"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/dashboard/page.tsx",
+    "sha256": "5ab06d684212ba315308a2695af29ac886a5f64c8ff585a1333a31c94872452c"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/digest/page.tsx",
+    "sha256": "6e6b9047e5e0af592386566ccc68fc0d1412b2d469982a08faa70f766d274ac0"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/faces/page.tsx",
+    "sha256": "b1681840f988a3fc54308a331d7ba7615a986e60f9fdd4a98fd304247c2dc576"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/imports/page.tsx",
+    "sha256": "1d3c90a6401705c3482fa0cd98fad0a134c98b4a87b2fc2bc2f020b21d19a455"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/insights/page.tsx",
+    "sha256": "ef5ee3709dcb4c1a46ec7e0cd4492e483716d679dee20c7256fe43d7c36f5f3a"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/layout.tsx",
+    "sha256": "61638beac7f83417217545232df8f19819947eb80b25bd641799ebbfe20f944f"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/linking/page.tsx",
+    "sha256": "dfc85992bbff7f1bebdee9532bbf1d3b451205bfbf0fc676104077a3b9cdec6d"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/login/page.tsx",
+    "sha256": "6d3d024b02b0c85dee62ba7d53dd7ad76a5d7d8912312df5194ef9238e737173"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/messages/page.tsx",
+    "sha256": "614725854c51f41ca36c31717bdaed7552da6e26495ec3c1a03855bc839cbf45"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/page.tsx",
+    "sha256": "5fd7e35446500756bd909e7abd5b2b96c34d8f8b1cc9ca055f33aefa233c7480"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/profiles/[id]/page.tsx",
+    "sha256": "0ad5c8643d95d2cdfc9e658a77a61bcfe6fa69f8986ebef53c3e24d40b8451b3"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/profiles/page.tsx",
+    "sha256": "583d003daceec118725042c1c0791072dc8f3c4b04048efaee29b2038c33e759"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/relationships/page.tsx",
+    "sha256": "246c655d37293052bd113487b7f85b1df266fc0b25fa0ef514552c013e2c2050"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/search/page.tsx",
+    "sha256": "d48f34c4dd67ecdb9b765cb5335e265f9ad4dff3ac579a980f1eb0bbcbb48f43"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/settings/page.tsx",
+    "sha256": "2078af8d408720f0c1f6bea5716fc009fc533020705b6bc7e34c4952ab5f6bef"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/styles/tokens.css",
+    "sha256": "25106b55c9d423923376ee6a7433a66d1e490707d372458ea6abe080eec48e36"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/suggestions/page.tsx",
+    "sha256": "d4b378f92eba361daab9c8e4ae904ffcbd33fc73d0fe142cc055e5571015b3e6"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/app/timeline/page.tsx",
+    "sha256": "05570baa8cbdab4bf24ebd36f7418d93b82855e7a86a3d1a1595390fab3055b7"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ai/profile-ai.tsx",
+    "sha256": "ba24a4711b56962423b17dcf3d3effe39e0708319323e487dbb8a2c4670a753b"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ai/suggestion-item.tsx",
+    "sha256": "4b03ca63ca0c718e0fa3e4078fae81f3f1c1c9793a353e04822351199ac3cded"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ai/suggestions-view.tsx",
+    "sha256": "5912a1af897d24fd47b12464d9443e0f472e4ad688da7b7a6ad876eb18cff20a"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ai/suggestions.module.css",
+    "sha256": "2c37df5dbcfb0250e637b857bd8071e6416eb6b597d5e7389bfa2b0084f52a3e"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/app-shell.tsx",
+    "sha256": "ed525eaeb21f458b6bf279a25cec66fa98109d4f68ce578430aea6cd1b3e3adb"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/charts/charts.module.css",
+    "sha256": "661792429ed01f3e26e8baccae69ed41e6cf34b754f1c54d4b55241af36d0f91"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/charts/monthly-bars.tsx",
+    "sha256": "464a61ed517a31baa5c54f1aeeba546b5df3884bbd0a52477bdb529eaa3d9123"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/contacts/contact-list.tsx",
+    "sha256": "259eecce76c9c1bacb2f0bd36009ab34d4d722096702010aee6ca7f88ce67710"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/contacts/contacts-view.tsx",
+    "sha256": "1c204b16b35541aa31202f0c5761e9079d3c266fbb3c274c86d74bc4d9a067cc"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/contacts/contacts.module.css",
+    "sha256": "b451741f76c4fcc38f406a554e240ce0ed13d3c5d7505ee65da1b46fdd785b54"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/contacts/create-profile.tsx",
+    "sha256": "0670636fc7eab85334882dabe6598d86d2dbb130aee6d6e72ccb8b6d6337d058"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/contacts/letter-index.tsx",
+    "sha256": "749dd6ef0202ef053a66809341aafe54f7c44b1748a9c9cc0c20f158d525f4e5"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/contacts/tag-filter.tsx",
+    "sha256": "f185f1cc513a9cc4c47c5e193ee90f13aa20164398f294041b3a7fd985f5220e"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/digest/digest-card.tsx",
+    "sha256": "dbb57a19c193813e8f50f9bc2f6da9553582e4fe9a328b87a0cebeee761e9b9f"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/digest/digest-view.tsx",
+    "sha256": "2c9fdf40dd4020c353962c47b6289dca4d43a9d3763b993465bf496f6d013ead"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/digest/digest.module.css",
+    "sha256": "00ea76ef203ca4d49298cc2c8a7bb4fab9a40a63225a85bb8d659a928ec9accf"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/digest/week.ts",
+    "sha256": "abbd524c333462c14630394f403c3a8081472b1180330fa7246621d9e1e898fb"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/faces/appearances.tsx",
+    "sha256": "09f894852c76cbb5b9a700c169c28617adafaa4ccf391dcb769f8d644690e328"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/faces/face-crop.tsx",
+    "sha256": "095839ff15330c996530932048e0180059bdc8af6ed65acf56c3432d2d0f8743"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/faces/faces-view.tsx",
+    "sha256": "aa3cbcbd501b9e387c6df12ad226095de8e3a9c5d4113922f3fb5f4fbb93a899"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/faces/faces.module.css",
+    "sha256": "523c095bd4b3fe2df8aa161fe7cd129f691c8271766e4bd0189a7c0453a62fe8"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/faces/photo-people.tsx",
+    "sha256": "2453db503f596c950ff2c189901c6358cc706f4c7fd82074e41ec559a45bed71"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/faces/profile-photos.module.css",
+    "sha256": "08d7346d26814dad71a8d41e9089a3cfa686ea98b3acb6f4d19adf093b21d5c8"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/faces/profile-photos.tsx",
+    "sha256": "db3bead33eb5ad97b5501b2ead840c726053cde89843ebc893f7d88cba3fec41"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/feed/event-dialog.tsx",
+    "sha256": "be6bfddc042d816e86ab368f5fac711e27f6526bcaf0dc080894f0cef6f83a6f"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/feed/feed-card.tsx",
+    "sha256": "0819fe8f8416f069ff0f13404d243bb60885fae64fc76f87479ca975a9be68cf"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/feed/feed-parts.tsx",
+    "sha256": "6559782316097e185741a5acaae90fce23cd550bc14f1676da0ac3e2b13e76cb"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/feed/feed.module.css",
+    "sha256": "48238b100789925e94c7c645869ffd56cdeffeee63b388a0b5c38e3c3feadee4"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/feed/instagram-post.tsx",
+    "sha256": "55a7637a45d8ea0d1f3bacbbfb255d458d53e2488f459400eb3066f0d2d33003"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/feed/masonry.tsx",
+    "sha256": "c1efe06fc9c697e69bc20e235c8bc5fdd22dc79db0d50140670ab50da2ac67e5"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/feed/social-feed.tsx",
+    "sha256": "d969bedddd29ce452dd7183fad7a0cc4c7278b076b620c6f28954b5bea6361e4"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/feed/types.ts",
+    "sha256": "9ba81be114cbc429949d1ce3c146dc67b838ae94b0c9cdf76e870c5016b61400"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/home/home-view.tsx",
+    "sha256": "d6c241c62286af263368765bccdd886deb2530c16177cb57af1b008bb9049aa8"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/home/home.module.css",
+    "sha256": "ec2df9aa66c20de7f3c8d59e0895805b2e6152c61d44097923273dc378fdf912"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/home/legacy-redirect.tsx",
+    "sha256": "ed061d91c76d524e735485780772a7632ca3860bc423614fd2d2dac903594270"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/home/reconnect-suggestions.tsx",
+    "sha256": "4a25e08b535fd5a2e1004b72f46186d157fa3afeede0c51bfa51d64c8787a186"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/home/reconnect.module.css",
+    "sha256": "98e37f7b9cf2ad489c257c520e32964a7624da67402f1b16c81b63c5e3bc7fdd"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/home/weekly-highlights.tsx",
+    "sha256": "6c03cc9b02eaae8edecb606e1d7e368831a5b84d6fc2fe15034126b60ad9f842"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/imports/collector-tokens.tsx",
+    "sha256": "e3143e483cd2db097f3e7044819e4c013f34b0df112acb60192983e433880f22"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/imports/identity-review.tsx",
+    "sha256": "655b89f44aa6687cc8491bc73e94be360f91d9aaabb8e30cfaa63a58af88eef4"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/imports/imports-view.tsx",
+    "sha256": "a84e2c21ab8fc2c46372756a103aa459aca4c00bbfd8d4a78e5bab0e71422b68"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/imports/imports.module.css",
+    "sha256": "025cc1b7337e0315ba04ff4c55e1f359358068a719b5579b06e3437446708a59"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/imports/raw-data.tsx",
+    "sha256": "59b7bb7638aaf5633645ac3ae5d8e7e315beb899f8a13bda937112d693536c1c"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/insights/calendar.module.css",
+    "sha256": "16fd1b1e0a9094cd61d026e8dad08f74d4517f240e91269a0af930a8ea7ceaf0"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/insights/contact-calendar.tsx",
+    "sha256": "01c656534767f4d4fa0c063dbe95b044535f2d8737119dce1d9fd54aa24d69a8"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/insights/insights-view.tsx",
+    "sha256": "7f3cb2d968471b17c66f7583436e3c387a73282246811209af790a66b627b659"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/insights/insights.module.css",
+    "sha256": "b05a8f4d36abfe875005f23d46c7eebaa572d10555d3dab1309261cec8bfd66e"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/linking/confirmed-links.tsx",
+    "sha256": "3f63f551f4a2ca10fa64f57ed03be08a5b408502c9ba8c2d10ee4e89a55a53ed"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/linking/link-queue.tsx",
+    "sha256": "472060fa494d0f3e53f64af5188edc2283c78d2ea059885dbba9d5ae589f021e"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/linking/linking-view.tsx",
+    "sha256": "2feb87e651d54eeb84b585c0013334ecb0811398016729fda0db58c4ecd71492"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/linking/linking.module.css",
+    "sha256": "ede14ced766bed5f3b850793abe0f669c4971352a37934cda25103d637314d22"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/linking/signals.tsx",
+    "sha256": "1e8c334a7510ef680e74f1c12b5d7d24a9f58b5cd4bf692674fc90fd2bc5f9cf"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/linking/staged-tray.tsx",
+    "sha256": "524b8cd62122d6d308cf00ba2e13be5cdaabc3d1e945b90c8b8ad19e729070a5"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/linking/types.ts",
+    "sha256": "aea77cc6745bd0975eead5408ffabd6c0439ce46708dec51e356d834d57adaba"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/linking/use-staged.ts",
+    "sha256": "e85fe8bf529687004cbb1426dde969cd3e42951a5dce15c1ddc72391b236d3e2"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/login/login-form.tsx",
+    "sha256": "c9dfc301d3d95fe03c8c960e097322f9e69fb469bd6523cf2142f954335eb120"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/login/login.module.css",
+    "sha256": "a977a1be7d606435fd9a93447a8e719b26decc415d51342adee3c6990b7dc60f"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/map/map.module.css",
+    "sha256": "c5edaae9da2d0d50750931d85c36f12df22734f80fdacf2f327475130c782a6d"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/map/places-map.tsx",
+    "sha256": "df8da766148771325786db339bc62170331fc886bd3ef13cffe9c442f39d9f23"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/media-attachments.module.css",
+    "sha256": "80db2da46147762d72bd1030d4f68c4ec53a448b3f190e9a035604ebfe362b47"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/media-attachments.tsx",
+    "sha256": "fb38e96657f533cea9c98a21e54850dadbefd6becb1184a5899a855f71ba5c8e"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/messages/conversation.module.css",
+    "sha256": "cb8ffe50841e387d020a33d299f584b1ee8c7d5c5b3e3fcad95f5797223b3bc3"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/messages/conversation.tsx",
+    "sha256": "f77a997ff7285940cfe703ecc6ba6d99e8c4e6f04b570360b06055eee6b20eca"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/messages/messages-view.tsx",
+    "sha256": "7eab3fc5c374ca5a31a3b9116c681dbb25581b763685534e640823ec930fdb4d"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/messages/messages.module.css",
+    "sha256": "6c8c08eddbb4319135e51f1940a32cb7270dc2eec4e93727b8118c40361cc940"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/moments-circle.module.css",
+    "sha256": "a69197377568ee0e6175b20dbf6b73d9206a5676bb2cff9412136f66b820f308"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/moments-circle.tsx",
+    "sha256": "33fa241afee6e23fee765b5783da9db0d15362b08dc33ec41638008353d34a7a"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/about.tsx",
+    "sha256": "0f5e7ba41b3053f8522581d291b7ba0c0c149f2a925b9eb5df125dde84688522"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/career.tsx",
+    "sha256": "3faec84607240b5fc9ec5df791167c1c289cc80cf6d491b158d88299124e24c7"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/chat-detail.tsx",
+    "sha256": "ce557f7b473677c2cd89db78c204633e09117b2eb2d142dd0b2ad700f1479149"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/contact-events.tsx",
+    "sha256": "98e11398121f6d2dfb53d1e3c4c4f721cc88c4114869a5fb2e6e9ec1c340a8c9"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/dates.module.css",
+    "sha256": "779e520734b7b0abb321f480fc1b984546bccb7f8b59f4c581b4882498f6e612"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/dates.tsx",
+    "sha256": "c94686ca5db1a25dca95e9c7222247a72bfc22a30d2a2729edde5f67743d0b00"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/details.ts",
+    "sha256": "9deaba7af9ce961eb94ac72770a723a5560e5baa069b0961e014282a46232e87"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/dialogs.module.css",
+    "sha256": "012374616c89d4e11a0b46d45caf3554e47735e80d127e56ad5a18d1bf939e4f"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/field-editor.tsx",
+    "sha256": "69356837d2e1f57d082bb3ae9f29735b003c2506feb2deeb955576e0c8377742"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/fields.ts",
+    "sha256": "3568d91bf402da7b8da3d760233f47751ac6da43420a19cbf56ab63f5d87c7a9"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/group-speech.tsx",
+    "sha256": "0f8ba9bbba7582d9f01a6993f9c01eb8ecab0c8f6995ae4fcfb85fe8d5115cab"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/hero.tsx",
+    "sha256": "55ee570726bc81875837512cffdc9e32ef11cfe923f44f6fd6eabb88ce6ef510"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/history.tsx",
+    "sha256": "3b719e209ea3e3d8460fbccf6517a6603ac21f284b8dbe15eb394ec688b7133a"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/linkedin-targets.tsx",
+    "sha256": "d6081b4e7167dcae5f6046f5fff3b26a2e033c4bccb638bb3922d0545eeaad45"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/manual-details.tsx",
+    "sha256": "dfc5746cf044b27329601dff712e8b371521c045e0b3f765531b651bdc9017b6"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/overview.tsx",
+    "sha256": "4e68ac09b230462334d913e30fe79789b512ee5db298a90093b8186f0be7c2dd"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/people.tsx",
+    "sha256": "bbde12a14f36d02b09948ed4e47e89da4ce1cdb3cb09a2441a01c2c7983a200a"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/places.tsx",
+    "sha256": "94f478df22238daeb35145420bb2e0c857f6e62e4f557e1d7014cecc8d64910a"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/profile-page.tsx",
+    "sha256": "5dc255c4975bbfd78144717792cd5dff09d4ce247e9054e5c0de976cf27b6b3c"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/profile-tags.module.css",
+    "sha256": "20d6ad649405e1dc3d502c3127aef8a27cb41da0351001842be35030833716f4"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/profile-tags.tsx",
+    "sha256": "eb8033e31904723904e18fc74d6a02aecbdc49e847cfc352ee4f91be2ba037a5"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/profile.module.css",
+    "sha256": "94d7f56cb59b5fb07d169a8ec7294e0961f43075c443cdc4628c34c7e4232ac3"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/pulse.tsx",
+    "sha256": "071aa7496218854310bbfa1a195627889ff6713d006cea716c6010a399797f31"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/records.module.css",
+    "sha256": "ed5bb45e2cf7e37794176a9efdd99a03c900d8f6d4faffe319af5c6fff801dfb"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/records.tsx",
+    "sha256": "f8f4e1aab2871d08966824e1022928813abfacb2b22a98da89b2de5253f7dfe5"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/relationships-tab.tsx",
+    "sha256": "e18ddd928369a36e8c7c8e794f68664db343457098c6e0aa2a0704145b1c085f"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/ribbon.module.css",
+    "sha256": "765dba5948de82262ef44b888f8d0fdcd0e605395dfdc804727e492c52fb3a38"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/ribbon.tsx",
+    "sha256": "dd7f0f1638acf606ca123652f242dd36eb6daa357b9a66b6006bec82584c799a"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/source-accounts.tsx",
+    "sha256": "ac95827cef3c1217bd277c440a82ec5cf3d290f40024536fa3978de1a7b111f2"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/profile/types.ts",
+    "sha256": "f015c3236cc23332112a9f0b0cdcc7b751ccb39d730dcd2c300102363f10ada8"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/pwa-register.tsx",
+    "sha256": "a3ba399a9f5b3de5b8d8faf290f713e33a5978e3c3a1aaa8c93ba35cbcaea55d"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/relationship-editor.module.css",
+    "sha256": "69251a57a9b34530eb24d7066d726118c4a565989e24f65a306671529889cbd9"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/relationship-editor.tsx",
+    "sha256": "e108fb3d5d9ab0b44ab6ef869a437180a22874b8642e02985e41ac475f6774a2"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/relationships/community-legend.tsx",
+    "sha256": "00c23167558d58a465914e85113668d60451255b586c64a3ebebb9e682eb1d17"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/relationships/footprint-view.tsx",
+    "sha256": "e9404342f80404b6cff8ea0e604b8aaa6e3dae3daeffdb2cab61e68cffb83f84"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/relationships/footprint-world.tsx",
+    "sha256": "08dd9568598565226f9f81fdd2e3f043048aa0962bf08484067a845240da04e6"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/relationships/footprint.module.css",
+    "sha256": "a3f7f3fd1f238713338435e4266c62fe924e6208e6933e0846c164241329b3f8"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/relationships/graph-view.tsx",
+    "sha256": "f64c1f7dd30c7008b6b6c38f451a651975d7881babf386da792a7b997f79f317"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/relationships/graph.module.css",
+    "sha256": "0483997f2e6de73fb71d2774da8491ef87c200e3202b7abd91c742b1f17f1c87"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/relationships/orbit-view.tsx",
+    "sha256": "aa6dcf9dbb1f5697cc04186d28faa20726f6e58dcb020a4c7b34b0e608f18939"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/relationships/orbit.module.css",
+    "sha256": "61b795b12220a7a8939ec2a09a5f6b251aac9e4456a61a2c0f0161926644e34c"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/relationships/relationships-view.tsx",
+    "sha256": "84379700c708b50067f4d117f12300b4234af8e9e92308ecab577edb1632940e"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/relationships/relationships.module.css",
+    "sha256": "3f311f6ed31de1318c9e6ffb4de7db9ff1b45541e6fe492ce2556f9ba4d3e6b9"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/search/highlight.tsx",
+    "sha256": "1bd6f61a5b12cdf66fe370e0c84f09b97e8e0ef7f4970ad0c4c6b22aaab1051d"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/search/search-view.tsx",
+    "sha256": "a3424064d647ffc61e3f893b9d0dc6e4f4c1fefedb866711bd3e56616df187ff"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/search/search.module.css",
+    "sha256": "99b93a8e920c8508036a077042e75de530eef76cac772f89accfd2126db74354"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/settings/ai-status.tsx",
+    "sha256": "e002849a022520009d3bf212a6745e62ed666e7d6ff69214ba8fdb82c267a5d3"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/settings/appearance.tsx",
+    "sha256": "5976b41627f14dbae5aacae2392ea32d3e24656d5b5a28dc60d8f6a5fb992158"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/settings/archived-profiles.tsx",
+    "sha256": "3ac069e8454e38651754b6efbb78389189ac254ce430a3f864a8c209e48d8e7f"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/settings/device-sessions.tsx",
+    "sha256": "5b979de2b911a57e64ac012080cd621b8b6bdf358b0f2d296dc55840971a5125"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/settings/settings-view.tsx",
+    "sha256": "27b6622c1712584856380ac6be4f23c7c6895df3a22cb6b6573a01e21b5c90a7"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/settings/settings.module.css",
+    "sha256": "71587d06d4f9ebd1644eac4a47521b6679df8eedacde69e05d7b13d61ebfd1bf"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/settings/task-status.tsx",
+    "sha256": "45846cb2679e0e21bb283042ad4ba40f94181ffdcd93e876d96847978d153628"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/settings/totp-settings.tsx",
+    "sha256": "4a789e5bf1d07fbd758d975c6c6a0a635224d084edd6fb31c31a78c748559fa1"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/shell/command-palette.tsx",
+    "sha256": "51683855eb57f2141ad3ff9387fd4c74a5e4de0efc87f045fb3957747cbd3648"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/shell/nav.ts",
+    "sha256": "28d00deff07978972f25424eb6fc8a320568c6b4b3b4e528693faa1661f46dbe"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/shell/palette.module.css",
+    "sha256": "e66fab6a1b17547b21605b96158a97768fbde34174521f2869347f767742aa66"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/shell/shell.module.css",
+    "sha256": "b676b02af318e2956cf0ca8a502cc8123dd80c31a57e3e34da162a8af5066675"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/social/social-analytics.tsx",
+    "sha256": "83edf0e20646cad827344497484570c924be5caf923efd696ad3199415b78151"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/social/social.module.css",
+    "sha256": "c8dd0ba96eb570042b2fe315617d10e5e7a26b6380631c1d9f82875200a19306"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/timeline/timeline-view.tsx",
+    "sha256": "450a2d9d629f707569d0c77f60031c1a30fa5eedef2c60e847712d9fbfa886ae"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/button.tsx",
+    "sha256": "8cfa5c254b149cb52d1cb20392013c4276a8748856ad7db389570d935108492c"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/chip.tsx",
+    "sha256": "d248b4f9196c6f5d786cee6922b36f31ae29bf9098136b899753b2524e18e387"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/controls.module.css",
+    "sha256": "d60e1f8e76ce5261a5b2ba6aafecc76cafd70afa1cdad77d75c32f2e7f095788"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/deferred.tsx",
+    "sha256": "d8f918b05f8f3c41bb6c6af2f4c1201d9fcdaef7404bb78598800fc9394cdea6"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/dialog.tsx",
+    "sha256": "3a2a02857239db98d810d407064b3fd41ac7ac5bb8e306c3fa9ccbb842ade622"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/field.tsx",
+    "sha256": "6c2a710ea5c6cd221b9f808877deffb6d394cae9534263d24f110ebc2dd56fb8"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/load-more.tsx",
+    "sha256": "31d95f26f617dcf7219bef9e791983d837e221f7b36f34c8c504c873969e8ae0"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/markdown.module.css",
+    "sha256": "169a6e8eaca1949b1de9b915014408324f0d7d11d8780003b959b90ef1af390b"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/markdown.tsx",
+    "sha256": "65b5520cb5e54b893689b71401004d95a3d30b323c487a9838002343003dca4e"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/media.module.css",
+    "sha256": "788017a420efa7d56e58f8d62e89fc6fca58193ce2afe77382bf094127b08f41"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/menu.tsx",
+    "sha256": "94c49f52580dd03d5bbd5a73490e4729dfe607b76c430550b05086e2d3a5caca"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/overlay.module.css",
+    "sha256": "6ddb9b3805567e43076ab21ec2d698db8f6a79447f6d21f9d2524ca19c2b701e"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/person-link.tsx",
+    "sha256": "d85a0c8c32e52cd90eefe8b66a9b3d72c5cee0a669452545e2581a5aea6a8b87"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/person-picker.module.css",
+    "sha256": "4fe1fbd1b28d89f79b6ba9fc97c3be2301287f9971c704af7c2382a264edf950"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/person-picker.tsx",
+    "sha256": "30766c8b6f0f54b75b9b756c4417f20654725402f1e8b3dc57a3db7d56b61abb"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/photo-viewer.tsx",
+    "sha256": "45fdd7b7cb02ea0ae71bd162c1d4c44362f995e43809833fddd53ed45f5c121f"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/primitives.module.css",
+    "sha256": "aaeb8ecc1cf37fd61c5c6ccb8d246452dddbd24cb2675cc2f7af36e846aaba2a"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/primitives.tsx",
+    "sha256": "c93356238eecf716f68de9deac005fcd79c7acecf8189f2f87c86c8493fb7a5f"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/segmented.tsx",
+    "sha256": "e07dbdcf22009e70f2f899f61df7b4f9cfcd8a31c58ce7b11144338130ca0f6a"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/tabs.tsx",
+    "sha256": "b9112353a7320d1758475e20d3c257d5e95de591384e420bef4f604d1f632784"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/components/ui/toast.tsx",
+    "sha256": "18d327a19ff72b93269488bf37e7e8f25e9213d28ac9bc51c69853a2a2c7d822"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/ai.ts",
+    "sha256": "1d2bdcbd7e95c2272e763cd1881451ae42cddf4cadf56ce6b46e01341f5d831b"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/api-types.ts",
+    "sha256": "18bf38ea5f519159a2bda9329a7f81a67712f2a390511a3069a6b46b72770dc0"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/api.ts",
+    "sha256": "d76d4c443f8d7b91c5e0db2eb9f31c61a3af5864ac11286dc9620f935d8b984c"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/directory.ts",
+    "sha256": "5d27ec479882c783f624233ab340c3d2881c54494b169c93807a0ba62201d85f"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/faces.ts",
+    "sha256": "7ea9e98b5b9fd6751ff48d74b57c6ffe430fdb1b6f3823d7ca587fd7d3716747"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/footprint.ts",
+    "sha256": "7d49c42db7875037b55893fe024d79bd9b246c0252f5493e7e3bf2711f9b2c63"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/letters.ts",
+    "sha256": "491e55eb55133061241368d857bdbf9383bd7e9ee740a9ebc449328b063f482f"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/linkedin-post.ts",
+    "sha256": "fc008a8af101260904a0ea90ae34810dfb402d214308979af97d0b6b83a1794f"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/map.ts",
+    "sha256": "7e50a7ae00e636e0b7139d3df8871bbe976d760ddcf44f2d49be3afeaaccc5f7"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/media-query.ts",
+    "sha256": "5ed84e357186a35a66875b38b60b1b78b5359b585199a78cff44780046f8d0ae"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/media.ts",
+    "sha256": "3bd24dab8b36ed3107d92aa00e6a18b24000c929925125d128d509c695fda24d"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/months.ts",
+    "sha256": "1f655eea4b29740f8feda1afcfdca7b3be17b23d3b9d285ff9bc66c5022fff72"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/orbit.ts",
+    "sha256": "227154cb919ca1493e1f78503e2fa6b34cc3c67a30cc24fc8490325a035bc013"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/profile-photos.ts",
+    "sha256": "d623bfa32023c0d44608fa7cffa3878bcead83a794fda3e9eacdbbf789f63a82"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/queries.ts",
+    "sha256": "7c7e4c91271f52aac469a40732520dba3d48afc18b22e26061ca75c8455b29e9"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/recent.ts",
+    "sha256": "b47279e8e249639349feaa333dd94c728b24b42ed3ccba9ae90462c28d960d4d"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/record-text.ts",
+    "sha256": "e1be1609a941ba1d1dc796f7ec55249bfdae2e51fa4d70fd60a747477d7a0146"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/scripts.ts",
+    "sha256": "78877017e9d16815a94eebd24404d2005b030cea358d41bb42615552dda401f5"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/search-client.ts",
+    "sha256": "8434d7cd42a63507bb657c17d73bfc0318c31471b874fa644e3aa0a5873bda62"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/search-engine.ts",
+    "sha256": "19a6de417d8042571fadc2be8b0c218d1bae40d7ebd66cf00575e68c94c6eb65"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/search.worker.ts",
+    "sha256": "c63b1dc65e7689d4a8bc0f232441ffc3d55b7531fb273f57923fbfe003423d7a"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/theme.ts",
+    "sha256": "70dac6fc7629f12103f78796fa8dbf59a86605325d7a2f748cde99ab7393bc38"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/transitions.ts",
+    "sha256": "95f013dc79547e3120b444df75e7cbe3111560bf950cfe926d240329c97a2253"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/lib/zoom.ts",
+    "sha256": "6bb63a4e11297b187438835660c8e5bf893a94d27c1d22d969c4f52205aacd89"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/next-env.d.ts",
+    "sha256": "85ae5aee75f011967cf2d25cbc342f62d69314e9d925f7f4aa3456fc2cffcca6"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/next.config.mjs",
+    "sha256": "3c6d47a6bc787fffae8b55d64e92ef111baa74990c29fc829c7ff5fbfc50dbc9"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/package.json",
+    "sha256": "eb2fc7a5a3df4cf8fbb7acbd9da1f4b193bb0d13516858d07e7dde3098a7686b"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/public/icon.svg",
+    "sha256": "90bd76b256d9596d99cce04d8f5e4d2423c91a05d988200df2ee9f9e6c301f94"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/public/manifest.webmanifest",
+    "sha256": "a7fedddc0c1758efd0f1f99101e52d0c9e97f103bfdd748fb29aac3f8403ad49"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/public/sw.js",
+    "sha256": "f2939d819ffc98965e81d9c4f9edb164cf83bc148ef246ed12865c8afbef4eb2"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/public/vendor/countries-110m.json",
+    "sha256": "2516c915867c7baf18ddec727aec46c315541a07cfb3d79a6559b05d5e94eee8"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/public/vendor/d3.LICENSE.txt",
+    "sha256": "3e6849627f74ff73c257a3ae1efb574015d94fc1035c05ec3c15805165efcbc4"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/public/vendor/d3.min.js",
+    "sha256": "f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/public/vendor/moments-circle.js",
+    "sha256": "c51939477273d2f34d9fa92c533cce474a4f33dbbe65dba6996a8b98d564636d"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/public/vendor/relationship-graph.js",
+    "sha256": "25a17b2a31e675165e893d75bb039133567ad3378dd08ffc7bdcb55b228d05a7"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/public/vendor/topojson-client.LICENSE.txt",
+    "sha256": "4c4d15b635e04e691825a76db7d33f7f2033b55669a7430011694f31e6c65999"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/public/vendor/topojson-client.min.js",
+    "sha256": "25cd02ae486cc5063e0215a4e4cfb15de83700c87ac48bac4d57dc6aaf3ebb89"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/public/vendor/world-atlas.LICENSE.txt",
+    "sha256": "8048290dfdb6e83fbed17e8985c8cfc4ce9da9b842642f3d3e497280790cfa31"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/public/vendor/world.geojson",
+    "sha256": "02caedf9a1e0255deedc985942ccb0b8df102f21c9c551c332e8eda0a18fbcd9"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "apps/web/tsconfig.json",
+    "sha256": "ed5373fbd760eed2315e36fcf8d9ee649ce84933dcecbf437d1936938b8e60c4"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "packages/contracts/README.md",
+    "sha256": "a1adc8e1d1c1cae472a17661b82027474979536cdb2cd8daafeb703e63906b19"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "packages/contracts/package.json",
+    "sha256": "c5ba3b9ddd09934cada9dc704752ec9204ed5d2625a62f1877912daf90d381e7"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "packages/contracts/src/index.ts",
+    "sha256": "e2236ac1bb7a6661ece461725f29f5d30a79b885d41d8d7f8ed2895d43b1e6ff"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/README.md",
+    "sha256": "bab9ae4861bde10d12b6c6743f278fa37fae08c198390bd69f9e436855bdac03"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/VENDORED_SOURCES.json",
+    "sha256": "0bb69bc5f7f146ec60965a0406b9700cd0997b45efadbf06a1a857cead4af637"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/collector.py",
+    "sha256": "6f24e8fbf58c95b3b375ab8d2c25654b9df57a0eb2f59ed7ded28643cd3157ef"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/publishing.py",
+    "sha256": "0aff6405a4e02bbf7a8c449ece9c7826c176435af6074becb24d6bfd16193306"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/pyproject.toml",
+    "sha256": "c6bdf434c8bdf0103fdf0cc1706a74795e4acc66b092a1a506373430b9ede0e2"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/run_linkedin.py",
+    "sha256": "2707570cacf86e7057b453640130af4eac0c41049c7274b16d391f4e55d2bcb9"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/tests/test_collectors.py",
+    "sha256": "e13bd57e13c2c600dfdff32a38f0d791a02ee1ed03fe76faa3b219e29bd38b42"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/uv.lock",
+    "sha256": "94cbcd473c30f1076a9ae9dc12b30663ffe0c34fcbfd929d74623c80139129f7"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/instagram/archive_followees.py",
+    "sha256": "13f835f27e23cd2f5a1fd4b20cf757a25b088e420c6b8f426cf254ccca9b5dde"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/instagram/archive_highlights.py",
+    "sha256": "d3d9c238a0069489b0248d5844d7bafd70b8e80fb2e4cd181fe6439cccf29092"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/instagram/archive_profile.py",
+    "sha256": "5164fe88bd4cb07c5969713fdc5620eb9034db29c3ee6c2c0d7a3614a8a9b256"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/instagram/archive_stories.py",
+    "sha256": "feffdc55935dd3eecac5216a86e74c1ede43026fc5e9cc204a4aad4f831d51ac"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/instagram/conservative.py",
+    "sha256": "046fdac7683e36f4a0f067e0004dcb86612a699e8631ff6d7edf94ad450487f0"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/instagram/followee_refresh.py",
+    "sha256": "fd127c8698700cface81ad14283ccc031879fe7db1d96acccda18dd67a864e2e"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/instagram/instagram_relationships.py",
+    "sha256": "9a8d57130eb92188611e0ca9ca1ef6a33bcb7cf5c258a222fd271dac28eeddfc"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/instagram/manual_followees.py",
+    "sha256": "df4259c3adf62fc5836861b4e3129d0a28eeba6cfb33e2ab79d1db12c0f1da7d"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/instagram/public_accounts.py",
+    "sha256": "eba0a2981738b237018c3cd81f4f0f93712feabe191ac8c49c266fb00bb615d1"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/instagram/query_audit.py",
+    "sha256": "15a078bc1de0c31c8480a58033496c1505298cddf8f794bd38a9f53fbecb2ea7"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/instagram/story_schedule.py",
+    "sha256": "3b5505a0fd2fdacc96e31e91e3154872b0a01b2fea1268576553b43331c41fbf"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/LICENSE",
+    "sha256": "7af9e8c35289bb5b1f70cf9ed74e868ec9ce634a6be0d9a0716c4c2ddb026cd0"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/README.md",
+    "sha256": "4f907d32da909359c311bbf0327a25d104a6133239345f78a7639a0e9b04a460"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/SOURCE.json",
+    "sha256": "fbdf50be43b03fc79b209ff0bc1c559b08f78d1721625cabe014301f3b3e07ac"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/pyproject.toml",
+    "sha256": "2a81425eba7ba2ec56b34ef5af7f334b4cf2c58fc5e38d674b14060b932d5254"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/__init__.py",
+    "sha256": "21d38bd57808d60011d569a0b8e4f933035ef4b81022e83d931eb707afe04fe9"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/actions/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/actions/connect.py",
+    "sha256": "9872371804e6a20434a6caa2cb105b136e681996844a7e6b6286ab72ca05b4d1"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/actions/conversations.py",
+    "sha256": "6b57971e049f71e135fb3f30a39f866374290ddd280887844d05e6460386a4a1"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/actions/jobs.py",
+    "sha256": "e8dfc9480d22b83cb55f16645d5f8c07f190158b6ecf6974a04a73f37b4ab0d3"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/actions/message.py",
+    "sha256": "e95d7d68676a78f8e1b8de31225d967786ee3be75a94193fd57ab23b6167d932"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/actions/notifications.py",
+    "sha256": "376c00c2c5fcdff7db94d0ba3751666a9392cb3de712990a5e80eab987c8f697"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/actions/page_admin.py",
+    "sha256": "d7680549c2dd6ca44f7554dbe4a3e16a7237845ed548fce4a73561f6371345ce"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/actions/posts.py",
+    "sha256": "f86dacdaad49f4eef88babe56b92cd3c4c425d304cd0e22a2fc6d0e5dda003a0"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/actions/profile.py",
+    "sha256": "1fecd09389423a166aee721e2a564c8e891b4bf511baeccf862c0b46ba66dd7d"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/actions/saved_jobs.py",
+    "sha256": "34dd20c0f285387ac77e74421b7aff63aa0036265ce9ec6659c711aab1336d90"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/actions/search.py",
+    "sha256": "c6763dc667d3267ff457c165bbf0a4f5430b813cdfd7cd3644f993916074cd12"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/actions/status.py",
+    "sha256": "04dbd20e85abe4c9748199b794cf63351c3b8d81dcde3a830fe97b6af7ceb6b3"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/api/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/api/client.py",
+    "sha256": "bb7d37845339ad8792fe9ee92668f0d8e129e290129eb630eab47b9ce80b28f8"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/api/messaging/__init__.py",
+    "sha256": "a5dba3eadb266b4212e4caac80fa7a624fcd72cf1a3abbc5401be4596e3163d5"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/api/messaging/conversations.py",
+    "sha256": "b30fbde90346af572fd7508dba84f3fa8b210754dc6f3ea787b42aa723d5e537"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/api/messaging/send.py",
+    "sha256": "6294d4863d2914c45d3d98b2353669b34264e0e9e4c2cecc9ce70fc168376fc6"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/api/messaging/utils.py",
+    "sha256": "8264c758fad9389dcc961895b532185d50ab430defa4cdbc6db414d5f696dbe2"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/api/voyager.py",
+    "sha256": "1a42993d8895e6c7fe94e6b2e8e4676606455ec4589a41a812b2617af1197caf"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/auth.py",
+    "sha256": "682eac7d90b95aa6a9038c9466a74843fefc4f1e6b2d32b5bf93c6cd3f641b7b"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/browser/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/browser/login.py",
+    "sha256": "2bb7f00b3075c865b529ae6000af692d8b2c009cf53e1f21347e38857c0d73ec"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/browser/nav.py",
+    "sha256": "415afe8e99f7a88487fc9473c3e84349ee607df583512d1120c39f39a22e9ce8"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/cli.py",
+    "sha256": "4e7b86e23c9a27bd5a9b6331add5f80d2f13eb2f4cc96f513e5923dcbf531148"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/conf.py",
+    "sha256": "09e0b9902a34a40b24e5e5f6bc489ef9e117dd84623d1b83c599b99239aae362"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/enums.py",
+    "sha256": "85136bd2f4a54e6fb0e81785f702cbb716e86f356acd7350b2608fb9a0964f36"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/exceptions.py",
+    "sha256": "408eda9cb08d528dde6cc6fa1901149381d7fa60fea493a451084f6dab6c9b87"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/launcher.py",
+    "sha256": "faaecef00bcc3185153e2d9a0e548d27c22641013ea3cd80d8a01db865f97e2c"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/page_state.py",
+    "sha256": "4b79bd618245fd85ecbf34ddd1e2e9701dfe15045a37a555c50dad704db89038"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/profile_locks.py",
+    "sha256": "b1077fc371a04b5fca9bbff0a8fa004ca81e8740e25cd08505661c80692c111c"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/session.py",
+    "sha256": "38c66f68481b65206952b1c32bf7c4c946f021c47b38ea110f52e1f1702c47df"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/setup/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/setup/self_profile.py",
+    "sha256": "c2a13dfe3833cec71c40ba96a667b86a6280acca3d40e32f40cbf4ab9ce15b6f"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/url_utils.py",
+    "sha256": "ad87f2585a8b7c796e24cbfb05fcd4aa533f544b96cc2f67d50aacc31297229f"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_cli_package/src/linkedin_cli/worker.py",
+    "sha256": "75904b5f05b5cd17e6662bcb92c99f22f8a0fd6e71180daba2e42e3987fca373"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/LICENSE",
+    "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/NOTICE",
+    "sha256": "9c0247f8ddcd9e4f1ee4bb91f7eec8f4a5ea0baaafbc2797f62a2e14dc960b93"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/__init__.py",
+    "sha256": "571e5f26f44fa05338fb28b69f25bf1d3ff952d2acf717ed9657d46d5f3606cb"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/activity_posts.py",
+    "sha256": "0f9aba0fb96c8ecb2f1ebf8037b9b2545c068badc6bd56e347a64c0748878a64"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/assets.py",
+    "sha256": "6ba7923c25c873a32b82acd77018865217ede734447d3766699166c5f0ce73df"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/browser.py",
+    "sha256": "55d65687cd81a1ef183e70f15b5bec0c751de7f6549d2cb795b80dc1605be83e"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/cli.py",
+    "sha256": "e35e4a93316552e9ca04271d6305a8d3190e7b0565ca575242739466944edbe6"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/collector.py",
+    "sha256": "486936dc013d3502e550a93d4db6276cf917452196b0c0d9227bc75fcd267f5f"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/connections.py",
+    "sha256": "b1ebd4ad650117d9450866fff2f7f1b7b9e1e6d8fd4b812f0a0f5ca252529c25"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/crm_targets.py",
+    "sha256": "4653f7204979023c60ee48089b44cab21b74b401419193aa93d96b605b8fc0db"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/messaging.py",
+    "sha256": "4b7835db141fe5068181119ae9818bd75221b53d2b47bb19601525f4ef4d3808"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/models.py",
+    "sha256": "d5bbd23fb4b23eca27df3c28461792a4882a944d34b615b9f099d90d934f2274"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/mutuals.py",
+    "sha256": "36c66997f1d1c1e7f4262102cae7f08ab287957ac523aeb11ee9f10f3b22501c"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/profile_media.py",
+    "sha256": "1990169a196539ddea12fa92aaf531e440139475d9936c3bfc8e0dbd7ba89528"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/scrapers.py",
+    "sha256": "cb41fb14295452da49deca0ed890e4e8abfa3eadecf5f17d93fa335876ace5d4"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/storage.py",
+    "sha256": "eacba1140501bfce6f4fb4c1749deb8b6ebb36dd0bd14503eb01794635a44105"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/target_sources.py",
+    "sha256": "2e7a7d94b354db5d6b6b936002c1c16c02d08b40695ed4133c985a6d0182875b"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/collectors/vendor/linkedin_enrichment/voyager.py",
+    "sha256": "b79f340af642d2a1124d0c8709933344d8225464d31b1d4dea7f1cacb8e658c2"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/patches/chatlog/LICENSE",
+    "sha256": "6d4c8a593fc6feae9caad0e2de1338f6f0ca819ce1693813e34b39e1331e930f"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/patches/chatlog/README.md",
+    "sha256": "23129485f2c37f340b4b3f211cd47bc0a02a5316191136be5478a1b0b80d3371"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/patches/chatlog/build.sh",
+    "sha256": "300d85670cfe9603b9f297d0b125b3a37576c7de57518c6e9d0b30b7b05b9c0e"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/patches/chatlog/desktop.patch",
+    "sha256": "ccdeb40f9efed06a80c6c7a9ff77109d5bf984ca6e74a0f5f3d9f074fee7e069"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/patches/chatlog/source.json",
+    "sha256": "c3f78b69ad16f2ef3e13a65d1161c67728d92621fe6825fd6962c5662d498621"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-desktop-public",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+    "path": "apps/desktop/patches/chatlog/validation.json",
+    "sha256": "3ab6dca4a9aac2e4b23d737a15fa4e387e937156942bae4eda21774256e4e202"
+  }
+]

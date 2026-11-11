@@ -1,0 +1,9 @@
+/target/
+node_modules/
+dist/
+.next/
+.env
+.local-validation/
+*.log
+.DS_Store
+__pycache__/

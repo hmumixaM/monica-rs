@@ -1,0 +1,1003 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/digests",
+    "source": "services/api/app/ai/digest.py",
+    "handler": "list_digests",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/digests/{week_start}",
+    "source": "services/api/app/ai/digest.py",
+    "handler": "get_digest",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ai/weekly-people",
+    "source": "services/api/app/ai/person_weekly.py",
+    "handler": "weekly_people",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ai/weekly-highlights",
+    "source": "services/api/app/ai/person_weekly.py",
+    "handler": "highlights",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ai/profiles/{profile_id}",
+    "source": "services/api/app/ai/profiles.py",
+    "handler": "profile_ai",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ai/profiles/{profile_id}/refresh",
+    "source": "services/api/app/ai/profiles.py",
+    "handler": "refresh_profile",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ai/suggestions",
+    "source": "services/api/app/ai/profiles.py",
+    "handler": "list_suggestions",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ai/suggestions/{profile_id}/{key}",
+    "source": "services/api/app/ai/profiles.py",
+    "handler": "decide",
+    "status": "pending"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/ai/suggestions/{profile_id}/{key}",
+    "source": "services/api/app/ai/profiles.py",
+    "handler": "undo_ignore",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/reconnect",
+    "source": "services/api/app/ai/reconnect.py",
+    "handler": "list_reconnect",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reconnect/{profile_id}",
+    "source": "services/api/app/ai/reconnect.py",
+    "handler": "act_on_reconnect",
+    "status": "pending"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/reconnect/{profile_id}",
+    "source": "services/api/app/ai/reconnect.py",
+    "handler": "undo_reconnect",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ai/status",
+    "source": "services/api/app/ai/router.py",
+    "handler": "ai_status",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ai/jobs/{job_type}",
+    "source": "services/api/app/ai/router.py",
+    "handler": "run_now",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/jobs/status",
+    "source": "services/api/app/ai/router.py",
+    "handler": "task_status",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/ai/image-ocr",
+    "source": "services/api/app/ai/router.py",
+    "handler": "update_image_ocr",
+    "status": "pending"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/communities/{community_id}/name",
+    "source": "services/api/app/community_names.py",
+    "handler": "rename_community",
+    "status": "pending"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/communities/{community_id}/name",
+    "source": "services/api/app/community_names.py",
+    "handler": "reset_community_name",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/insights/calendar",
+    "source": "services/api/app/contact_calendar.py",
+    "handler": "contact_calendar",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/insights/calendar/day",
+    "source": "services/api/app/contact_calendar.py",
+    "handler": "contact_calendar_day",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/directory",
+    "source": "services/api/app/directory.py",
+    "handler": "directory_snapshot",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/directory/posts",
+    "source": "services/api/app/directory.py",
+    "handler": "directory_posts",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/work",
+    "source": "services/api/app/faces/device.py",
+    "handler": "work",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/media",
+    "source": "services/api/app/faces/device.py",
+    "handler": "media",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/anchors",
+    "source": "services/api/app/faces/device.py",
+    "handler": "anchors",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/batch",
+    "source": "services/api/app/faces/device.py",
+    "handler": "batch",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/people/{profile_id}/photos/status",
+    "source": "services/api/app/faces/photos.py",
+    "handler": "status",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/people/{profile_id}/photos",
+    "source": "services/api/app/faces/photos.py",
+    "handler": "photos",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/media/{media_id}/reading",
+    "source": "services/api/app/faces/photos.py",
+    "handler": "reading",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/summary",
+    "source": "services/api/app/faces/review.py",
+    "handler": "summary",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/groups",
+    "source": "services/api/app/faces/review.py",
+    "handler": "groups",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/decide",
+    "source": "services/api/app/faces/review.py",
+    "handler": "decide",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/restore",
+    "source": "services/api/app/faces/review.py",
+    "handler": "restore",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/in-media",
+    "source": "services/api/app/faces/review.py",
+    "handler": "in_media",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/people/{profile_id}",
+    "source": "services/api/app/faces/review.py",
+    "handler": "appearances",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/home",
+    "source": "services/api/app/home.py",
+    "handler": "home",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/insights",
+    "source": "services/api/app/insights.py",
+    "handler": "insights",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}/linkedin-targets",
+    "source": "services/api/app/linkedin_collection.py",
+    "handler": "profile_targets",
+    "status": "pending"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/profiles/{profile_id}/linkedin-targets",
+    "source": "services/api/app/linkedin_collection.py",
+    "handler": "save_target",
+    "status": "pending"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/profiles/{profile_id}/linkedin-targets/{aid}",
+    "source": "services/api/app/linkedin_collection.py",
+    "handler": "remove_target",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/linkedin/collection-targets",
+    "source": "services/api/app/linkedin_collection.py",
+    "handler": "collector_targets",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/health",
+    "source": "services/api/app/main.py",
+    "handler": "health",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/health",
+    "source": "services/api/app/main.py",
+    "handler": "health",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ready",
+    "source": "services/api/app/main.py",
+    "handler": "ready",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles",
+    "source": "services/api/app/main.py",
+    "handler": "profiles",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/profiles",
+    "source": "services/api/app/main.py",
+    "handler": "create_profile_endpoint",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}",
+    "source": "services/api/app/main.py",
+    "handler": "profile",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/identities",
+    "source": "services/api/app/main.py",
+    "handler": "import_identity",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/profiles/{profile_id}/fields",
+    "source": "services/api/app/main.py",
+    "handler": "edit_field",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}/history",
+    "source": "services/api/app/main.py",
+    "handler": "field_history",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}/structured-history",
+    "source": "services/api/app/main.py",
+    "handler": "structured_history",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}/metrics",
+    "source": "services/api/app/main.py",
+    "handler": "profile_metrics",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/profiles/{profile_id}/history/{revision_id}/restore",
+    "source": "services/api/app/main.py",
+    "handler": "restore_field_revision",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/profiles/{profile_id}/identities",
+    "source": "services/api/app/main.py",
+    "handler": "add_identity",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/source-accounts",
+    "source": "services/api/app/main.py",
+    "handler": "source_accounts",
+    "status": "pending"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/source-accounts/{account_id}/link",
+    "source": "services/api/app/main.py",
+    "handler": "link_source_account",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/link-review",
+    "source": "services/api/app/main.py",
+    "handler": "link_review",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/link-review/linked",
+    "source": "services/api/app/main.py",
+    "handler": "link_review_linked",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/link-review/batch",
+    "source": "services/api/app/main.py",
+    "handler": "apply_platform_link_batch",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/link-review/contacts",
+    "source": "services/api/app/main.py",
+    "handler": "search_link_contacts",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/link-review/confirm",
+    "source": "services/api/app/main.py",
+    "handler": "confirm_platform_link",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/link-review/reject",
+    "source": "services/api/app/main.py",
+    "handler": "reject_platform_link",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/link-review/skip",
+    "source": "services/api/app/main.py",
+    "handler": "skip_platform_link",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/identity-candidates",
+    "source": "services/api/app/main.py",
+    "handler": "identity_candidates",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/identity-candidates",
+    "source": "services/api/app/main.py",
+    "handler": "create_identity_candidate",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/identity-candidates/{candidate_id}/accept",
+    "source": "services/api/app/main.py",
+    "handler": "accept_identity_candidate",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/identity-candidates/{candidate_id}/reject",
+    "source": "services/api/app/main.py",
+    "handler": "reject_identity_candidate",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}/relationships",
+    "source": "services/api/app/main.py",
+    "handler": "profile_relationships",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/profiles/{profile_id}/relationships",
+    "source": "services/api/app/main.py",
+    "handler": "create_relationship",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/tags",
+    "source": "services/api/app/main.py",
+    "handler": "create_tag",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/tags",
+    "source": "services/api/app/main.py",
+    "handler": "list_tags",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/profiles/{profile_id}/tags/{tag_id}",
+    "source": "services/api/app/main.py",
+    "handler": "attach_tag",
+    "status": "pending"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/profiles/{profile_id}/tags/{tag_id}",
+    "source": "services/api/app/main.py",
+    "handler": "detach_tag",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/activities",
+    "source": "services/api/app/main.py",
+    "handler": "create_activity",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/activities",
+    "source": "services/api/app/main.py",
+    "handler": "list_activities",
+    "status": "pending"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/activities/{activity_id}/state",
+    "source": "services/api/app/main.py",
+    "handler": "set_activity_state",
+    "status": "pending"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/activities/{activity_id}",
+    "source": "services/api/app/main.py",
+    "handler": "edit_activity",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/groups/{group_id}/members",
+    "source": "services/api/app/main.py",
+    "handler": "add_group_member",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/groups/{group_id}/members",
+    "source": "services/api/app/main.py",
+    "handler": "group_members",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/search",
+    "source": "services/api/app/main.py",
+    "handler": "search",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/metrics/summary",
+    "source": "services/api/app/main.py",
+    "handler": "metrics_summary",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/relationships",
+    "source": "services/api/app/main.py",
+    "handler": "relationships",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/relationships/graph",
+    "source": "services/api/app/main.py",
+    "handler": "relationship_graph",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/metrics/snapshots",
+    "source": "services/api/app/main.py",
+    "handler": "metric_snapshots",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/metrics/people-overview",
+    "source": "services/api/app/main.py",
+    "handler": "people_overview",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}/moments-circle",
+    "source": "services/api/app/main.py",
+    "handler": "profile_moments_circle",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/metrics/social",
+    "source": "services/api/app/main.py",
+    "handler": "social_statistics",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/insights/orbit",
+    "source": "services/api/app/orbit.py",
+    "handler": "orbit",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}/overview",
+    "source": "services/api/app/overview.py",
+    "handler": "profile_overview",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/media/{media_id}/preview",
+    "source": "services/api/app/photo_preview.py",
+    "handler": "preview",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/archived-profiles",
+    "source": "services/api/app/profile_retirement.py",
+    "handler": "archived_profiles",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/profiles/{profile_id}/restore",
+    "source": "services/api/app/profile_retirement.py",
+    "handler": "restore_profile",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}/summary",
+    "source": "services/api/app/profile_summary.py",
+    "handler": "summary",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}/ribbon",
+    "source": "services/api/app/ribbon.py",
+    "handler": "ribbon",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/bootstrap",
+    "source": "services/api/app/routers/auth.py",
+    "handler": "bootstrap",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/csrf",
+    "source": "services/api/app/routers/auth.py",
+    "handler": "csrf_token",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/login",
+    "source": "services/api/app/routers/auth.py",
+    "handler": "login",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/totp/setup",
+    "source": "services/api/app/routers/auth.py",
+    "handler": "totp_setup",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/totp/verify",
+    "source": "services/api/app/routers/auth.py",
+    "handler": "totp_verify",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/totp/status",
+    "source": "services/api/app/routers/auth.py",
+    "handler": "totp_status",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/logout",
+    "source": "services/api/app/routers/auth.py",
+    "handler": "logout",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/me",
+    "source": "services/api/app/routers/auth.py",
+    "handler": "me",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/sessions",
+    "source": "services/api/app/routers/auth.py",
+    "handler": "sessions",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/sessions/{session_id}/revoke",
+    "source": "services/api/app/routers/auth.py",
+    "handler": "revoke_session",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/audit/events",
+    "source": "services/api/app/routers/auth.py",
+    "handler": "audit_events",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}/group-speech",
+    "source": "services/api/app/routers/chatlog_proxy.py",
+    "handler": "profile_group_speech",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/imports/batches",
+    "source": "services/api/app/routers/imports_api.py",
+    "handler": "import_batch",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/imports/batches",
+    "source": "services/api/app/routers/imports_api.py",
+    "handler": "imports",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/imports/reconciliation",
+    "source": "services/api/app/routers/imports_api.py",
+    "handler": "import_reconciliation",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/imports/tokens",
+    "source": "services/api/app/routers/imports_api.py",
+    "handler": "create_import_service_token",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/imports/tokens",
+    "source": "services/api/app/routers/imports_api.py",
+    "handler": "list_import_service_tokens",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/imports/tokens/{token_id}/revoke",
+    "source": "services/api/app/routers/imports_api.py",
+    "handler": "revoke_import_service_token",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/imports/batches/{batch_id}",
+    "source": "services/api/app/routers/imports_api.py",
+    "handler": "import_batch_detail",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/imports/batches/{batch_id}/replay",
+    "source": "services/api/app/routers/imports_api.py",
+    "handler": "replay_import_batch",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/imports/cursors",
+    "source": "services/api/app/routers/imports_api.py",
+    "handler": "import_cursors",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/imports/jobs",
+    "source": "services/api/app/routers/imports_api.py",
+    "handler": "import_jobs",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/imports/events",
+    "source": "services/api/app/routers/imports_api.py",
+    "handler": "import_events",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}/locations",
+    "source": "services/api/app/routers/locations.py",
+    "handler": "profile_locations",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/metrics/locations",
+    "source": "services/api/app/routers/locations.py",
+    "handler": "location_metrics",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/imports/media/initiate",
+    "source": "services/api/app/routers/media.py",
+    "handler": "initiate_media_upload",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/imports/media/{upload_id}",
+    "source": "services/api/app/routers/media.py",
+    "handler": "media_upload_status",
+    "status": "pending"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/imports/media/{upload_id}/chunks/{chunk}",
+    "source": "services/api/app/routers/media.py",
+    "handler": "upload_media_chunk",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/imports/media/{upload_id}/complete",
+    "source": "services/api/app/routers/media.py",
+    "handler": "complete_media_upload",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}/photos",
+    "source": "services/api/app/routers/media.py",
+    "handler": "profile_photos",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/profiles/{profile_id}/photos",
+    "source": "services/api/app/routers/media.py",
+    "handler": "attach_profile_photos",
+    "status": "pending"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/profiles/{profile_id}/photos/{media_id}",
+    "source": "services/api/app/routers/media.py",
+    "handler": "remove_profile_photo",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/media",
+    "source": "services/api/app/routers/media.py",
+    "handler": "upload_media",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/media/{media_id}",
+    "source": "services/api/app/routers/media.py",
+    "handler": "download_media",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/media/{media_id}/ocr",
+    "source": "services/api/app/routers/media.py",
+    "handler": "image_ocr_result",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}/contact-events/summary",
+    "source": "services/api/app/routers/messages.py",
+    "handler": "contact_event_summary",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}/contact-events",
+    "source": "services/api/app/routers/messages.py",
+    "handler": "contact_event_records",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}/chat-months",
+    "source": "services/api/app/routers/messages.py",
+    "handler": "profile_chat_months",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profiles/{profile_id}/messages",
+    "source": "services/api/app/routers/messages.py",
+    "handler": "profile_messages",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/conversations",
+    "source": "services/api/app/routers/messages.py",
+    "handler": "list_conversations",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/conversations/{conversation_id}/messages",
+    "source": "services/api/app/routers/messages.py",
+    "handler": "conversation_messages",
+    "status": "pending"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/profiles/{profile_id}/dates",
+    "source": "services/api/app/routers/profile_dates.py",
+    "handler": "add_significant_date",
+    "status": "pending"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/profiles/{profile_id}/dates/{date_id}",
+    "source": "services/api/app/routers/profile_dates.py",
+    "handler": "edit_significant_date",
+    "status": "pending"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/profiles/{profile_id}/dates/{date_id}",
+    "source": "services/api/app/routers/profile_dates.py",
+    "handler": "remove_significant_date",
+    "status": "pending"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/profiles/{profile_id}/details",
+    "source": "services/api/app/routers/profile_details.py",
+    "handler": "save_detail",
+    "status": "pending"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/profiles/{profile_id}/details",
+    "source": "services/api/app/routers/profile_details.py",
+    "handler": "remove_details",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/timeline/summary",
+    "source": "services/api/app/routers/timeline.py",
+    "handler": "timeline_summary",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/timeline/{event_id}",
+    "source": "services/api/app/routers/timeline.py",
+    "handler": "timeline_detail",
+    "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/timeline",
+    "source": "services/api/app/routers/timeline.py",
+    "handler": "timeline",
+    "status": "pending"
+  }
+]
