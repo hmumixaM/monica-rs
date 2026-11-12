@@ -7,6 +7,7 @@ fn record(provider: Provider, object: &str, event: &str, value: &str) -> Record 
         provider,
         account: "fixture-account".into(),
         object: object.into(),
+        kind: "post".into(),
         event: event.into(),
         payload: json!({"text":value}),
     }
@@ -47,13 +48,54 @@ async fn replay_and_revisions(pool: PgPool) {
         count += 1;
     }
     assert_eq!(count, 9);
-    let count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM crm.projections WHERE version=3 AND payload->>'text'='A'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(count, 3);
+    for provider in [Provider::Wechat, Provider::Instagram, Provider::Linkedin] {
+        let schema = provider.schema();
+        let count: i64 = sqlx::query_scalar(&format!(
+            "SELECT count(*) FROM crm.projections p JOIN {schema}.revisions r ON r.object_id=p.object_id AND r.version=p.version JOIN {schema}.payloads v ON v.hash=r.hash WHERE p.provider=$1 AND p.version=3 AND v.value->>'text'='A'"
+        ))
+        .bind(schema)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 1, "{schema} must retain its own latest A revision");
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn canonical_identity_and_object_kinds(pool: PgPool) {
+    let mut post = record(Provider::Wechat, "same-external", "first", "A");
+    post.payload = serde_json::from_str(r#"{"z":"a\u0000b","a":1.0}"#).unwrap();
+    assert_eq!(ingest(&pool, &post).await.unwrap(), 1);
+    let id = object_id(&post).unwrap();
+    let stored: serde_json::Value =
+        sqlx::query_scalar("SELECT p.value FROM wechat.revisions r JOIN wechat.payloads p ON p.hash=r.hash WHERE r.object_id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored["z"], "ab");
+    post.event = "same-canonical-content".into();
+    post.payload = serde_json::from_str(r#"{"a":1.0,"z":"ab"}"#).unwrap();
+    assert_eq!(ingest(&pool, &post).await.unwrap(), 1);
+    let mut story = post;
+    story.kind = "story".into();
+    assert_ne!(object_id(&story).unwrap(), id);
+    assert_eq!(ingest(&pool, &story).await.unwrap(), 1);
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM wechat.objects")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 2);
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM wechat.accounts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 1);
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM crm.jobs")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 2);
 }
 
 #[sqlx::test(migrations = "../../migrations")]

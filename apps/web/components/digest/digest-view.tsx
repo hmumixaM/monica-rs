@@ -138,7 +138,7 @@ export function DigestView() {
 
   if (list.isError && !showingPeople) return <Page><Failure onRetry={() => void list.refetch()}>暂时读不到每周回顾。</Failure></Page>;
   if (!list.data && !showingPeople) return <Page><Skeleton height={480} /></Page>;
-  if (list.data?.enabled === false || peoplePage?.enabled === false) return <Page><EmptyState title="模型功能未开启">在 NAS 的 .env 里设置 AI_ENABLED=true 后，每周一早上 8 点会生成上周回顾。</EmptyState></Page>;
+  if (list.data?.enabled === false || peoplePage?.enabled === false) return <Page><EmptyState title="模型功能未开启">在设置中启用模型服务后，每周一早上 8 点会生成上周回顾。</EmptyState></Page>;
 
   return <Page className={styles.page}>
     <PageHeader title="每周回顾" description={selectedWeek ? weekRange(selectedWeek) : "每周一早上 8 点生成"} actions={<>

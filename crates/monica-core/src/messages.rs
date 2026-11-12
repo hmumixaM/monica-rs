@@ -39,7 +39,7 @@ pub struct Message {
 }
 
 /// A conflicting stable identity is rejected, never silently treated as an edit.
-/// Corrections must use a separate audited revision path (not yet exposed).
+/// Corrections use the separate audited imports::correct_message revision path.
 pub async fn append(pool: &PgPool, provider: Provider, records: &[Message]) -> Result<u64> {
     if records.is_empty() {
         return Ok(0);
@@ -81,8 +81,6 @@ pub async fn append(pool: &PgPool, provider: Provider, records: &[Message]) -> R
     if encoded.len() > MAX_BYTES {
         bail!("encoded message batch exceeds byte limit");
     }
-    let input: serde_json::Value = serde_json::from_slice(&encoded)?;
-    let schema = provider.schema();
     let mut tx = pool.begin().await?;
     sqlx::query("SET LOCAL statement_timeout='10s'")
         .execute(&mut *tx)
@@ -90,49 +88,9 @@ pub async fn append(pool: &PgPool, provider: Provider, records: &[Message]) -> R
     sqlx::query("SET LOCAL lock_timeout='2s'")
         .execute(&mut *tx)
         .await?;
-    // One set-based statement, independent of record count. Only actually inserted
-    // facts contribute deltas; deterministic ordering avoids reversed-batch locks.
-    let inserted:i64=sqlx::query_scalar(&format!(r#"
-      WITH input AS (SELECT * FROM jsonb_to_recordset($1) AS x(
-        account text,conversation text,external_id text,sent_at_ms bigint,sender text,body text)),
-      added AS (INSERT INTO {schema}.messages SELECT * FROM input
-        ORDER BY account,conversation,external_id ON CONFLICT DO NOTHING RETURNING *),
-      counts AS (SELECT account,conversation,count(*) AS n FROM added GROUP BY account,conversation),
-      latest AS (SELECT DISTINCT ON(account,conversation) account,conversation,sent_at_ms,external_id,left(body,80) AS preview
-        FROM added ORDER BY account,conversation,sent_at_ms DESC,external_id DESC),
-      state AS (INSERT INTO crm.conversation_state AS current
-        SELECT $2,c.account,c.conversation,c.n,l.sent_at_ms,l.external_id,l.preview,1
-        FROM counts c JOIN latest l USING(account,conversation) ORDER BY c.account,c.conversation
-        ON CONFLICT(provider,account,conversation) DO UPDATE SET
-          message_count=current.message_count+excluded.message_count,
-          last_at_ms=greatest(current.last_at_ms,excluded.last_at_ms),
-          last_id=CASE WHEN (excluded.last_at_ms,excluded.last_id)>(current.last_at_ms,current.last_id) THEN excluded.last_id ELSE current.last_id END,
-          preview=CASE WHEN (excluded.last_at_ms,excluded.last_id)>(current.last_at_ms,current.last_id) THEN excluded.preview ELSE current.preview END,
-          generation=current.generation+1 RETURNING *),
-      scheduled AS (INSERT INTO crm.conversation_work AS work(provider,account,conversation,requested)
-        SELECT provider,account,conversation,generation FROM state ORDER BY provider,account,conversation
-        ON CONFLICT(provider,account,conversation) DO UPDATE SET requested=excluded.requested
-        RETURNING 1)
-      SELECT count(*) FROM added
-    "#)).bind(&input).bind(schema).fetch_one(&mut *tx).await?;
-    // Separate READ COMMITTED statement sees rows committed while ON CONFLICT waited.
-    // A mismatch aborts this batch, including any newly inserted facts and counters.
-    let conflict: bool = sqlx::query_scalar(&format!(
-        r#"
-      SELECT EXISTS(SELECT 1 FROM jsonb_to_recordset($1) AS x(
-       account text,conversation text,external_id text,sent_at_ms bigint,sender text,body text)
-       JOIN {schema}.messages m USING(account,conversation,external_id)
-       WHERE (m.sent_at_ms,m.sender,m.body) IS DISTINCT FROM (x.sent_at_ms,x.sender,x.body))
-    "#
-    ))
-    .bind(input)
-    .fetch_one(&mut *tx)
-    .await?;
-    if conflict {
-        bail!("message identity conflicts with saved fact; use correction path");
-    }
+    let inserted = crate::imports::append_messages(&mut tx, provider, records).await?;
     tx.commit().await?;
-    Ok(inserted as u64)
+    Ok(inserted)
 }
 
 #[derive(Debug)]

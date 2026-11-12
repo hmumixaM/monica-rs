@@ -1762,5 +1762,491 @@
     "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
     "path": "apps/desktop/patches/chatlog/validation.json",
     "sha256": "3ab6dca4a9aac2e4b23d737a15fa4e387e937156942bae4eda21774256e4e202"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/app/ask/page.tsx",
+    "sha256": "d5989124df4bdd062c4423cc0c1ad125d6d5b334d19fdefaa5fc42c9e1bf10a3",
+    "target": "apps/web/app/ask/page.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/app/sources/page.tsx",
+    "sha256": "df14b6cc31e9946e2a5366d6f128d925c580543546357ba2f2b4a58a38184647",
+    "target": "apps/web/app/sources/page.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/app/evidence/[id]/page.tsx",
+    "sha256": "801c5accd2b30951c93ddd3eb8670bac590f026697665410225e5593a1e49340",
+    "target": "apps/web/app/evidence/[id]/page.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/ask/ask-view.tsx",
+    "sha256": "e6fc405ab391032972ea5c3b7fc302db8d8d5e6682f01e5481e89e57d36736df",
+    "target": "apps/web/components/ask/ask-view.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/ask/ask.module.css",
+    "sha256": "c62b9182efff14aa8c134a7ba7387bc8e4da77db94a635a6a0eeeb71984f2858",
+    "target": "apps/web/components/ask/ask.module.css",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/imports/history-changes.tsx",
+    "sha256": "61741e76b7bc79e5b96afd77961fc7f44cdc7c9a92a3a7843443886777524780",
+    "target": "apps/web/components/imports/history-changes.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/profile/evidence-timeline.tsx",
+    "sha256": "fc654399ef66fd6312fc35059543060461e55e8d1bdf97c19cefce966cc82184",
+    "target": "apps/web/components/profile/evidence-timeline.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/profile/source-coverage.tsx",
+    "sha256": "5a57e0976e4963bfc935895bffe2644704e7640a38ef50a38232b0559a6e9c19",
+    "target": "apps/web/components/profile/source-coverage.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/sources/sources-view.tsx",
+    "sha256": "23db6490dde36af278ec6c6e3ccc451b20821751c720260330d0251be467c1ed",
+    "target": "apps/web/components/sources/sources-view.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application. Rust UI promotes mail to a first-class Sources card and desktop/mobile primary navigation; explicit per-provider accounts, progress, rules and WhatsApp QR controls."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/sources/sources.module.css",
+    "sha256": "a7b46c4a927001b4c20a7f4269f24ada5c8e6e74b318a99f028e1a157c785ef6",
+    "target": "apps/web/components/sources/sources.module.css",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application. Rust UI promotes mail to a first-class Sources card and desktop/mobile primary navigation; explicit per-provider accounts, progress, rules and WhatsApp QR controls."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/ui/virtual-list.tsx",
+    "sha256": "3cda63c4c9bbf8af1b5e8fedc1c19bede17ae5d482cd4c2e9f6e78233ce99539",
+    "target": "apps/web/components/ui/virtual-list.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/lib/agent/runtime.ts",
+    "sha256": "4a8a5810277be6d0915021b04f84daf653f731cc465b2bc8ec95913116e0d104",
+    "target": "apps/web/lib/agent/runtime.ts",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/lib/agent/sessions.ts",
+    "sha256": "3f134bfffb57de748785a4414ec5639584efd2185a7c2c5e9b6206fb6f687da2",
+    "target": "apps/web/lib/agent/sessions.ts",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/feed/event-dialog.tsx",
+    "sha256": "2de25c9c3bd70a5887bcd5397e5faf8746ddb2a3e652f361d87353a4c9febc0d",
+    "target": "apps/web/components/feed/event-dialog.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/feed/masonry.tsx",
+    "sha256": "798513fa121180094fb923ba024548388c6b2cab5a9364c0c4a3f0c6fa6a94be",
+    "target": "apps/web/components/feed/masonry.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/feed/social-feed.tsx",
+    "sha256": "1cc8376b85cd5f81480abd3b9aea08791907fd09ec438203133480a34ed60ecc",
+    "target": "apps/web/components/feed/social-feed.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/imports/imports-view.tsx",
+    "sha256": "11351e4a5c8fb0488ff2418bc5829a59aab077f31800ad0708745b26c1b2deba",
+    "target": "apps/web/components/imports/imports-view.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/imports/imports.module.css",
+    "sha256": "44fe1906abf0631b7016289e3826b2d605f27596007336ba57682e15672d14c5",
+    "target": "apps/web/components/imports/imports.module.css",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/login/login-form.tsx",
+    "sha256": "b79b0fb9af57c19a0230f3ff1f286f81e64e560f35ad6d2782fd6679e1dcadf4",
+    "target": "apps/web/components/login/login-form.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/messages/conversation.tsx",
+    "sha256": "337fd4a201f4c3c9c13e49bbe6bbb1b2016c3a97afab55bfc29bb120cde6b74f",
+    "target": "apps/web/components/messages/conversation.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/profile/profile-page.tsx",
+    "sha256": "d416490da5c4191c85eb886b49f17590584154fb11df65a7df4e20ce91a7a82d",
+    "target": "apps/web/components/profile/profile-page.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/settings/ai-status.tsx",
+    "sha256": "8c78ca923b9ce702726bb3c0c6d91678123c6a01ff2aecb6a4479ab2c4acafee",
+    "target": "apps/web/components/settings/ai-status.tsx",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/components/shell/nav.ts",
+    "sha256": "369ce8a68a2c35c06ebc2e64c93ded86e6c9cdceccaea2cf3ae51fd5ee8852f3",
+    "target": "apps/web/components/shell/nav.ts",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application. Rust UI promotes mail to a first-class Sources card and desktop/mobile primary navigation; explicit per-provider accounts, progress, rules and WhatsApp QR controls."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/lib/ai.ts",
+    "sha256": "e5f990336461e47caf1c19645e2c27df7a4ee5f006c1f0443c0e6b99bc59b4c1",
+    "target": "apps/web/lib/ai.ts",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/lib/search-engine.ts",
+    "sha256": "549bc2188e63d9aa543db9d1f13df23f5676abb7585d3a9e44f3f6b9c98ed1b1",
+    "target": "apps/web/lib/search-engine.ts",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/web/package.json",
+    "sha256": "f7acd52f64b10e958fd9df200c71a2e0b717f31844e5c44648179a630fdf6c38",
+    "target": "apps/web/package.json",
+    "adaptation": "Preserved Vite and React Router; replaced Next imports/dynamic routes; retained offline map worker and independent Rust application."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/desktop/src-tauri/native/contacts.m",
+    "sha256": "eacc70a1eddc54d2864dbeaab87dc4ce87847c791088458682860e07599a86b2",
+    "target": "apps/native-desktop/src-tauri/native/contacts.m",
+    "adaptation": "Independent Tauri app; Rust 2024 FFI, explicit opt-in, synthetic test guard, durable token-only HTTP ACK and bounded snapshot pages."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/desktop/src-tauri/native/messages.m",
+    "sha256": "8054fb83af3dbf0f55ee57fe53a06980cacba7cc34390512c712a486c639ae55",
+    "target": "apps/native-desktop/src-tauri/native/messages.m",
+    "adaptation": "Independent Tauri app; Rust 2024 FFI, explicit opt-in, synthetic test guard, durable token-only HTTP ACK and bounded snapshot pages."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/desktop/src-tauri/src/native_sources.rs",
+    "sha256": "cf37325ffaed1e9d20557f53bf36458ea12cbf0d43980f440214c9565eec225e",
+    "target": "apps/native-desktop/src-tauri/src/native_sources.rs",
+    "adaptation": "Independent Tauri app; Rust 2024 FFI, explicit opt-in, synthetic test guard, durable token-only HTTP ACK and bounded snapshot pages."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/desktop/src-tauri/Info.plist",
+    "sha256": "3fc5605419c3b76381e686ce006e0a2cbec1c989a57ef656c0ad322dc821b48c",
+    "target": "apps/native-desktop/src-tauri/Info.plist",
+    "adaptation": "Independent Tauri app; Rust 2024 FFI, explicit opt-in, synthetic test guard, durable token-only HTTP ACK and bounded snapshot pages."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/desktop/src-tauri/build.rs",
+    "sha256": "2b156ee8b7a58da9e1686f103b7ef69bc041845f2393310a3a5399ceceef4f9f",
+    "target": "apps/native-desktop/src-tauri/build.rs",
+    "adaptation": "Independent Tauri app; Rust 2024 FFI, explicit opt-in, synthetic test guard, durable token-only HTTP ACK and bounded snapshot pages."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/desktop/tests/test_native_messages.py",
+    "sha256": "4e5e0cfb2e2c67e6d3f8e17c696e93acf7dc33f2daff9b84603367a6cd599f60",
+    "target": "apps/native-desktop/tests/test_native_messages.py",
+    "adaptation": "Independent Tauri app; Rust 2024 FFI, explicit opt-in, synthetic test guard, durable token-only HTTP ACK and bounded snapshot pages."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "c0007f50f39e4c38f6dd7b0caef9cf64e1f5c75a",
+    "path": "apps/web/components/messages/messages-view.tsx",
+    "sha256": "9427230102b763b2539a974bb8040368e9257e4d712ce86695b0fe945dd25612",
+    "target": "apps/web/components/messages/messages-view.tsx",
+    "adaptation": "Pinned follow-up only: source label and unresolved conversation display; preserved Vite router and first-class Sources navigation."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "c0007f50f39e4c38f6dd7b0caef9cf64e1f5c75a",
+    "path": "apps/web/lib/api-types.ts",
+    "sha256": "9752a30b7b12eb6588cba2f5326eea655ecf8af68bcddb4426bb6f7e05849297",
+    "target": "apps/web/lib/api-types.ts",
+    "adaptation": "Pinned follow-up only: source label and unresolved conversation display; preserved Vite router and first-class Sources navigation."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "services/api/app/source_registry.py",
+    "sha256": "b3eb0f1a593b925cb64613b42c0e0e03d9bc39af70f5a01b35bd76377beccf49",
+    "target": "crates/monica-core/src/connections*.rs; migrations/0030,0035,0037; crates/monica-server/src/messages.rs",
+    "adaptation": "Single PostgreSQL database with seven source schemas; content-addressed immutable journals; atomic projection+ACK; set-based bounded new-message projection. Actual pinned Python differential retained."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "services/api/app/connection_store.py",
+    "sha256": "575de52e4162328ec30f2255102a5f82d76ec4d29917af0f1b7531679bf04cd6",
+    "target": "crates/monica-core/src/connections*.rs; migrations/0030,0035,0037; crates/monica-server/src/messages.rs",
+    "adaptation": "Single PostgreSQL database with seven source schemas; content-addressed immutable journals; atomic projection+ACK; set-based bounded new-message projection. Actual pinned Python differential retained."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "services/api/app/connection_schema.sql",
+    "sha256": "986754d83c13f588ecd63a578f131a6c98dc3f65bb8d7f68e914165b0b56ed0d",
+    "target": "crates/monica-core/src/connections*.rs; migrations/0030,0035,0037; crates/monica-server/src/messages.rs",
+    "adaptation": "Single PostgreSQL database with seven source schemas; content-addressed immutable journals; atomic projection+ACK; set-based bounded new-message projection. Actual pinned Python differential retained."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "services/api/app/connection_identity.py",
+    "sha256": "2f670e9af63a8d3f00bdd4d90b989cfaa5d60c57514eb942c0c3761c8877614f",
+    "target": "crates/monica-core/src/connections*.rs; migrations/0030,0035,0037; crates/monica-server/src/messages.rs",
+    "adaptation": "Single PostgreSQL database with seven source schemas; content-addressed immutable journals; atomic projection+ACK; set-based bounded new-message projection. Actual pinned Python differential retained."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "services/api/app/connection_projection.py",
+    "sha256": "c6a8292aab769288268fe0bfb1fb280d7234feace37712c107492dddfe37b66f",
+    "target": "crates/monica-core/src/connections*.rs; migrations/0030,0035,0037; crates/monica-server/src/messages.rs",
+    "adaptation": "Single PostgreSQL database with seven source schemas; content-addressed immutable journals; atomic projection+ACK; set-based bounded new-message projection. Actual pinned Python differential retained."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "services/api/app/project_messages.py",
+    "sha256": "ff74b9b515f32f4c5b3de6babc28a29364966185159bf2eda865807b7c5b095a",
+    "target": "crates/monica-core/src/connections*.rs; migrations/0030,0035,0037; crates/monica-server/src/messages.rs",
+    "adaptation": "Single PostgreSQL database with seven source schemas; content-addressed immutable journals; atomic projection+ACK; set-based bounded new-message projection. Actual pinned Python differential retained."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "migrations/077_source_connections.sql",
+    "sha256": "9690319861d472c05c88763deb2b3fe585f909c6e16249751b72356afdc6ba48",
+    "target": "crates/monica-core/src/connections*.rs; migrations/0030,0035,0037; crates/monica-server/src/messages.rs",
+    "adaptation": "Single PostgreSQL database with seven source schemas; content-addressed immutable journals; atomic projection+ACK; set-based bounded new-message projection. Actual pinned Python differential retained."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "migrations/079_connection_evidence.sql",
+    "sha256": "90e74f595d218b02e76e3b0673f4ebf9f1c0602dd23b812190cc271f3d24f558",
+    "target": "crates/monica-core/src/connections*.rs; migrations/0030,0035,0037; crates/monica-server/src/messages.rs",
+    "adaptation": "Single PostgreSQL database with seven source schemas; content-addressed immutable journals; atomic projection+ACK; set-based bounded new-message projection. Actual pinned Python differential retained."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "migrations/085_connection_wake.sql",
+    "sha256": "455756cf88db2e94ef584d2ef5e97dabfc722889be0dea3f57853af492aed0ab",
+    "target": "crates/monica-core/src/connections*.rs; migrations/0030,0035,0037; crates/monica-server/src/messages.rs",
+    "adaptation": "Single PostgreSQL database with seven source schemas; content-addressed immutable journals; atomic projection+ACK; set-based bounded new-message projection. Actual pinned Python differential retained."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "migrations/086_evidence_mail_copies.sql",
+    "sha256": "29b8957793f330fbab80dbde6e6a149d47f24ea95bea999f282705e5f1a11175",
+    "target": "crates/monica-core/src/connections*.rs; migrations/0030,0035,0037; crates/monica-server/src/messages.rs",
+    "adaptation": "Single PostgreSQL database with seven source schemas; content-addressed immutable journals; atomic projection+ACK; set-based bounded new-message projection. Actual pinned Python differential retained."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "migrations/087_connection_identities.sql",
+    "sha256": "12ece49f255ec3e3908d9ece814c3ad91b711d8474fdbeb30767e20f70b98249",
+    "target": "crates/monica-core/src/connections*.rs; migrations/0030,0035,0037; crates/monica-server/src/messages.rs",
+    "adaptation": "Single PostgreSQL database with seven source schemas; content-addressed immutable journals; atomic projection+ACK; set-based bounded new-message projection. Actual pinned Python differential retained."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "services/api/tests/test_connection_journal.py",
+    "sha256": "4c62d36435e4526d6a72d181fc7d8992d978b735157d9a93ac96ca739bdc0dfd",
+    "target": "crates/monica-core/src/connections*.rs; migrations/0030,0035,0037; crates/monica-server/src/messages.rs",
+    "adaptation": "Single PostgreSQL database with seven source schemas; content-addressed immutable journals; atomic projection+ACK; set-based bounded new-message projection. Actual pinned Python differential retained."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "c0007f50f39e4c38f6dd7b0caef9cf64e1f5c75a",
+    "path": "migrations/092_conversation_labels.sql",
+    "sha256": "ca7d6b0ee80368edb2665def8a182876cb2f64976659214979eb1dac98aab863",
+    "target": "crates/monica-core/src/connections*.rs; migrations/0030,0035,0037; crates/monica-server/src/messages.rs",
+    "adaptation": "Single PostgreSQL database with seven source schemas; content-addressed immutable journals; atomic projection+ACK; set-based bounded new-message projection. Actual pinned Python differential retained."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "c0007f50f39e4c38f6dd7b0caef9cf64e1f5c75a",
+    "path": "services/api/app/connection_projection.py",
+    "sha256": "f4219cf020216f289dc696d9d67288a348dabde00eb97472c993fc702258e626",
+    "target": "crates/monica-core/src/connections*.rs; migrations/0030,0035,0037; crates/monica-server/src/messages.rs",
+    "adaptation": "Single PostgreSQL database with seven source schemas; content-addressed immutable journals; atomic projection+ACK; set-based bounded new-message projection. Actual pinned Python differential retained."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "c0007f50f39e4c38f6dd7b0caef9cf64e1f5c75a",
+    "path": "services/api/app/routers/messages.py",
+    "sha256": "74866bc1aafe010b423df8499a3c8000e101bdde03650d9dae8cc4060f324512",
+    "target": "crates/monica-core/src/connections*.rs; migrations/0030,0035,0037; crates/monica-server/src/messages.rs",
+    "adaptation": "Single PostgreSQL database with seven source schemas; content-addressed immutable journals; atomic projection+ACK; set-based bounded new-message projection. Actual pinned Python differential retained."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "c0007f50f39e4c38f6dd7b0caef9cf64e1f5c75a",
+    "path": "services/api/tests/test_conversation_labels.py",
+    "sha256": "02edb8499d4cfa8a8d54e7076164d4621fccf6b935792cf0989db2725f3157b3",
+    "target": "crates/monica-core/src/connections*.rs; migrations/0030,0035,0037; crates/monica-server/src/messages.rs",
+    "adaptation": "Single PostgreSQL database with seven source schemas; content-addressed immutable journals; atomic projection+ACK; set-based bounded new-message projection. Actual pinned Python differential retained."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/desktop/collectors/collector.py",
+    "sha256": "036ad9a91a0237785b7edfe83e2df3cc1f3974cf47184f58df3b700ea8783aee",
+    "target": "apps/desktop/collectors/collector.py",
+    "adaptation": "Pinned independent LinkedIn message lane with authenticated session reuse; execution remains opt-in. Rust native login optionally preserves its owned process group so cancel/pause/quit can terminate all descendants."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/desktop/collectors/linkedin_messages.py",
+    "sha256": "f7f0f974e451689d41fcef38ce742d78e02c505513c941da16741fd6162b93e3",
+    "target": "apps/desktop/collectors/linkedin_messages.py",
+    "adaptation": "Pinned independent LinkedIn message lane with authenticated session reuse; execution remains opt-in."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "apps/desktop/collectors/tests/test_messages_adapter.py",
+    "sha256": "b2a36b0728a347980911337b38428037231a961cd69620b8a0564b59399f80b4",
+    "target": "apps/desktop/collectors/tests/test_messages_adapter.py",
+    "adaptation": "Pinned independent LinkedIn message lane with authenticated session reuse; execution remains opt-in."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "infra/snapshot_publish.py",
+    "sha256": "df369c6445c505c57fb645b3e4de4cb50576f82e2d600c0464411d170364954c",
+    "target": "runtime/collectors/infra/snapshot_publish.py",
+    "adaptation": "Pinned snapshot publisher bundled by macos-collectors.py; self-locating wrapper supplies MONICA_SNAPSHOT_PUBLISHER and isolates all output under native collector-data."
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "importers/monica/adapter.py",
+    "sha256": "a0ff6f010739a0d45db4195008d7777ca3a4638d92e2dbf9cc3b6e719d5429da"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "services/api/app/imports.py",
+    "sha256": "72d01adebbe5720cd92b2ad9aaba60be2554b223ee81879ee459787b96dd1489"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "services/api/app/import_common.py",
+    "sha256": "0188945e326bb7459df2b5d99a32abbbee7da7d6ba9376cbdb1dc2d4c50cdc8e"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "services/api/app/project_profiles.py",
+    "sha256": "42a0814c052ec4bfd53a13536a1a688f3891ddd7e234cd271629b140bdc62bcd"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "services/api/app/project_social.py",
+    "sha256": "b8cae56bfde1575f5f2681e818768a7ef2ac78cff4386d77e2a403ca2654130a"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "services/api/app/interactions.py",
+    "sha256": "c1b0ca1c78eadfc30c0bd28d5bb79658df02d9515aad1bc3da28f6a4dab2143b"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "services/api/app/moments_posts.py",
+    "sha256": "f44acf7299d2b8d0acf67a0c032387c8278804d551f83c60013987f9899441cb"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "services/api/app/moments_xml.py",
+    "sha256": "7b6e818a07e65bac35869ce75a6e736a162ea4163d27a484fcfa07be9948b530"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "path": "services/api/app/source_time.py",
+    "sha256": "a6892468e7af28179f85612882b74e65768e105dcfa786c196ab467abcb5656a"
   }
 ]

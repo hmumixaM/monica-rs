@@ -10,7 +10,11 @@ cleanup() {
 trap cleanup EXIT INT TERM
 "$MONICA_PG_BIN/initdb" -D "$MONICA_TEST_ROOT/db" --auth=trust --no-locale --encoding=UTF8 >/dev/null
 # Unix socket only. A unique directory avoids port races and outside clients.
-"$MONICA_PG_BIN/pg_ctl" -D "$MONICA_TEST_ROOT/db" -l "$MONICA_TEST_ROOT/postgres.log" -o "-c listen_addresses='' -k $MONICA_TEST_ROOT -c max_connections=100 -c shared_preload_libraries=pg_stat_statements" -w start >/dev/null
+"$MONICA_PG_BIN/pg_ctl" -D "$MONICA_TEST_ROOT/db" -l "$MONICA_TEST_ROOT/postgres.log" -o "-c listen_addresses='' -k $MONICA_TEST_ROOT -c wal_level=logical -c max_replication_slots=30 -c max_connections=100 -c shared_preload_libraries=pg_stat_statements" -w start >/dev/null
+if [ "${MONICA_BENCH_ONLY:-0}" = 1 ]; then
+  DATABASE_URL="postgresql:///postgres?host=$MONICA_TEST_ROOT" cargo test -p monica-core --test performance "${MONICA_BENCH_FILTER:-}" -- --ignored --nocapture --test-threads=1
+  exit 0
+fi
 DATABASE_URL="postgresql:///postgres?host=$MONICA_TEST_ROOT" cargo test --workspace
 cargo build -p monica-server --locked
 export MONICA_DATABASE_URL="postgresql:///postgres?host=$MONICA_TEST_ROOT"

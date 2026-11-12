@@ -328,7 +328,9 @@
     "path": "/api/v1/profiles/{profile_id}",
     "source": "services/api/app/main.py",
     "handler": "profile",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending",
+    "evidence": "scripts/smoke-auth.py; isolated parent-test-4.log (2026-11-11 22:15 UTC)"
   },
   {
     "method": "POST",
@@ -358,7 +360,9 @@
     "path": "/api/v1/profiles/{profile_id}/structured-history",
     "source": "services/api/app/main.py",
     "handler": "structured_history",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending",
+    "evidence": "scripts/smoke-auth.py; isolated parent-test-4.log (2026-11-11 22:15 UTC)"
   },
   {
     "method": "GET",
@@ -478,14 +482,18 @@
     "path": "/api/v1/profiles/{profile_id}/relationships",
     "source": "services/api/app/main.py",
     "handler": "profile_relationships",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending",
+    "evidence": "scripts/smoke-auth.py; isolated parent-test-4.log (2026-11-11 22:15 UTC)"
   },
   {
     "method": "POST",
     "path": "/api/v1/profiles/{profile_id}/relationships",
     "source": "services/api/app/main.py",
     "handler": "create_relationship",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending",
+    "evidence": "scripts/smoke-auth.py; isolated parent-test-4.log (2026-11-11 22:15 UTC)"
   },
   {
     "method": "POST",
@@ -552,14 +560,18 @@
     "path": "/api/v1/groups/{group_id}/members",
     "source": "services/api/app/main.py",
     "handler": "add_group_member",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending",
+    "evidence": "scripts/smoke-auth.py; isolated parent-test-4.log (2026-11-11 22:15 UTC)"
   },
   {
     "method": "GET",
     "path": "/api/v1/groups/{group_id}/members",
     "source": "services/api/app/main.py",
     "handler": "group_members",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending",
+    "evidence": "scripts/smoke-auth.py; isolated parent-test-4.log (2026-11-11 22:15 UTC)"
   },
   {
     "method": "GET",
@@ -974,35 +986,45 @@
     "path": "/api/v1/profiles/{profile_id}/dates",
     "source": "services/api/app/routers/profile_dates.py",
     "handler": "add_significant_date",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending",
+    "evidence": "scripts/smoke-auth.py; isolated parent-test-4.log (2026-11-11 22:15 UTC)"
   },
   {
     "method": "PUT",
     "path": "/api/v1/profiles/{profile_id}/dates/{date_id}",
     "source": "services/api/app/routers/profile_dates.py",
     "handler": "edit_significant_date",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending",
+    "evidence": "scripts/smoke-auth.py; isolated parent-test-4.log (2026-11-11 22:15 UTC)"
   },
   {
     "method": "DELETE",
     "path": "/api/v1/profiles/{profile_id}/dates/{date_id}",
     "source": "services/api/app/routers/profile_dates.py",
     "handler": "remove_significant_date",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending",
+    "evidence": "scripts/smoke-auth.py; isolated parent-test-4.log (2026-11-11 22:15 UTC)"
   },
   {
     "method": "PUT",
     "path": "/api/v1/profiles/{profile_id}/details",
     "source": "services/api/app/routers/profile_details.py",
     "handler": "save_detail",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending",
+    "evidence": "scripts/smoke-auth.py; isolated parent-test-4.log (2026-11-11 22:15 UTC)"
   },
   {
     "method": "DELETE",
     "path": "/api/v1/profiles/{profile_id}/details",
     "source": "services/api/app/routers/profile_details.py",
     "handler": "remove_details",
-    "status": "pending"
+    "status": "partial_smoke_tested",
+    "differential_parity": "pending",
+    "evidence": "scripts/smoke-auth.py; isolated parent-test-4.log (2026-11-11 22:15 UTC)"
   },
   {
     "method": "GET",
@@ -1024,5 +1046,50 @@
     "source": "services/api/app/routers/timeline.py",
     "handler": "timeline",
     "status": "pending"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cdc/events",
+    "source": "services/api/app/routers/cdc.py",
+    "handler": "events",
+    "status": "pending",
+    "baseline": "desktop",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cdc/events/{event}",
+    "source": "services/api/app/routers/cdc.py",
+    "handler": "event_detail",
+    "status": "pending",
+    "baseline": "desktop",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cdc/status",
+    "source": "services/api/app/routers/cdc.py",
+    "handler": "status",
+    "status": "pending",
+    "baseline": "desktop",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/pipeline/status",
+    "source": "services/api/app/routers/cdc.py",
+    "handler": "status",
+    "status": "pending",
+    "baseline": "desktop",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/pipeline/tasks/{event}/retry",
+    "source": "services/api/app/routers/cdc.py",
+    "handler": "retry",
+    "status": "pending",
+    "baseline": "desktop",
+    "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87"
   }
 ]

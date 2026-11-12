@@ -1,0 +1,1150 @@
+{
+  "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+  "evidence": "declaration-only; not runtime registration",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/anchors",
+      "source": "services/api/app/faces/device.py",
+      "handler": "anchors",
+      "line": 118,
+      "source_sha256": "02b20f1b0ffbdd37ca72b0241cce34c9be631a611e55c4a075802a5b6d87edbc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/activities",
+      "source": "services/api/app/main.py",
+      "handler": "list_activities",
+      "line": 932,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/activities",
+      "source": "services/api/app/main.py",
+      "handler": "create_activity",
+      "line": 894,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/activities/{activity_id}",
+      "source": "services/api/app/main.py",
+      "handler": "edit_activity",
+      "line": 972,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/activities/{activity_id}/state",
+      "source": "services/api/app/main.py",
+      "handler": "set_activity_state",
+      "line": 964,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/ai/image-ocr",
+      "source": "services/api/app/ai/router.py",
+      "handler": "update_image_ocr",
+      "line": 103,
+      "source_sha256": "48e0fc08aab995f08f2f7209b857f0b7f2f901bdd1f453e82288189bdce4f23b"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/jobs/{job_type}",
+      "source": "services/api/app/ai/router.py",
+      "handler": "run_now",
+      "line": 52,
+      "source_sha256": "48e0fc08aab995f08f2f7209b857f0b7f2f901bdd1f453e82288189bdce4f23b"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/profiles/{profile_id}",
+      "source": "services/api/app/ai/profiles.py",
+      "handler": "profile_ai",
+      "line": 297,
+      "source_sha256": "d88d9365ad30ab17983051a248e8962400ebcf3ac2b35e9bc0000c9f6eb20e54"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/profiles/{profile_id}/refresh",
+      "source": "services/api/app/ai/profiles.py",
+      "handler": "refresh_profile",
+      "line": 315,
+      "source_sha256": "d88d9365ad30ab17983051a248e8962400ebcf3ac2b35e9bc0000c9f6eb20e54"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/status",
+      "source": "services/api/app/ai/router.py",
+      "handler": "ai_status",
+      "line": 32,
+      "source_sha256": "48e0fc08aab995f08f2f7209b857f0b7f2f901bdd1f453e82288189bdce4f23b"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/suggestions",
+      "source": "services/api/app/ai/profiles.py",
+      "handler": "list_suggestions",
+      "line": 328,
+      "source_sha256": "d88d9365ad30ab17983051a248e8962400ebcf3ac2b35e9bc0000c9f6eb20e54"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/ai/suggestions/{profile_id}/{key}",
+      "source": "services/api/app/ai/profiles.py",
+      "handler": "undo_ignore",
+      "line": 398,
+      "source_sha256": "d88d9365ad30ab17983051a248e8962400ebcf3ac2b35e9bc0000c9f6eb20e54"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/suggestions/{profile_id}/{key}",
+      "source": "services/api/app/ai/profiles.py",
+      "handler": "decide",
+      "line": 379,
+      "source_sha256": "d88d9365ad30ab17983051a248e8962400ebcf3ac2b35e9bc0000c9f6eb20e54"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/weekly-highlights",
+      "source": "services/api/app/ai/person_weekly.py",
+      "handler": "highlights",
+      "line": 187,
+      "source_sha256": "bdadfd78523846710c93cabf404d8756f1e0fe77a2a0a3cf8b41c3abc3d39ed7"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/weekly-people",
+      "source": "services/api/app/ai/person_weekly.py",
+      "handler": "weekly_people",
+      "line": 158,
+      "source_sha256": "bdadfd78523846710c93cabf404d8756f1e0fe77a2a0a3cf8b41c3abc3d39ed7"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/archived-profiles",
+      "source": "services/api/app/profile_retirement.py",
+      "handler": "archived_profiles",
+      "line": 161,
+      "source_sha256": "99f7412663b60c64d01403b7d93ce07e0ecef2e0223aae6d0a413350eb3f077e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/audit/events",
+      "source": "services/api/app/routers/auth.py",
+      "handler": "audit_events",
+      "line": 327,
+      "source_sha256": "1570347610c63e6ec85df61985ce8a471194c589815db20b7fff9fdaa7d82c24"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/bootstrap",
+      "source": "services/api/app/routers/auth.py",
+      "handler": "bootstrap",
+      "line": 115,
+      "source_sha256": "1570347610c63e6ec85df61985ce8a471194c589815db20b7fff9fdaa7d82c24"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/csrf",
+      "source": "services/api/app/routers/auth.py",
+      "handler": "csrf_token",
+      "line": 136,
+      "source_sha256": "1570347610c63e6ec85df61985ce8a471194c589815db20b7fff9fdaa7d82c24"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "source": "services/api/app/routers/auth.py",
+      "handler": "login",
+      "line": 150,
+      "source_sha256": "1570347610c63e6ec85df61985ce8a471194c589815db20b7fff9fdaa7d82c24"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "source": "services/api/app/routers/auth.py",
+      "handler": "logout",
+      "line": 263,
+      "source_sha256": "1570347610c63e6ec85df61985ce8a471194c589815db20b7fff9fdaa7d82c24"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/sessions",
+      "source": "services/api/app/routers/auth.py",
+      "handler": "sessions",
+      "line": 290,
+      "source_sha256": "1570347610c63e6ec85df61985ce8a471194c589815db20b7fff9fdaa7d82c24"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/sessions/{session_id}/revoke",
+      "source": "services/api/app/routers/auth.py",
+      "handler": "revoke_session",
+      "line": 305,
+      "source_sha256": "1570347610c63e6ec85df61985ce8a471194c589815db20b7fff9fdaa7d82c24"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/totp/setup",
+      "source": "services/api/app/routers/auth.py",
+      "handler": "totp_setup",
+      "line": 224,
+      "source_sha256": "1570347610c63e6ec85df61985ce8a471194c589815db20b7fff9fdaa7d82c24"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/totp/status",
+      "source": "services/api/app/routers/auth.py",
+      "handler": "totp_status",
+      "line": 258,
+      "source_sha256": "1570347610c63e6ec85df61985ce8a471194c589815db20b7fff9fdaa7d82c24"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/totp/verify",
+      "source": "services/api/app/routers/auth.py",
+      "handler": "totp_verify",
+      "line": 239,
+      "source_sha256": "1570347610c63e6ec85df61985ce8a471194c589815db20b7fff9fdaa7d82c24"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/communities/{community_id}/name",
+      "source": "services/api/app/community_names.py",
+      "handler": "reset_community_name",
+      "line": 39,
+      "source_sha256": "d61bd37e5988a869f3ea8ae39fbacba1929dbe31203987e11fbe8386c1b4dc4e"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/communities/{community_id}/name",
+      "source": "services/api/app/community_names.py",
+      "handler": "rename_community",
+      "line": 29,
+      "source_sha256": "d61bd37e5988a869f3ea8ae39fbacba1929dbe31203987e11fbe8386c1b4dc4e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/conversations",
+      "source": "services/api/app/routers/messages.py",
+      "handler": "list_conversations",
+      "line": 118,
+      "source_sha256": "515d09a24601d9fa10e79337818fabcfb6d8c1c20085cd9ba12bda358d133649"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/conversations/{conversation_id}/messages",
+      "source": "services/api/app/routers/messages.py",
+      "handler": "conversation_messages",
+      "line": 145,
+      "source_sha256": "515d09a24601d9fa10e79337818fabcfb6d8c1c20085cd9ba12bda358d133649"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/digests",
+      "source": "services/api/app/ai/digest.py",
+      "handler": "list_digests",
+      "line": 85,
+      "source_sha256": "38d3bdb4dde469295703cd61827595abf8ee90df5f25b5cb758589bcd05ccafc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/digests/{week_start}",
+      "source": "services/api/app/ai/digest.py",
+      "handler": "get_digest",
+      "line": 95,
+      "source_sha256": "38d3bdb4dde469295703cd61827595abf8ee90df5f25b5cb758589bcd05ccafc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/directory",
+      "source": "services/api/app/directory.py",
+      "handler": "directory_snapshot",
+      "line": 128,
+      "source_sha256": "84406d0535c9b80b49ad21e48dd979f09cb0a58e4db3ed224490032318a07519"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/directory/posts",
+      "source": "services/api/app/directory.py",
+      "handler": "directory_posts",
+      "line": 134,
+      "source_sha256": "84406d0535c9b80b49ad21e48dd979f09cb0a58e4db3ed224490032318a07519"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/groups/{group_id}/members",
+      "source": "services/api/app/main.py",
+      "handler": "group_members",
+      "line": 1025,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/groups/{group_id}/members",
+      "source": "services/api/app/main.py",
+      "handler": "add_group_member",
+      "line": 989,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/health",
+      "source": "services/api/app/main.py",
+      "handler": "health",
+      "line": 124,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/home",
+      "source": "services/api/app/home.py",
+      "handler": "home",
+      "line": 29,
+      "source_sha256": "08ca124b35f592d3480d2876af1d3ca59585bc6e3e34ca97d0bbb35c070eb399"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/identities",
+      "source": "services/api/app/main.py",
+      "handler": "import_identity",
+      "line": 351,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/identity-candidates",
+      "source": "services/api/app/main.py",
+      "handler": "identity_candidates",
+      "line": 649,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/identity-candidates",
+      "source": "services/api/app/main.py",
+      "handler": "create_identity_candidate",
+      "line": 673,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/identity-candidates/{candidate_id}/accept",
+      "source": "services/api/app/main.py",
+      "handler": "accept_identity_candidate",
+      "line": 708,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/identity-candidates/{candidate_id}/reject",
+      "source": "services/api/app/main.py",
+      "handler": "reject_identity_candidate",
+      "line": 752,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/imports/batches",
+      "source": "services/api/app/routers/imports_api.py",
+      "handler": "imports",
+      "line": 98,
+      "source_sha256": "a8b31e65e6bda8d94c7eb72cfb3abb2f60ea61f7ea4ab61a8eb1b4703dab9b54"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/imports/batches",
+      "source": "services/api/app/routers/imports_api.py",
+      "handler": "import_batch",
+      "line": 36,
+      "source_sha256": "a8b31e65e6bda8d94c7eb72cfb3abb2f60ea61f7ea4ab61a8eb1b4703dab9b54"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/imports/batches/{batch_id}",
+      "source": "services/api/app/routers/imports_api.py",
+      "handler": "import_batch_detail",
+      "line": 187,
+      "source_sha256": "a8b31e65e6bda8d94c7eb72cfb3abb2f60ea61f7ea4ab61a8eb1b4703dab9b54"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/imports/batches/{batch_id}/replay",
+      "source": "services/api/app/routers/imports_api.py",
+      "handler": "replay_import_batch",
+      "line": 207,
+      "source_sha256": "a8b31e65e6bda8d94c7eb72cfb3abb2f60ea61f7ea4ab61a8eb1b4703dab9b54"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/imports/cursors",
+      "source": "services/api/app/routers/imports_api.py",
+      "handler": "import_cursors",
+      "line": 238,
+      "source_sha256": "a8b31e65e6bda8d94c7eb72cfb3abb2f60ea61f7ea4ab61a8eb1b4703dab9b54"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/imports/events",
+      "source": "services/api/app/routers/imports_api.py",
+      "handler": "import_events",
+      "line": 275,
+      "source_sha256": "a8b31e65e6bda8d94c7eb72cfb3abb2f60ea61f7ea4ab61a8eb1b4703dab9b54"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/imports/jobs",
+      "source": "services/api/app/routers/imports_api.py",
+      "handler": "import_jobs",
+      "line": 250,
+      "source_sha256": "a8b31e65e6bda8d94c7eb72cfb3abb2f60ea61f7ea4ab61a8eb1b4703dab9b54"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/imports/media/initiate",
+      "source": "services/api/app/routers/media.py",
+      "handler": "initiate_media_upload",
+      "line": 41,
+      "source_sha256": "6ce44fcc5dd862e106a6b360191a236e2e85b306b5a9109f177f917d93a8fc25"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/imports/media/{upload_id}",
+      "source": "services/api/app/routers/media.py",
+      "handler": "media_upload_status",
+      "line": 72,
+      "source_sha256": "6ce44fcc5dd862e106a6b360191a236e2e85b306b5a9109f177f917d93a8fc25"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/imports/media/{upload_id}/chunks/{chunk}",
+      "source": "services/api/app/routers/media.py",
+      "handler": "upload_media_chunk",
+      "line": 93,
+      "source_sha256": "6ce44fcc5dd862e106a6b360191a236e2e85b306b5a9109f177f917d93a8fc25"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/imports/media/{upload_id}/complete",
+      "source": "services/api/app/routers/media.py",
+      "handler": "complete_media_upload",
+      "line": 136,
+      "source_sha256": "6ce44fcc5dd862e106a6b360191a236e2e85b306b5a9109f177f917d93a8fc25"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/imports/reconciliation",
+      "source": "services/api/app/routers/imports_api.py",
+      "handler": "import_reconciliation",
+      "line": 103,
+      "source_sha256": "a8b31e65e6bda8d94c7eb72cfb3abb2f60ea61f7ea4ab61a8eb1b4703dab9b54"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/imports/tokens",
+      "source": "services/api/app/routers/imports_api.py",
+      "handler": "list_import_service_tokens",
+      "line": 150,
+      "source_sha256": "a8b31e65e6bda8d94c7eb72cfb3abb2f60ea61f7ea4ab61a8eb1b4703dab9b54"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/imports/tokens",
+      "source": "services/api/app/routers/imports_api.py",
+      "handler": "create_import_service_token",
+      "line": 113,
+      "source_sha256": "a8b31e65e6bda8d94c7eb72cfb3abb2f60ea61f7ea4ab61a8eb1b4703dab9b54"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/imports/tokens/{token_id}/revoke",
+      "source": "services/api/app/routers/imports_api.py",
+      "handler": "revoke_import_service_token",
+      "line": 162,
+      "source_sha256": "a8b31e65e6bda8d94c7eb72cfb3abb2f60ea61f7ea4ab61a8eb1b4703dab9b54"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/insights",
+      "source": "services/api/app/insights.py",
+      "handler": "insights",
+      "line": 143,
+      "source_sha256": "ca6d80c9103c3a395074739d704b43daf184ef9e5ed4fafcd6a620151800c53f"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/insights/calendar",
+      "source": "services/api/app/contact_calendar.py",
+      "handler": "contact_calendar",
+      "line": 61,
+      "source_sha256": "ea63ebec7a259291ac15c471dd8496241a99fe28f32948967a6a21bb8df7779e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/insights/calendar/day",
+      "source": "services/api/app/contact_calendar.py",
+      "handler": "contact_calendar_day",
+      "line": 72,
+      "source_sha256": "ea63ebec7a259291ac15c471dd8496241a99fe28f32948967a6a21bb8df7779e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/insights/orbit",
+      "source": "services/api/app/orbit.py",
+      "handler": "orbit",
+      "line": 151,
+      "source_sha256": "feed077117e15df662b17d4e1028c95e2a36f19b2cc6b25c713d5679723de3b0"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/jobs/status",
+      "source": "services/api/app/ai/router.py",
+      "handler": "task_status",
+      "line": 72,
+      "source_sha256": "48e0fc08aab995f08f2f7209b857f0b7f2f901bdd1f453e82288189bdce4f23b"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/link-review",
+      "source": "services/api/app/main.py",
+      "handler": "link_review",
+      "line": 595,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/link-review/batch",
+      "source": "services/api/app/main.py",
+      "handler": "apply_platform_link_batch",
+      "line": 611,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/link-review/confirm",
+      "source": "services/api/app/main.py",
+      "handler": "confirm_platform_link",
+      "line": 625,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/link-review/contacts",
+      "source": "services/api/app/main.py",
+      "handler": "search_link_contacts",
+      "line": 619,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/link-review/linked",
+      "source": "services/api/app/main.py",
+      "handler": "link_review_linked",
+      "line": 604,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/link-review/reject",
+      "source": "services/api/app/main.py",
+      "handler": "reject_platform_link",
+      "line": 633,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/link-review/skip",
+      "source": "services/api/app/main.py",
+      "handler": "skip_platform_link",
+      "line": 641,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/linkedin/collection-targets",
+      "source": "services/api/app/linkedin_collection.py",
+      "handler": "collector_targets",
+      "line": 191,
+      "source_sha256": "e4dce8f4a4cd682848a7a9d9259785bbd71456d0e2f292070641f25354465d73"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me",
+      "source": "services/api/app/routers/auth.py",
+      "handler": "me",
+      "line": 285,
+      "source_sha256": "1570347610c63e6ec85df61985ce8a471194c589815db20b7fff9fdaa7d82c24"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/media",
+      "source": "services/api/app/routers/media.py",
+      "handler": "upload_media",
+      "line": 210,
+      "source_sha256": "6ce44fcc5dd862e106a6b360191a236e2e85b306b5a9109f177f917d93a8fc25"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/media/{media_id}",
+      "source": "services/api/app/routers/media.py",
+      "handler": "download_media",
+      "line": 253,
+      "source_sha256": "6ce44fcc5dd862e106a6b360191a236e2e85b306b5a9109f177f917d93a8fc25"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/media/{media_id}/ocr",
+      "source": "services/api/app/routers/media.py",
+      "handler": "image_ocr_result",
+      "line": 281,
+      "source_sha256": "6ce44fcc5dd862e106a6b360191a236e2e85b306b5a9109f177f917d93a8fc25"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/media/{media_id}/preview",
+      "source": "services/api/app/photo_preview.py",
+      "handler": "preview",
+      "line": 25,
+      "source_sha256": "cd0b24bdaaf16864e7e2057b8e3d3e3d21bb13ee08b006998c3256c15e134412"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/metrics/locations",
+      "source": "services/api/app/routers/locations.py",
+      "handler": "location_metrics",
+      "line": 99,
+      "source_sha256": "1b241aebe4909353971f7b2d8809adf0d10864d03c119f7a67debe5c3251d085"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/metrics/people-overview",
+      "source": "services/api/app/main.py",
+      "handler": "people_overview",
+      "line": 1113,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/metrics/snapshots",
+      "source": "services/api/app/main.py",
+      "handler": "metric_snapshots",
+      "line": 1096,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/metrics/social",
+      "source": "services/api/app/main.py",
+      "handler": "social_statistics",
+      "line": 1136,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/metrics/summary",
+      "source": "services/api/app/main.py",
+      "handler": "metrics_summary",
+      "line": 1048,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles",
+      "source": "services/api/app/main.py",
+      "handler": "profiles",
+      "line": 138,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles",
+      "source": "services/api/app/main.py",
+      "handler": "create_profile_endpoint",
+      "line": 153,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}",
+      "source": "services/api/app/main.py",
+      "handler": "profile",
+      "line": 168,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/chat-months",
+      "source": "services/api/app/routers/messages.py",
+      "handler": "profile_chat_months",
+      "line": 39,
+      "source_sha256": "515d09a24601d9fa10e79337818fabcfb6d8c1c20085cd9ba12bda358d133649"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/contact-events",
+      "source": "services/api/app/routers/messages.py",
+      "handler": "contact_event_records",
+      "line": 31,
+      "source_sha256": "515d09a24601d9fa10e79337818fabcfb6d8c1c20085cd9ba12bda358d133649"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/contact-events/summary",
+      "source": "services/api/app/routers/messages.py",
+      "handler": "contact_event_summary",
+      "line": 24,
+      "source_sha256": "515d09a24601d9fa10e79337818fabcfb6d8c1c20085cd9ba12bda358d133649"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles/{profile_id}/dates",
+      "source": "services/api/app/routers/profile_dates.py",
+      "handler": "add_significant_date",
+      "line": 36,
+      "source_sha256": "d2b5592b4b5cc1b4d97b656af2bc5e6645deb7dd0a83c843f146049affdf32a9"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/profiles/{profile_id}/dates/{date_id}",
+      "source": "services/api/app/routers/profile_dates.py",
+      "handler": "remove_significant_date",
+      "line": 62,
+      "source_sha256": "d2b5592b4b5cc1b4d97b656af2bc5e6645deb7dd0a83c843f146049affdf32a9"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/profiles/{profile_id}/dates/{date_id}",
+      "source": "services/api/app/routers/profile_dates.py",
+      "handler": "edit_significant_date",
+      "line": 49,
+      "source_sha256": "d2b5592b4b5cc1b4d97b656af2bc5e6645deb7dd0a83c843f146049affdf32a9"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/profiles/{profile_id}/details",
+      "source": "services/api/app/routers/profile_details.py",
+      "handler": "remove_details",
+      "line": 92,
+      "source_sha256": "f2ec19b3f1624708c15c102e2a6e8e7c2d87f3d8bc76df9f08708a7b82f4de7c"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/profiles/{profile_id}/details",
+      "source": "services/api/app/routers/profile_details.py",
+      "handler": "save_detail",
+      "line": 70,
+      "source_sha256": "f2ec19b3f1624708c15c102e2a6e8e7c2d87f3d8bc76df9f08708a7b82f4de7c"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/profiles/{profile_id}/fields",
+      "source": "services/api/app/main.py",
+      "handler": "edit_field",
+      "line": 383,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/group-speech",
+      "source": "services/api/app/routers/chatlog_proxy.py",
+      "handler": "profile_group_speech",
+      "line": 41,
+      "source_sha256": "1d06f366c0c9d3b608352f6cb6602d81b4a521d860e010069689d17fafd28a0c"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/history",
+      "source": "services/api/app/main.py",
+      "handler": "field_history",
+      "line": 419,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles/{profile_id}/history/{revision_id}/restore",
+      "source": "services/api/app/main.py",
+      "handler": "restore_field_revision",
+      "line": 493,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles/{profile_id}/identities",
+      "source": "services/api/app/main.py",
+      "handler": "add_identity",
+      "line": 531,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/linkedin-targets",
+      "source": "services/api/app/linkedin_collection.py",
+      "handler": "profile_targets",
+      "line": 81,
+      "source_sha256": "e4dce8f4a4cd682848a7a9d9259785bbd71456d0e2f292070641f25354465d73"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/profiles/{profile_id}/linkedin-targets",
+      "source": "services/api/app/linkedin_collection.py",
+      "handler": "save_target",
+      "line": 96,
+      "source_sha256": "e4dce8f4a4cd682848a7a9d9259785bbd71456d0e2f292070641f25354465d73"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/profiles/{profile_id}/linkedin-targets/{aid}",
+      "source": "services/api/app/linkedin_collection.py",
+      "handler": "remove_target",
+      "line": 151,
+      "source_sha256": "e4dce8f4a4cd682848a7a9d9259785bbd71456d0e2f292070641f25354465d73"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/locations",
+      "source": "services/api/app/routers/locations.py",
+      "handler": "profile_locations",
+      "line": 28,
+      "source_sha256": "1b241aebe4909353971f7b2d8809adf0d10864d03c119f7a67debe5c3251d085"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/messages",
+      "source": "services/api/app/routers/messages.py",
+      "handler": "profile_messages",
+      "line": 58,
+      "source_sha256": "515d09a24601d9fa10e79337818fabcfb6d8c1c20085cd9ba12bda358d133649"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/metrics",
+      "source": "services/api/app/main.py",
+      "handler": "profile_metrics",
+      "line": 475,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/moments-circle",
+      "source": "services/api/app/main.py",
+      "handler": "profile_moments_circle",
+      "line": 1126,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/overview",
+      "source": "services/api/app/overview.py",
+      "handler": "profile_overview",
+      "line": 186,
+      "source_sha256": "1636f5c0abd324a8d540d5cf8b94381d79535f3cb8b673136341bf45b0ecf3f1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/photos",
+      "source": "services/api/app/routers/media.py",
+      "handler": "profile_photos",
+      "line": 182,
+      "source_sha256": "6ce44fcc5dd862e106a6b360191a236e2e85b306b5a9109f177f917d93a8fc25"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles/{profile_id}/photos",
+      "source": "services/api/app/routers/media.py",
+      "handler": "attach_profile_photos",
+      "line": 189,
+      "source_sha256": "6ce44fcc5dd862e106a6b360191a236e2e85b306b5a9109f177f917d93a8fc25"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/profiles/{profile_id}/photos/{media_id}",
+      "source": "services/api/app/routers/media.py",
+      "handler": "remove_profile_photo",
+      "line": 202,
+      "source_sha256": "6ce44fcc5dd862e106a6b360191a236e2e85b306b5a9109f177f917d93a8fc25"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/relationships",
+      "source": "services/api/app/main.py",
+      "handler": "profile_relationships",
+      "line": 769,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles/{profile_id}/relationships",
+      "source": "services/api/app/main.py",
+      "handler": "create_relationship",
+      "line": 777,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles/{profile_id}/restore",
+      "source": "services/api/app/profile_retirement.py",
+      "handler": "restore_profile",
+      "line": 168,
+      "source_sha256": "99f7412663b60c64d01403b7d93ce07e0ecef2e0223aae6d0a413350eb3f077e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/ribbon",
+      "source": "services/api/app/ribbon.py",
+      "handler": "ribbon",
+      "line": 51,
+      "source_sha256": "c6e8fdacaa17ac0781c2ab5b92e8c0b8624d3134514fdd2a2779d159d2215f41"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/structured-history",
+      "source": "services/api/app/main.py",
+      "handler": "structured_history",
+      "line": 431,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/summary",
+      "source": "services/api/app/profile_summary.py",
+      "handler": "summary",
+      "line": 49,
+      "source_sha256": "fa6f65a6f7f0f743d07ca6b1e602c3d640b25a63bf868961de7d8d2221c8cf0d"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/profiles/{profile_id}/tags/{tag_id}",
+      "source": "services/api/app/main.py",
+      "handler": "detach_tag",
+      "line": 878,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles/{profile_id}/tags/{tag_id}",
+      "source": "services/api/app/main.py",
+      "handler": "attach_tag",
+      "line": 854,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ready",
+      "source": "services/api/app/main.py",
+      "handler": "ready",
+      "line": 131,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/reconnect",
+      "source": "services/api/app/ai/reconnect.py",
+      "handler": "list_reconnect",
+      "line": 125,
+      "source_sha256": "dc28c1f0399244b4717e4800e57909794fb9af56582dbd948604bc6b292b66cd"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/reconnect/{profile_id}",
+      "source": "services/api/app/ai/reconnect.py",
+      "handler": "undo_reconnect",
+      "line": 159,
+      "source_sha256": "dc28c1f0399244b4717e4800e57909794fb9af56582dbd948604bc6b292b66cd"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/reconnect/{profile_id}",
+      "source": "services/api/app/ai/reconnect.py",
+      "handler": "act_on_reconnect",
+      "line": 147,
+      "source_sha256": "dc28c1f0399244b4717e4800e57909794fb9af56582dbd948604bc6b292b66cd"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/relationships",
+      "source": "services/api/app/main.py",
+      "handler": "relationships",
+      "line": 1054,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/relationships/graph",
+      "source": "services/api/app/main.py",
+      "handler": "relationship_graph",
+      "line": 1081,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/search",
+      "source": "services/api/app/main.py",
+      "handler": "search",
+      "line": 1043,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/source-accounts",
+      "source": "services/api/app/main.py",
+      "handler": "source_accounts",
+      "line": 568,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/source-accounts/{account_id}/link",
+      "source": "services/api/app/main.py",
+      "handler": "link_source_account",
+      "line": 587,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tags",
+      "source": "services/api/app/main.py",
+      "handler": "list_tags",
+      "line": 848,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tags",
+      "source": "services/api/app/main.py",
+      "handler": "create_tag",
+      "line": 831,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/timeline",
+      "source": "services/api/app/routers/timeline.py",
+      "handler": "timeline",
+      "line": 278,
+      "source_sha256": "3a53623e530bd565182960ad16f150f6b0423d9b0c97fb4ac0844f129651e985"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/timeline/summary",
+      "source": "services/api/app/routers/timeline.py",
+      "handler": "timeline_summary",
+      "line": 32,
+      "source_sha256": "3a53623e530bd565182960ad16f150f6b0423d9b0c97fb4ac0844f129651e985"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/timeline/{event_id}",
+      "source": "services/api/app/routers/timeline.py",
+      "handler": "timeline_detail",
+      "line": 101,
+      "source_sha256": "3a53623e530bd565182960ad16f150f6b0423d9b0c97fb4ac0844f129651e985"
+    },
+    {
+      "method": "POST",
+      "path": "/batch",
+      "source": "services/api/app/faces/device.py",
+      "handler": "batch",
+      "line": 176,
+      "source_sha256": "02b20f1b0ffbdd37ca72b0241cce34c9be631a611e55c4a075802a5b6d87edbc"
+    },
+    {
+      "method": "POST",
+      "path": "/decide",
+      "source": "services/api/app/faces/review.py",
+      "handler": "decide",
+      "line": 98,
+      "source_sha256": "b21065b2b471b5f28862066009be9105b8aa9918dfc478ed71b583395407c660"
+    },
+    {
+      "method": "GET",
+      "path": "/groups",
+      "source": "services/api/app/faces/review.py",
+      "handler": "groups",
+      "line": 43,
+      "source_sha256": "b21065b2b471b5f28862066009be9105b8aa9918dfc478ed71b583395407c660"
+    },
+    {
+      "method": "GET",
+      "path": "/health",
+      "source": "services/api/app/main.py",
+      "handler": "health",
+      "line": 123,
+      "source_sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "method": "GET",
+      "path": "/in-media",
+      "source": "services/api/app/faces/review.py",
+      "handler": "in_media",
+      "line": 128,
+      "source_sha256": "b21065b2b471b5f28862066009be9105b8aa9918dfc478ed71b583395407c660"
+    },
+    {
+      "method": "POST",
+      "path": "/media",
+      "source": "services/api/app/faces/device.py",
+      "handler": "media",
+      "line": 76,
+      "source_sha256": "02b20f1b0ffbdd37ca72b0241cce34c9be631a611e55c4a075802a5b6d87edbc"
+    },
+    {
+      "method": "GET",
+      "path": "/media/{media_id}/reading",
+      "source": "services/api/app/faces/photos.py",
+      "handler": "reading",
+      "line": 178,
+      "source_sha256": "6e5cda9cc854021aa7607cfc0222548c419b914646b8c5ce80e534b09ae09640"
+    },
+    {
+      "method": "GET",
+      "path": "/people/{profile_id}",
+      "source": "services/api/app/faces/review.py",
+      "handler": "appearances",
+      "line": 142,
+      "source_sha256": "b21065b2b471b5f28862066009be9105b8aa9918dfc478ed71b583395407c660"
+    },
+    {
+      "method": "GET",
+      "path": "/people/{profile_id}/photos",
+      "source": "services/api/app/faces/photos.py",
+      "handler": "photos",
+      "line": 135,
+      "source_sha256": "6e5cda9cc854021aa7607cfc0222548c419b914646b8c5ce80e534b09ae09640"
+    },
+    {
+      "method": "GET",
+      "path": "/people/{profile_id}/photos/status",
+      "source": "services/api/app/faces/photos.py",
+      "handler": "status",
+      "line": 90,
+      "source_sha256": "6e5cda9cc854021aa7607cfc0222548c419b914646b8c5ce80e534b09ae09640"
+    },
+    {
+      "method": "POST",
+      "path": "/restore",
+      "source": "services/api/app/faces/review.py",
+      "handler": "restore",
+      "line": 119,
+      "source_sha256": "b21065b2b471b5f28862066009be9105b8aa9918dfc478ed71b583395407c660"
+    },
+    {
+      "method": "GET",
+      "path": "/summary",
+      "source": "services/api/app/faces/review.py",
+      "handler": "summary",
+      "line": 28,
+      "source_sha256": "b21065b2b471b5f28862066009be9105b8aa9918dfc478ed71b583395407c660"
+    },
+    {
+      "method": "GET",
+      "path": "/work",
+      "source": "services/api/app/faces/device.py",
+      "handler": "work",
+      "line": 45,
+      "source_sha256": "02b20f1b0ffbdd37ca72b0241cce34c9be631a611e55c4a075802a5b6d87edbc"
+    }
+  ]
+}

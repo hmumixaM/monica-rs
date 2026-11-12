@@ -35,13 +35,13 @@ export function AiStatus() {
       : !data ? <Skeleton height={80} />
         : !data.enabled ? <div className={styles.row}>
           <span className={styles.icon}><Bot size={18} /></span>
-          <div className={styles.text}><strong>未开启</strong><small>在 NAS 的 .env 里设置 AI_ENABLED=true 后，社群命名、该联系了、每周回顾和资料建议会出现。</small></div>
+          <div className={styles.text}><strong>未开启</strong><small>在上方模型设置中填写服务信息并启用后，可使用问答、人物 Memory、每周回顾和资料建议。</small></div>
         </div>
           : <ul className={styles.list}>
             <li className={styles.row}>
-              <span className={styles.icon} data-on={data.reachable ? "" : undefined}><Bot size={18} /></span>
+              <span className={styles.icon} data-on={data.configured ? "" : undefined}><Bot size={18} /></span>
               <div className={styles.text}>
-                <strong>{data.reachable ? "LiteLLM 可用" : "LiteLLM 无响应"}</strong>
+                <strong>{data.configured ? "模型服务已配置" : "模型服务尚未配置"}</strong>
                 <small>批量任务 {data.models?.batch} · 人物近况 {data.models?.person} · 写作 {data.models?.writer} · 识图 {data.models?.vision}。人物 Memory 和每周近况读取 Monica 已存的相关私聊、本人群聊发言、动态、资料及动态图片的识别文字。{data.image_ocr?.include_chat ? "历史 OCR 补扫也处理聊天图片；聊天图片 OCR 不加入人物分析。" : "聊天图片不发送。"}</small>
               </div>
             </li>
@@ -51,14 +51,14 @@ export function AiStatus() {
                 <strong>历史图片 OCR（从新到旧） · {data.image_ocr.enabled ? "已启用" : "已暂停"}</strong>
                 <small>{data.image_ocr.model} · {data.image_ocr.include_chat ? "帖子、Story 和聊天图片，跳过头像" : "帖子与 Story 图片"}</small>
                 <small>完成 {(data.image_ocr.counts.complete ?? 0).toLocaleString()} 张 · 待处理 {(data.image_ocr.counts.pending ?? 0).toLocaleString()} 张 · 失败 {data.image_ocr.counts.failed ?? 0} 张</small>
-                <small>今日已开始 {data.image_ocr.attempted_today.toLocaleString()} / {data.image_ocr.daily_limit.toLocaleString()} 张（重试也计入） · 按限额约剩 {data.image_ocr.estimated_days_remaining} 天</small>
+                <small>今日已开始 {data.image_ocr.attempted_today.toLocaleString()} 张 · {data.image_ocr.unlimited ? "持续处理，未设置每日限额" : `每日限额 ${data.image_ocr.daily_limit.toLocaleString()} 张 · 按限额约剩 ${data.image_ocr.estimated_days_remaining} 天`}</small>
                 <form onSubmit={(event) => {
                   event.preventDefault();
                   const daily_limit = Number(new FormData(event.currentTarget).get("daily_limit"));
                   ocr.mutate({daily_limit}, {onSuccess: () => toast.show({message: "每日 OCR 限额已保存"}), onError: () => toast.show({message: "保存失败，请重试"})});
                 }}>
                   <label>每天最多处理图片数 <Input key={data.image_ocr.daily_limit} name="daily_limit" type="number" min={1} max={100000} required defaultValue={data.image_ocr.daily_limit} style={{width: 120, display: "inline-block"}} /></label>{" "}
-                  <Button size="sm" variant="ghost" disabled={ocr.isPending}>保存</Button>
+                  <Button type="submit" size="sm" variant="ghost" disabled={ocr.isPending}>保存</Button>
                 </form>
               </div>
               <Button size="sm" variant="ghost" disabled={ocr.isPending} onClick={() => ocr.mutate({enabled: !data.image_ocr!.enabled})}>{data.image_ocr.enabled ? "暂停" : "继续"}</Button>
@@ -70,7 +70,7 @@ export function AiStatus() {
                 <small>{job.status ? `${STATUS[job.status] ?? job.status}${job.completed_at ? ` · ${formatDateTime(job.completed_at, true)}` : ""}` : "还没运行过"}
                   {job.status === "failed" && job.error ? ` · ${job.error.slice(0, 120)}` : ""}</small>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => start(job.job_type)} disabled={run.isPending || !data.reachable}><Play size={13} />运行</Button>
+              <Button size="sm" variant="ghost" onClick={() => start(job.job_type)} disabled={run.isPending || !data.configured}><Play size={13} />运行</Button>
             </li>)}
           </ul>}
   </Section>;

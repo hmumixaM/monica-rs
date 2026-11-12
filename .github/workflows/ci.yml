@@ -19,6 +19,12 @@ jobs:
           components: rustfmt, clippy
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Enable logical WAL for isolated CDC regression
+        run: |
+          psql "$DATABASE_URL" -c "ALTER SYSTEM SET wal_level = logical"
+          psql "$DATABASE_URL" -c "ALTER SYSTEM SET max_replication_slots = 30"
+          docker restart ${{ job.services.postgres.id }}
+          for attempt in $(seq 1 30); do pg_isready -h localhost -U postgres && break; sleep 1; done
       - run: cargo test --workspace --locked
       - name: HTTP authentication regression
         env:
@@ -28,3 +34,79 @@ jobs:
           psql "$DATABASE_URL" -c 'CREATE DATABASE monica_http_test'
           target/debug/monica-server migrate
           python3 scripts/smoke-http.py
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-16
+      - run: npm ci && npm run build && npx playwright install --with-deps chrome
+        working-directory: apps/web
+      - run: npm test -- tests/router.spec.ts tests/ask-runtime.spec.ts
+        working-directory: apps/web
+      - run: cargo build --locked -p monica-server
+      - run: python3 scripts/frontend-smoke.py
+        env:
+          MONICA_PG_BIN: /usr/lib/postgresql/16/bin
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failure-evidence
+          path: .local-validation/
+  adapters:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/whatsapp/go.mod
+          cache-dependency-path: services/whatsapp/go.sum
+      - run: python3 scripts/test-collector-bridge.py && python3 scripts/test-collector-chatlog.py
+      - run: python3 -m pip install uv==0.9.17
+      - name: LinkedIn messages against the locked collector dependencies
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/monica-collector-tests
+        run: uv run --project apps/desktop/collectors --frozen python -m pytest apps/desktop/collectors/tests/test_messages_adapter.py
+      - run: go test ./...
+        working-directory: services/whatsapp
+  native:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: brew install postgresql@16
+      - run: npm ci && npm run build
+        working-directory: apps/web
+      - run: npm ci && npm run build && npx playwright install chrome && npm test
+        working-directory: apps/native-desktop
+      - run: cargo clippy --manifest-path apps/native-desktop/src-tauri/Cargo.toml --all-targets --locked -- -D warnings
+      - run: cargo test --manifest-path apps/native-desktop/src-tauri/Cargo.toml --locked
+      - run: python3 apps/native-desktop/tests/test_native_messages.py
+      - run: cargo build --locked -p monica-server
+      - name: Native lifecycle against disposable database
+        run: |
+          export MONICA_NATIVE_SERVER="$PWD/target/debug/monica-server"
+          export MONICA_NATIVE_PG_BIN="$(brew --prefix postgresql@16)/bin"
+          export MONICA_NATIVE_WEB="$PWD/apps/web/dist"
+          cargo test --manifest-path apps/native-desktop/src-tauri/Cargo.toml --locked --test native_runtime -- --ignored --nocapture
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: native-failure-evidence
+          path: .local-validation/

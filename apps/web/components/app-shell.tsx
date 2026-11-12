@@ -135,7 +135,7 @@ export function AppShell({ active, children }: { active: string; children: React
 
     {more && <Sheet label="更多" onClose={() => setMore(false)}>
       <div className={styles.moreGrid} onClick={(event) => { if ((event.target as HTMLElement).closest("a")) setMore(false); }}>
-        {[...PRIMARY_NAV.slice(4), DIGEST_NAV, ...DATA_NAV].map((entry) => <Link key={entry.id} href={entry.href}
+        {[...PRIMARY_NAV.filter(entry => !TAB_NAV.some(tab => tab.id === entry.id)), DIGEST_NAV, ...DATA_NAV].map((entry) => <Link key={entry.id} href={entry.href}
           aria-current={current === entry.id ? "page" : undefined}>
           <entry.icon size={20} strokeWidth={1.8} aria-hidden="true" /><span>{entry.label}</span>
         </Link>)}

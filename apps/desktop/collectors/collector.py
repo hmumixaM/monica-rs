@@ -74,14 +74,14 @@ def run_child(root, args, *, env=None):
     """Keep provider diagnostics private; give every descendant a shutdown boundary."""
     with (root / "logs/collector.log").open("ab") as log:
         process = subprocess.Popen([sys.executable, *map(str, args)], cwd=root,
-                                   env=env, stdout=log, stderr=log, start_new_session=True)
+                                   env=env, stdout=log, stderr=log, start_new_session=os.environ.get("MONICA_COLLECTOR_OWNED_GROUP") != "1")
         while process.poll() is None:
             if STOP.wait(0.2):
-                os.killpg(process.pid, signal.SIGTERM)
+                process.terminate() if os.environ.get("MONICA_COLLECTOR_OWNED_GROUP") == "1" else os.killpg(process.pid, signal.SIGTERM)
                 try:
                     process.wait(timeout=15)
                 except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
+                    process.kill() if os.environ.get("MONICA_COLLECTOR_OWNED_GROUP") == "1" else os.killpg(process.pid, signal.SIGKILL)
                     process.wait()
                 raise InterruptedError("Collector stopped")
         if process.returncode:
@@ -221,9 +221,17 @@ def manual_linkedin_targets(store):
     apply_targets(store, json.loads(raw))
 
 
+async def export_linkedin_message_session(root):
+    from linkedin_enrichment.browser import PersistentChromium
+    async with PersistentChromium(root / 'browser') as browser:
+        await browser.export_storage_state(root / 'messages-auth.json')
+
+
 def linkedin_cycle(root, data_root, *, discover_only=False):
     if not (root / "auth.json").is_file():
         raise NeedsLogin("LinkedIn login is required")
+    if not (root / 'messages-auth.json').exists():
+        asyncio.run(export_linkedin_message_session(root))
     store = linkedin_store(root)
     circuit = store.status().get("circuit") or {}
     if circuit.get("paused_until") and datetime.fromisoformat(circuit["paused_until"]) > datetime.now(timezone.utc):
@@ -254,7 +262,7 @@ def run_action(args, root):
         if args.provider == "instagram":
             asyncio.run(instagram_login(root, args.username))
         else:
-            run_child(root, [SOURCE / "run_linkedin.py", "--db", root / "archive.sqlite3", "--user-data-dir", root / "browser", "login"])
+            run_child(root, [SOURCE / "run_linkedin.py", "--db", root / "archive.sqlite3", "--user-data-dir", root / "browser", "login", "--storage-state-out", root / "messages-auth.json"])
             atomic_json(root / "auth.json", {"authenticated_at": time.time()})
         return {"authenticated": True}
     cycle = instagram_cycle if args.provider == "instagram" else linkedin_cycle

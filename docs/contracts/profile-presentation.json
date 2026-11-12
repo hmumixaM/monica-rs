@@ -1,0 +1,755 @@
+[
+  {
+    "fields": [],
+    "facts": [],
+    "expected": {
+      "sources": {
+        "wechat": {},
+        "linkedin": {},
+        "instagram": {}
+      },
+      "facts": [],
+      "instagram_accounts": []
+    }
+  },
+  {
+    "fields": [],
+    "facts": [
+      {
+        "fact_type": "employment",
+        "current_source_type": "linkedin",
+        "company_name": "Fixture",
+        "school_name": null,
+        "value": {
+          "title": "Engineer",
+          "start_date": "2020-01-01",
+          "extra": "one"
+        }
+      },
+      {
+        "fact_type": "employment",
+        "current_source_type": "linkedin",
+        "company_name": "Fixture",
+        "school_name": null,
+        "value": {
+          "title": "Engineer",
+          "start_date": "2020-01-01",
+          "extra": "two"
+        }
+      },
+      {
+        "fact_type": "education",
+        "current_source_type": "linkedin",
+        "company_name": null,
+        "school_name": "FixtureU",
+        "value": {
+          "degree": "Masters",
+          "start_date": "2022-01-01"
+        }
+      }
+    ],
+    "expected": {
+      "sources": {
+        "wechat": {},
+        "linkedin": {},
+        "instagram": {}
+      },
+      "facts": [
+        {
+          "fact_type": "education",
+          "current_source_type": "linkedin",
+          "company_name": null,
+          "school_name": "FixtureU",
+          "value": {
+            "degree": "Masters",
+            "start_date": "2022-01-01"
+          }
+        },
+        {
+          "fact_type": "employment",
+          "current_source_type": "linkedin",
+          "company_name": "Fixture",
+          "school_name": null,
+          "value": {
+            "title": "Engineer",
+            "start_date": "2020-01-01",
+            "extra": "one"
+          }
+        }
+      ],
+      "instagram_accounts": []
+    }
+  },
+  {
+    "fields": [],
+    "facts": [
+      {
+        "fact_type": "education",
+        "current_source_type": "linkedin",
+        "company_name": null,
+        "school_name": "FixtureU",
+        "value": {
+          "degree": "Masters",
+          "start_date": "2022-01-01"
+        }
+      },
+      {
+        "fact_type": "employment",
+        "current_source_type": "linkedin",
+        "company_name": "Fixture",
+        "school_name": null,
+        "value": {
+          "title": "Engineer",
+          "start_date": "2020-01-01",
+          "extra": "two"
+        }
+      },
+      {
+        "fact_type": "employment",
+        "current_source_type": "linkedin",
+        "company_name": "Fixture",
+        "school_name": null,
+        "value": {
+          "title": "Engineer",
+          "start_date": "2020-01-01",
+          "extra": "one"
+        }
+      }
+    ],
+    "expected": {
+      "sources": {
+        "wechat": {},
+        "linkedin": {},
+        "instagram": {}
+      },
+      "facts": [
+        {
+          "fact_type": "education",
+          "current_source_type": "linkedin",
+          "company_name": null,
+          "school_name": "FixtureU",
+          "value": {
+            "degree": "Masters",
+            "start_date": "2022-01-01"
+          }
+        },
+        {
+          "fact_type": "employment",
+          "current_source_type": "linkedin",
+          "company_name": "Fixture",
+          "school_name": null,
+          "value": {
+            "title": "Engineer",
+            "start_date": "2020-01-01",
+            "extra": "two"
+          }
+        }
+      ],
+      "instagram_accounts": []
+    }
+  },
+  {
+    "fields": [
+      {
+        "field_key": "monica.custom_fields",
+        "value": {
+          "Instagram 简介": " Chinese first ",
+          "Instagram Bio": "Bio later",
+          "微信昵称": [
+            " One ",
+            "One",
+            "Two"
+          ]
+        }
+      },
+      {
+        "field_key": "instagram.accounts.z.username",
+        "value": "zebra"
+      },
+      {
+        "field_key": "instagram.accounts.a.username",
+        "value": "alice"
+      },
+      {
+        "field_key": "linkedin.about",
+        "value": "A\\nB"
+      },
+      {
+        "field_key": "linkedin.mutuals",
+        "value": 42
+      },
+      {
+        "field_key": "wechat.region",
+        "value": " Town "
+      }
+    ],
+    "facts": [],
+    "expected": {
+      "sources": {
+        "wechat": {
+          "nickname": "One\nTwo",
+          "region": "Town"
+        },
+        "linkedin": {
+          "about": "A\nB"
+        },
+        "instagram": {
+          "biography": "Bio later",
+          "account_id": "a",
+          "username": "alice"
+        }
+      },
+      "facts": [],
+      "instagram_accounts": [
+        {
+          "account_id": "z",
+          "username": "zebra"
+        },
+        {
+          "account_id": "a",
+          "username": "alice"
+        }
+      ]
+    }
+  },
+  {
+    "fields": [
+      {
+        "field_key": "monica.custom_fields",
+        "value": {
+          "Instagram 简介": " Chinese first ",
+          "Instagram Bio": "Bio later",
+          "微信昵称": [
+            " One ",
+            "One",
+            "Two"
+          ]
+        }
+      },
+      {
+        "field_key": "instagram.accounts.z.username",
+        "value": "zebra"
+      },
+      {
+        "field_key": "instagram.accounts.a.username",
+        "value": "alice"
+      },
+      {
+        "field_key": "linkedin.about",
+        "value": "A\\nB"
+      },
+      {
+        "field_key": "linkedin.mutuals",
+        "value": 42
+      },
+      {
+        "field_key": "wechat.region",
+        "value": " Town "
+      }
+    ],
+    "facts": [
+      {
+        "fact_type": "employment",
+        "current_source_type": "linkedin",
+        "company_name": "Fixture",
+        "school_name": null,
+        "value": {
+          "title": "Engineer",
+          "start_date": "2020-01-01",
+          "extra": "one"
+        }
+      },
+      {
+        "fact_type": "employment",
+        "current_source_type": "linkedin",
+        "company_name": "Fixture",
+        "school_name": null,
+        "value": {
+          "title": "Engineer",
+          "start_date": "2020-01-01",
+          "extra": "two"
+        }
+      },
+      {
+        "fact_type": "education",
+        "current_source_type": "linkedin",
+        "company_name": null,
+        "school_name": "FixtureU",
+        "value": {
+          "degree": "Masters",
+          "start_date": "2022-01-01"
+        }
+      }
+    ],
+    "expected": {
+      "sources": {
+        "wechat": {
+          "nickname": "One\nTwo",
+          "region": "Town"
+        },
+        "linkedin": {
+          "about": "A\nB"
+        },
+        "instagram": {
+          "biography": "Bio later",
+          "account_id": "a",
+          "username": "alice"
+        }
+      },
+      "facts": [
+        {
+          "fact_type": "education",
+          "current_source_type": "linkedin",
+          "company_name": null,
+          "school_name": "FixtureU",
+          "value": {
+            "degree": "Masters",
+            "start_date": "2022-01-01"
+          }
+        },
+        {
+          "fact_type": "employment",
+          "current_source_type": "linkedin",
+          "company_name": "Fixture",
+          "school_name": null,
+          "value": {
+            "title": "Engineer",
+            "start_date": "2020-01-01",
+            "extra": "one"
+          }
+        }
+      ],
+      "instagram_accounts": [
+        {
+          "account_id": "z",
+          "username": "zebra"
+        },
+        {
+          "account_id": "a",
+          "username": "alice"
+        }
+      ]
+    }
+  },
+  {
+    "fields": [
+      {
+        "field_key": "monica.custom_fields",
+        "value": {
+          "Instagram 简介": " Chinese first ",
+          "Instagram Bio": "Bio later",
+          "微信昵称": [
+            " One ",
+            "One",
+            "Two"
+          ]
+        }
+      },
+      {
+        "field_key": "instagram.accounts.z.username",
+        "value": "zebra"
+      },
+      {
+        "field_key": "instagram.accounts.a.username",
+        "value": "alice"
+      },
+      {
+        "field_key": "linkedin.about",
+        "value": "A\\nB"
+      },
+      {
+        "field_key": "linkedin.mutuals",
+        "value": 42
+      },
+      {
+        "field_key": "wechat.region",
+        "value": " Town "
+      }
+    ],
+    "facts": [
+      {
+        "fact_type": "education",
+        "current_source_type": "linkedin",
+        "company_name": null,
+        "school_name": "FixtureU",
+        "value": {
+          "degree": "Masters",
+          "start_date": "2022-01-01"
+        }
+      },
+      {
+        "fact_type": "employment",
+        "current_source_type": "linkedin",
+        "company_name": "Fixture",
+        "school_name": null,
+        "value": {
+          "title": "Engineer",
+          "start_date": "2020-01-01",
+          "extra": "two"
+        }
+      },
+      {
+        "fact_type": "employment",
+        "current_source_type": "linkedin",
+        "company_name": "Fixture",
+        "school_name": null,
+        "value": {
+          "title": "Engineer",
+          "start_date": "2020-01-01",
+          "extra": "one"
+        }
+      }
+    ],
+    "expected": {
+      "sources": {
+        "wechat": {
+          "nickname": "One\nTwo",
+          "region": "Town"
+        },
+        "linkedin": {
+          "about": "A\nB"
+        },
+        "instagram": {
+          "biography": "Bio later",
+          "account_id": "a",
+          "username": "alice"
+        }
+      },
+      "facts": [
+        {
+          "fact_type": "education",
+          "current_source_type": "linkedin",
+          "company_name": null,
+          "school_name": "FixtureU",
+          "value": {
+            "degree": "Masters",
+            "start_date": "2022-01-01"
+          }
+        },
+        {
+          "fact_type": "employment",
+          "current_source_type": "linkedin",
+          "company_name": "Fixture",
+          "school_name": null,
+          "value": {
+            "title": "Engineer",
+            "start_date": "2020-01-01",
+            "extra": "two"
+          }
+        }
+      ],
+      "instagram_accounts": [
+        {
+          "account_id": "z",
+          "username": "zebra"
+        },
+        {
+          "account_id": "a",
+          "username": "alice"
+        }
+      ]
+    }
+  },
+  {
+    "fields": [
+      {
+        "field_key": "wechat.region",
+        "value": " Town "
+      },
+      {
+        "field_key": "linkedin.mutuals",
+        "value": 42
+      },
+      {
+        "field_key": "linkedin.about",
+        "value": "A\\nB"
+      },
+      {
+        "field_key": "instagram.accounts.a.username",
+        "value": "alice"
+      },
+      {
+        "field_key": "instagram.accounts.z.username",
+        "value": "zebra"
+      },
+      {
+        "field_key": "monica.custom_fields",
+        "value": {
+          "Instagram 简介": " Chinese first ",
+          "Instagram Bio": "Bio later",
+          "微信昵称": [
+            " One ",
+            "One",
+            "Two"
+          ]
+        }
+      }
+    ],
+    "facts": [],
+    "expected": {
+      "sources": {
+        "wechat": {
+          "nickname": "One\nTwo",
+          "region": "Town"
+        },
+        "linkedin": {
+          "about": "A\nB"
+        },
+        "instagram": {
+          "biography": "Bio later",
+          "account_id": "a",
+          "username": "alice"
+        }
+      },
+      "facts": [],
+      "instagram_accounts": [
+        {
+          "account_id": "a",
+          "username": "alice"
+        },
+        {
+          "account_id": "z",
+          "username": "zebra"
+        }
+      ]
+    }
+  },
+  {
+    "fields": [
+      {
+        "field_key": "wechat.region",
+        "value": " Town "
+      },
+      {
+        "field_key": "linkedin.mutuals",
+        "value": 42
+      },
+      {
+        "field_key": "linkedin.about",
+        "value": "A\\nB"
+      },
+      {
+        "field_key": "instagram.accounts.a.username",
+        "value": "alice"
+      },
+      {
+        "field_key": "instagram.accounts.z.username",
+        "value": "zebra"
+      },
+      {
+        "field_key": "monica.custom_fields",
+        "value": {
+          "Instagram 简介": " Chinese first ",
+          "Instagram Bio": "Bio later",
+          "微信昵称": [
+            " One ",
+            "One",
+            "Two"
+          ]
+        }
+      }
+    ],
+    "facts": [
+      {
+        "fact_type": "employment",
+        "current_source_type": "linkedin",
+        "company_name": "Fixture",
+        "school_name": null,
+        "value": {
+          "title": "Engineer",
+          "start_date": "2020-01-01",
+          "extra": "one"
+        }
+      },
+      {
+        "fact_type": "employment",
+        "current_source_type": "linkedin",
+        "company_name": "Fixture",
+        "school_name": null,
+        "value": {
+          "title": "Engineer",
+          "start_date": "2020-01-01",
+          "extra": "two"
+        }
+      },
+      {
+        "fact_type": "education",
+        "current_source_type": "linkedin",
+        "company_name": null,
+        "school_name": "FixtureU",
+        "value": {
+          "degree": "Masters",
+          "start_date": "2022-01-01"
+        }
+      }
+    ],
+    "expected": {
+      "sources": {
+        "wechat": {
+          "nickname": "One\nTwo",
+          "region": "Town"
+        },
+        "linkedin": {
+          "about": "A\nB"
+        },
+        "instagram": {
+          "biography": "Bio later",
+          "account_id": "a",
+          "username": "alice"
+        }
+      },
+      "facts": [
+        {
+          "fact_type": "education",
+          "current_source_type": "linkedin",
+          "company_name": null,
+          "school_name": "FixtureU",
+          "value": {
+            "degree": "Masters",
+            "start_date": "2022-01-01"
+          }
+        },
+        {
+          "fact_type": "employment",
+          "current_source_type": "linkedin",
+          "company_name": "Fixture",
+          "school_name": null,
+          "value": {
+            "title": "Engineer",
+            "start_date": "2020-01-01",
+            "extra": "one"
+          }
+        }
+      ],
+      "instagram_accounts": [
+        {
+          "account_id": "a",
+          "username": "alice"
+        },
+        {
+          "account_id": "z",
+          "username": "zebra"
+        }
+      ]
+    }
+  },
+  {
+    "fields": [
+      {
+        "field_key": "wechat.region",
+        "value": " Town "
+      },
+      {
+        "field_key": "linkedin.mutuals",
+        "value": 42
+      },
+      {
+        "field_key": "linkedin.about",
+        "value": "A\\nB"
+      },
+      {
+        "field_key": "instagram.accounts.a.username",
+        "value": "alice"
+      },
+      {
+        "field_key": "instagram.accounts.z.username",
+        "value": "zebra"
+      },
+      {
+        "field_key": "monica.custom_fields",
+        "value": {
+          "Instagram 简介": " Chinese first ",
+          "Instagram Bio": "Bio later",
+          "微信昵称": [
+            " One ",
+            "One",
+            "Two"
+          ]
+        }
+      }
+    ],
+    "facts": [
+      {
+        "fact_type": "education",
+        "current_source_type": "linkedin",
+        "company_name": null,
+        "school_name": "FixtureU",
+        "value": {
+          "degree": "Masters",
+          "start_date": "2022-01-01"
+        }
+      },
+      {
+        "fact_type": "employment",
+        "current_source_type": "linkedin",
+        "company_name": "Fixture",
+        "school_name": null,
+        "value": {
+          "title": "Engineer",
+          "start_date": "2020-01-01",
+          "extra": "two"
+        }
+      },
+      {
+        "fact_type": "employment",
+        "current_source_type": "linkedin",
+        "company_name": "Fixture",
+        "school_name": null,
+        "value": {
+          "title": "Engineer",
+          "start_date": "2020-01-01",
+          "extra": "one"
+        }
+      }
+    ],
+    "expected": {
+      "sources": {
+        "wechat": {
+          "nickname": "One\nTwo",
+          "region": "Town"
+        },
+        "linkedin": {
+          "about": "A\nB"
+        },
+        "instagram": {
+          "biography": "Bio later",
+          "account_id": "a",
+          "username": "alice"
+        }
+      },
+      "facts": [
+        {
+          "fact_type": "education",
+          "current_source_type": "linkedin",
+          "company_name": null,
+          "school_name": "FixtureU",
+          "value": {
+            "degree": "Masters",
+            "start_date": "2022-01-01"
+          }
+        },
+        {
+          "fact_type": "employment",
+          "current_source_type": "linkedin",
+          "company_name": "Fixture",
+          "school_name": null,
+          "value": {
+            "title": "Engineer",
+            "start_date": "2020-01-01",
+            "extra": "two"
+          }
+        }
+      ],
+      "instagram_accounts": [
+        {
+          "account_id": "a",
+          "username": "alice"
+        },
+        {
+          "account_id": "z",
+          "username": "zebra"
+        }
+      ]
+    }
+  }
+]

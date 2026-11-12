@@ -151,6 +151,7 @@ export interface SearchHit {
 
 export interface ConversationItem {
   id: string;
+  source?: string;
   conversation_type: "direct" | "group";
   external_id: string;
   profile_id: string | null;

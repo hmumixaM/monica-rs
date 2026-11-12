@@ -11,6 +11,7 @@ import { SuggestionItem } from "./suggestion-item";
 import styles from "./suggestions.module.css";
 
 function sourceHref(source: WeeklySource, profileId: string) {
+  if (source.citation) return source.citation;
   if (source.kind === "post" || source.kind === "story") return `/timeline?event=${source.id}`;
   if (source.kind === "profile") return `/profiles/${profileId}`;
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;

@@ -1,46 +1,34 @@
 # Implementation ledger
 
-Accepted design: native Rust core shared by a Tauri menu-bar/browser application and Linux containers; PostgreSQL 16 with crm/wechat/instagram/linkedin schemas; reuse React UI and managed collector/Chatlog/face adapters. Initial work is isolated testing only. No existing data ingestion, synchronization, NAS deployment or production cutover is authorized in this implementation stage.
+Current scope is the complete Rust backend and shared Mac/NAS runtime, expanded to the fixed ordinary multi-source Mac baseline. Original worktrees remain read-only. Validation uses generated data, disposable databases and fake external providers.
 
-## Completed foundation
+The subsequent [2026-11-12 skill-based review](reviews/2026-11-12-rust-parity-review.md) records repaired lifecycle, concurrency, model configuration, weekly facts/attribution, native capability and Chatlog metadata defects. Its validation manifest supersedes earlier provisional smoke evidence for the affected behavior. The delivery and real-account gates below still apply.
 
-- Pinned CRM 6d59cfef4b1a12f678d809a00e37d8332be70b06 and Desktop e35b49e4ca33406f0fdd7ecf8767931b44fdac87.
-- 294 tracked source files copied, with per-file SHA-256 provenance; 143 API declarations inventoried.
-- Rust core/server, new-schema migrations, local ingest/drain CLI, health/readiness.
-- Transactional source record/job insertion; immutable observations and revisions; unchanged-content deduplication.
-- Per-object ordered jobs, concurrent independent jobs, leases/heartbeat, stale-token fencing and atomic projection/ack.
-- PostgreSQL integration tests and a fresh-cluster harness, including message batching and auth HTTP tests; see DATA_PATHS.md and validation commands.
-- Dockerfile, isolated Compose configuration, CI test workflow. Docker daemon unavailable locally; image execution not yet verified.
+## Implemented and under final integration
 
-## Next implementation order
+- Shared core/server, seven source schemas plus CRM, bounded immutable/mutable paths, typed projections, local lock ordering, fenced queues, generation coalescing and local cache invalidation.
+- Auth, manual and source profile fields, structured facts, groups, tags, linking, conversations, timeline, search, maps and page-specific summaries.
+- Content-addressed media, range/conditional reads, resumable uploads, durable publication recovery, OCR/face boundaries and managed external processes.
+- Multi-account Mail with Gmail/Graph/IMAP, WhatsApp import and bridge, Apple native source pages, evidence/revisions/coverage and account ownership controls.
+- Stateless browser model transport, bounded model slots, persistent incremental Memory, classification and derived jobs, tested with fake model servers.
+- Vite/React Router same-origin UI, first-class Sources/Mail/Evidence and browser agent UI. Tauri tray/settings, PostgreSQL and child process lifecycle, independent data directories and default-off sources.
+- Optional real pgoutput WAL capture, independent pipeline status and fenced retries. See CDC.md for exact behavior and maintenance prerequisites.
 
-1. Freeze executable legacy OpenAPI and identity/hash golden vectors. Source route inventory alone is not a compatibility proof.
-2. Implement complete domain schema and authentication, including bootstrap/login/logout, Argon2, session token hashes, CSRF, TOTP/recovery, and raw-body HMAC with persistent nonce replay protection.
-3. Port read APIs and profile writes using dedicated interactive/background pool budgets; test through existing UI. Implement durable media files/Range and signed import API.
-4. Replace generic test projection with real CRM projection, explicit account/profile lock protocol, manual precedence, group/relink/retirement behavior, durable snapshot cursors and schema-qualified queries.
-5. Run scheduler with cooperative cancellation, graceful shutdown, separate DB/AI/network/media limits, NAS I/O=1 and Mac I/O=2; wire managed adapters using fake services first.
-6. Complete all 143 API contracts and features: contacts, timelines, messages/search, maps, linking, stats, AI, OCR and faces. Update coverage only after behavioral parity tests.
-7. Migrate Next route shell to React Router/Vite, preserve routes/service worker/search/IndexedDB; serve assets through Rust.
-8. Tauri tray/settings and managed PostgreSQL under a separate Monica Rust app identifier/data directory; test pause/resume, sleep/wake, startup, crashes, port conflicts and exit.
-9. Mac Apple Silicon/macOS 26+ bundle and linux/amd64 + linux/arm64 images; frontend and platform acceptance.
-10. Three-round Python main / optimized desktop / Rust benchmarks on identical synthetic data and hardware. Target concurrent-8 interactive p95 <500ms, RSS -30%, import throughput or lock-wait p95 improvement >=30%, no other major p95/p99 regression >10%. Report app/SQL/schema changes separately. No performance claim before measured results.
+The static frozen-contract audit covers166 registered operations. This is not a substitute for behavior tests. Evidence is held in the differential scripts, Rust tests, UI tests and isolated validation logs. The final coverage ledger and consolidated report will be regenerated from those results after freeze.
 
-## Important limits
+## Outstanding delivery gates
 
-- Full CRM API/semantics, GUI, adapter lifecycle and Python/NAS benchmark comparison remain pending. Authentication operations have local HTTP regression coverage, with full legacy differential parity pending.
-- Current object UUID and JSON hash scheme is provisional; do not load old data or claim legacy compatibility.
-- Current projection table is a testable durable storage vertical slice, not the final CRM data model.
-- Public distribution signing, old-data migration, two-way synchronization and production rollout remain outside this test stage.
-- Preserve original checkouts and never copy their .env, archive/session data, build directories or uncommitted branches into this repository.
+1. Finish integrating the last shared signed-media and Chatlog snapshot paths, then rerun full workspace and HTTP verification on frozen source.
+2. Refresh the complete Mac test bundle and publish/validate Linux amd64/arm64 test images. Native GUI checks for the newest source controls remain limited by the locked desktop; automated native/backend and browser tests have passed.
+3. Run three rounds of fixed Python main, optimized desktop, multi-source and Rust benchmarks on Mac and isolated NAS test containers. Record cold-first-call, warm and concurrent import/read behavior, 10× scaling, SQL/WAL per thousand messages and process/database resources. Do not call the build high performance without measured acceptance.
+4. Commit final evidence, artifact identities and accurate feature/contract coverage. No personal data, production cutover or source-worktree changes.
 
-## 2026-11-11 follow-up
+## Native notebook and multi-source domain completion (2026-11-12)
 
-Implemented the first performance redesign: separate bounded immutable message path, typed compact conversation state/summaries, generation-coalesced work with stale lease fencing, active/history separation for mutable jobs, and removal of the global sequence watermark. Added adaptive streaming batches and three-round SQL/WAL/10x synthetic scaling measurements. Added real authentication HTTP routes and regressions for TOTP, consumed recovery codes, session revocation, Origin/Host/CSRF and login throttling.
+The accepted ordinary-chat baseline adds four providers to the original three. The single PostgreSQL database now contains `crm` plus `wechat`, `instagram`, `linkedin`, `whatsapp`, `apple_messages`, `apple_contacts`, and `mail`. A signed import's `connection_id` scopes source records, revisions, cursors, conversations, and trusted explicit-person bindings. Native `source=monica` imports remain CRM notebook facts and revisions; they do not create another provider schema or an artificial platform account.
 
-The user's full-backend objective remains unfinished. Do not describe these changes as complete backend delivery. DATA_PATHS.md explicitly separates implemented behavior from correction paths, scheduler/resource budgets, media/CRM APIs and cache work still needed.
+Source journals append a bounded page and cursor atomically. A separate short transaction projects that page and acknowledges its outbox. The append fast path batches heads, revision references and payloads; mutable records retain ordered A-B-A history. Native Contacts reset snapshots preserve their seen-ID set across retries, fence paused generations, and create bounded tombstones only after the final page. Both record count and payload bytes bound recovery batches, with one oversized record admitted to guarantee progress.
 
-Manual profile operations now have authenticated HTTP smoke tests: creation/listing, field editing/history/restore, tags and memberships. Full profile details, source provenance/manual-priority integration and structured employment/school filters remain incomplete (unsupported filters return 501 instead of misleading unfiltered results). SQLx migration rebuild tracking now watches the migrations directory, including newly added files.
+The notebook importer handles the pinned `legacy` adapter and public contacts/profiles/people/groups, generic field maps/single fields, structured address/employment/education aliases, messages, posts/stories and their interactions. It preserves manual-current precedence, typed content addressing, source-history deduplication, and Memory inputs. Shared source and notebook structured views use the same canonical organization IDs. Conversation labels additionally match the narrow accepted `c0007f5` ordinary-chat fix.
 
-Media multipart upload and authenticated download now use streamed files, SHA-256 deduplication, atomic no-overwrite blob publication, fsync before DB registration, bounded upload I/O (Mac 2/Linux 1), range responses, ETag/304, conservative attachment disposition, and profile media links. HTTP regressions cover repeated upload identity, bytes/Range/304 and attach/detach. Full format decoding/dimensions, crash-recovery/GC, resumable uploads and adapter media pipelines remain pending.
-
-Validation: 13 PostgreSQL regressions plus one batch-budget unit test; actual HTTP smoke exercises authentication, manual profiles/tags, media, and graceful exit. A 2,500-message streaming input replays with zero new rows. Three-round synthetic SQL/WAL scaling evidence is checked in separately. No full backend completion or overall performance target is claimed.
+Evidence: disposable PostgreSQL `domain-final-tests-21.log` contains 9 connection and 12 domain/import passes. Actual Python/Rust notebook differences are checked against all three fixed baselines: 96 database observations plus two HTTP details for each original baseline, 104 plus two details for the multi-source baseline. The newer baseline intentionally updates a repeated message's contents, while the two older baselines used `DO NOTHING`; that explicit behavior change is tested against the newer baseline. Signed connection imports add eight real HTTP observations, and the label fix adds 48 journal/projection plus six HTTP search observations. See the corresponding `notebook-differential-*`, `connection-import-differential-2.log`, and `conversation-labels-differential-4.log` evidence in `.autonomous/complete-monica`.

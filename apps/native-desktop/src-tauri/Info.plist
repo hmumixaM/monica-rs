@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>NSContactsUsageDescription</key><string>Monica 读取联系人姓名和联系方式，用于关联你在不同来源中的往来。</string>
+</dict></plist>

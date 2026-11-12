@@ -1,62 +1,36 @@
 "use client";
 
-import { type ReactNode, useLayoutEffect, useRef } from "react";
-
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
+import { Children, isValidElement, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
 import styles from "./feed.module.css";
 
-/**
- * Shortest-column placement that keeps DOM order for keyboard navigation. A ResizeObserver handles responsive
- * columns, decoded images and changed captions; until measured, CSS supplies an ordinary grid.
- */
+/** Keep only visible cards mounted. Existing row measurements survive page appends. */
 export function Masonry({ children, columns }: { children: ReactNode; columns?: "compact" }) {
   const root = useRef<HTMLDivElement>(null);
+  const items = useMemo(() => Children.toArray(children), [children]);
+  const [layout, setLayout] = useState({ width: 0, lanes: 2, gap: 12, margin: 0 });
   useLayoutEffect(() => {
-    const container = root.current;
-    if (!container) return;
-    const items = Array.from(container.children) as HTMLElement[];
-    let frame = 0;
-    let disposed = false;
-    const layout = () => {
-      frame = 0;
-      if (disposed || !container.clientWidth) return;
+    const container = root.current!;
+    const measure = () => {
       const style = getComputedStyle(container);
-      const count = Math.max(1, Number(style.getPropertyValue("--feed-columns")) || 2);
-      const gap = parseFloat(style.getPropertyValue("--feed-gap")) || 16;
-      const width = (container.clientWidth - gap * (count - 1)) / count;
-      for (const item of items) item.style.width = `${width}px`;
-      const heights = items.map((item) => item.getBoundingClientRect().height);
-      const tops = Array(count).fill(0) as number[];
-      container.dataset.positioned = "";
-      items.forEach((item, index) => {
-        const column = tops.indexOf(Math.min(...tops));
-        item.style.left = `${column * (width + gap)}px`;
-        item.style.top = `${tops[column]}px`;
-        tops[column] += heights[index] + gap;
-      });
-      container.style.height = `${Math.max(0, ...tops) - (items.length ? gap : 0)}px`;
+      const next = { width: container.clientWidth, lanes: Math.max(1, Number(style.getPropertyValue("--feed-columns")) || 2),
+        gap: parseFloat(style.getPropertyValue("--feed-gap")) || 12, margin: container.getBoundingClientRect().top + window.scrollY };
+      setLayout(old => Object.keys(next).every(key => old[key as keyof typeof old] === next[key as keyof typeof next]) ? old : next);
     };
-    const schedule = () => { if (!frame && !disposed) frame = requestAnimationFrame(layout); };
-    const sizes = new WeakMap<Element, string>();
-    const observer = new ResizeObserver((entries) => {
-      let changed = false;
-      for (const entry of entries) {
-        // The container height is an output; only its width can trigger layout.
-        const size = entry.target === container ? `${entry.contentRect.width}` : `${entry.contentRect.width}:${entry.contentRect.height}`;
-        if (sizes.get(entry.target) !== size) {
-          sizes.set(entry.target, size);
-          changed = true;
-        }
-      }
-      if (changed) schedule();
-    });
+    const observer = new ResizeObserver(measure);
     observer.observe(container);
-    items.forEach((item) => observer.observe(item));
-    layout();
-    return () => {
-      disposed = true;
-      observer.disconnect();
-      cancelAnimationFrame(frame);
-    };
-  }, [children]);
-  return <div className={styles.masonryHost}><div className={styles.masonry} data-columns={columns} ref={root}>{children}</div></div>;
+    measure();
+    return () => observer.disconnect();
+  }, []);
+  const virtualizer = useWindowVirtualizer({ count: items.length, lanes: layout.lanes, gap: layout.gap,
+    estimateSize: () => 420, overscan: 6, scrollMargin: layout.margin,
+    getItemKey: index => isValidElement(items[index]) ? items[index].key ?? index : index });
+  const width = (layout.width - layout.gap * (layout.lanes - 1)) / layout.lanes;
+  return <div className={styles.masonryHost}><div className={styles.masonry} data-columns={columns} data-positioned="" ref={root}
+    style={{ height: virtualizer.getTotalSize(), display: "block" }}>
+    {virtualizer.getVirtualItems().map(item => <div key={item.key} data-index={item.index} ref={virtualizer.measureElement}
+      style={{ position: "absolute", width, left: item.lane * (width + layout.gap), top: item.start - layout.margin }}>
+      {items[item.index]}
+    </div>)}
+  </div></div>;
 }

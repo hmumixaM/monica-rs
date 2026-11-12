@@ -1,8 +1,8 @@
 "use client";
 
 import { ArrowLeft, Link2, MessagesSquare, UserRound } from "lucide-react";
-import Link from "@/router/link";
-import { useRouter, useSearchParams } from "@/router/navigation";
+import Link from "../../src/router/link";
+import { useRouter, useSearchParams } from "../../src/router/navigation";
 import { useDeferredValue, useState } from "react";
 
 import type { ConversationItem } from "../../lib/api-types";
@@ -15,7 +15,15 @@ import { Conversation } from "./conversation";
 import styles from "./messages.module.css";
 
 function conversationName(row: ConversationItem) {
-  return row.display_name || row.external_id.replace(/^(direct|group):/, "");
+  return row.display_name || (row.external_id.startsWith("connection:")
+    ? (row.conversation_type === "group" ? "未命名群聊" : "未知联系人")
+    : row.external_id.replace(/^(direct|group):/, ""));
+}
+
+function sourceName(source?: string) {
+  return ({ linkedin: "LinkedIn", apple_messages: "短信 / iMessage", whatsapp: "WhatsApp",
+    wechat: "微信", instagram: "Instagram", mail: "邮件" } as Record<string, string>)[source ?? ""]
+    ?? (source && source !== "legacy" ? source : "");
 }
 
 function ThreadHeading({ row, onBack }: { row?: ConversationItem; onBack: () => void }) {
@@ -23,7 +31,7 @@ function ThreadHeading({ row, onBack }: { row?: ConversationItem; onBack: () => 
   return <div className={styles.threadHeading}>
     <IconButton className={styles.back} label="返回会话列表" onClick={onBack}><ArrowLeft size={18} /></IconButton>
     {row && <Avatar name={name} mediaId={row.avatar_media_id} size={36} round={row.conversation_type === "direct"} />}
-    <span className={styles.threadTitle}><h2>{name}</h2>{row && <small>{row.conversation_type === "group" ? "群聊" : "私聊"} · {formatNumber(row.message_count)} 条</small>}</span>
+    <span className={styles.threadTitle}><h2>{name}</h2>{row && <small>{sourceName(row.source) && `${sourceName(row.source)} · `}{row.conversation_type === "group" ? "群聊" : "私聊"}{!row.profile_id && " · 未关联"} · {formatNumber(row.message_count)} 条</small>}</span>
     {row?.profile_id
       ? <ButtonLink size="sm" variant="ghost" href={`/profiles/${row.profile_id}`}><UserRound size={14} />资料</ButtonLink>
       : row && <ButtonLink size="sm" variant="ghost" href={`/linking?q=${encodeURIComponent(name)}`}><Link2 size={14} />关联资料</ButtonLink>}
@@ -58,7 +66,7 @@ export function MessagesView() {
               <Avatar name={name} mediaId={row.avatar_media_id} size={42} round={row.conversation_type === "direct"} />
               <span className={styles.meta}>
                 <span><strong>{name}</strong><time>{relativeDays(row.last_message_at)}</time></span>
-                <small>{row.conversation_type === "group" && <b>群</b>}{!row.profile_id && <i>未关联</i>}
+                <small>{sourceName(row.source) && <b>{sourceName(row.source)}</b>}{row.conversation_type === "group" && <b>群</b>}{!row.profile_id && <i>未关联</i>}
                   {row.last_message_preview ? withoutSenderId(row.last_message_preview) : `${formatNumber(row.message_count)} 条消息`}</small>
               </span>
             </button>

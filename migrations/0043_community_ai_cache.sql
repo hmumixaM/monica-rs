@@ -1,0 +1,5 @@
+-- Only community labels invalidate the orbit's community cache dependency.
+CREATE TRIGGER cache_i AFTER INSERT ON crm.ai_outputs REFERENCING NEW TABLE AS added FOR EACH STATEMENT EXECUTE FUNCTION crm.queue_cache_invalidations('SELECT ''community'' domain,md5(subject)::uuid subject FROM changed WHERE kind=''ai.community''');
+CREATE TRIGGER cache_u AFTER UPDATE ON crm.ai_outputs REFERENCING OLD TABLE AS removed NEW TABLE AS added FOR EACH STATEMENT EXECUTE FUNCTION crm.queue_cache_invalidations('SELECT ''community'' domain,md5(subject)::uuid subject FROM changed WHERE kind=''ai.community''');
+CREATE TRIGGER cache_d AFTER DELETE ON crm.ai_outputs REFERENCING OLD TABLE AS removed FOR EACH STATEMENT EXECUTE FUNCTION crm.queue_cache_invalidations('SELECT ''community'' domain,md5(subject)::uuid subject FROM changed WHERE kind=''ai.community''');
+CREATE TRIGGER cache_u AFTER UPDATE ON crm.ai_settings REFERENCING OLD TABLE AS removed NEW TABLE AS added FOR EACH STATEMENT EXECUTE FUNCTION crm.queue_cache_invalidations('SELECT ''community'' domain,''00000000-0000-0000-0000-000000000000''::uuid subject FROM changed');

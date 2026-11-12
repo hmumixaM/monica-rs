@@ -1,10 +1,13 @@
 use argon2::{
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
-    password_hash::{SaltString, rand_core::OsRng},
+    password_hash::{
+        SaltString,
+        rand_core::{OsRng, RngCore},
+    },
 };
 use axum::{
-    Json, Router,
-    extract::{Path, Query, Request, State},
+    Extension, Json, Router,
+    extract::{ConnectInfo, FromRequest, Path, Query, Request, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -16,6 +19,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use subtle::ConstantTimeEq;
 use tokio::sync::Semaphore;
@@ -25,8 +29,13 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
+    pub native_sources_available: bool,
+    pub cdc_enabled: bool,
     pub media_root: std::path::PathBuf,
-    pub media_io: Arc<Semaphore>,
+    pub resources: monica_core::resources::ResourceBudget,
+    pub read_cache: crate::cache::ReadCache,
+    pub import_hmac_secret: Option<String>,
+    pub credentials: monica_core::credentials::CredentialCipher,
     cipher: Fernet,
     passwords: Arc<Semaphore>,
     dummy: String,
@@ -48,13 +57,15 @@ impl AppState {
         let dummy = tokio::task::spawn_blocking(|| hash_password(&token())).await??;
         let secure = origin.starts_with("https://");
         Ok(Self {
+            native_sources_available: cfg!(target_os = "macos")
+                && std::env::var_os("MONICA_NATIVE_ROOT").is_some(),
+            cdc_enabled: monica_core::cdc::enabled()?,
             pool,
             media_root,
-            media_io: Arc::new(Semaphore::new(if cfg!(target_os = "macos") {
-                2
-            } else {
-                1
-            })),
+            import_hmac_secret: None,
+            credentials: monica_core::credentials::CredentialCipher::new(secret)?,
+            resources: monica_core::resources::ResourceBudget::new(Default::default())?,
+            read_cache: crate::cache::ReadCache::default(),
             cipher,
             passwords: Arc::new(Semaphore::new(2)),
             dummy,
@@ -87,7 +98,9 @@ fn digest(value: &str) -> String {
     format!("{:x}", Sha256::digest(value.as_bytes()))
 }
 fn token() -> String {
-    format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
+    let mut bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 fn hash_password(value: &str) -> anyhow::Result<String> {
     Argon2::default()
@@ -141,7 +154,13 @@ async fn boundary(State(s): State<AppState>, request: Request, next: Next) -> Re
         return bad(StatusCode::FORBIDDEN, "invalid Origin").into_response();
     }
     if !["GET", "HEAD", "OPTIONS"].contains(&request.method().as_str())
-        && !["/api/v1/auth/bootstrap", "/api/v1/auth/login"].contains(&request.uri().path())
+        && ![
+            "/api/v1/auth/bootstrap",
+            "/api/v1/auth/login",
+            "/api/v1/imports/batches",
+        ]
+        .contains(&request.uri().path())
+        && !request.uri().path().starts_with("/api/v1/faces/device/")
     {
         let c = cookie(request.headers(), "crm_csrf").unwrap_or("");
         let h = request
@@ -170,6 +189,16 @@ pub fn routes(state: AppState) -> Router {
         .route("/api/v1/audit/events", get(audit))
         .merge(crate::profiles::routes())
         .merge(crate::media::routes())
+        .merge(crate::imports::routes())
+        .merge(crate::linking::routes())
+        .merge(crate::messages::routes())
+        .merge(crate::timeline::routes())
+        .merge(crate::faces::routes())
+        .merge(crate::pages::routes(state.clone()))
+        .merge(crate::ai::routes())
+        .merge(crate::collector::routes())
+        .merge(crate::connections::routes())
+        .merge(crate::cdc::routes())
         .layer(axum::extract::DefaultBodyLimit::max(65536))
         .layer(middleware::from_fn_with_state(state.clone(), boundary))
         .with_state(state)
@@ -181,20 +210,76 @@ struct Credentials {
     totp_code: Option<String>,
     recovery_code: Option<String>,
 }
-fn validate(c: &Credentials) -> ApiResult<()> {
-    if !(3..=320).contains(&c.email.len()) || !(12..=512).contains(&c.password.len()) {
-        return Err(bad(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "invalid email or password length",
-        ));
+fn string_errors(
+    body: &Value,
+    key: &str,
+    required: bool,
+    min: usize,
+    max: usize,
+    errors: &mut Vec<Value>,
+) {
+    let location = json!(["body", key]);
+    let Some(value) = body.get(key) else {
+        if required {
+            errors
+                .push(json!({"type":"missing","loc":location,"msg":"Field required","input":body}));
+        }
+        return;
+    };
+    if !required && value.is_null() {
+        return;
     }
-    Ok(())
+    let Some(value_string) = value.as_str() else {
+        errors.push(json!({"type":"string_type","loc":location,"msg":"Input should be a valid string","input":value}));
+        return;
+    };
+    let len = value_string.chars().count();
+    if len < min {
+        errors.push(json!({"type":"string_too_short","loc":location,"msg":format!("String should have at least {min} characters"),"input":value,"ctx":{"min_length":min}}));
+    } else if len > max {
+        errors.push(json!({"type":"string_too_long","loc":location,"msg":format!("String should have at most {max} characters"),"input":value,"ctx":{"max_length":max}}));
+    }
 }
-async fn bootstrap(
-    State(s): State<AppState>,
-    Json(c): Json<Credentials>,
-) -> ApiResult<Json<Value>> {
-    validate(&c)?;
+fn invalid_input(errors: Vec<Value>) -> Response {
+    (
+        StatusCode::UNPROCESSABLE_ENTITY,
+        Json(json!({"detail":errors})),
+    )
+        .into_response()
+}
+fn object_input(body: &Value) -> Result<(), Vec<Value>> {
+    if body.is_object() {
+        return Ok(());
+    }
+    Err(vec![
+        json!({"type":"model_attributes_type","loc":["body"],"msg":"Input should be a valid dictionary or object to extract fields from","input":body}),
+    ])
+}
+impl FromRequest<AppState> for Credentials {
+    type Rejection = Response;
+    async fn from_request(request: Request, state: &AppState) -> Result<Self, Self::Rejection> {
+        let login = request.uri().path().ends_with("/login");
+        let Json(mut body) = Json::<Value>::from_request(request, state)
+            .await
+            .map_err(IntoResponse::into_response)?;
+        object_input(&body).map_err(invalid_input)?;
+        let mut errors = Vec::new();
+        string_errors(&body, "email", true, 3, 320, &mut errors);
+        string_errors(&body, "password", true, 12, 512, &mut errors);
+        if login {
+            string_errors(&body, "totp_code", false, 6, 8, &mut errors);
+            string_errors(&body, "recovery_code", false, 0, usize::MAX, &mut errors);
+        } else {
+            body.as_object_mut().unwrap().remove("totp_code");
+            body.as_object_mut().unwrap().remove("recovery_code");
+        }
+        if !errors.is_empty() {
+            return Err(invalid_input(errors));
+        }
+        serde_json::from_value(body).map_err(|_| StatusCode::BAD_REQUEST.into_response())
+    }
+}
+async fn bootstrap(State(s): State<AppState>, c: Credentials) -> ApiResult<Json<Value>> {
     let permit = s
         .passwords
         .clone()
@@ -221,8 +306,9 @@ async fn bootstrap(
     if inserted != 1 {
         return Err(bad(StatusCode::CONFLICT, "bootstrap already completed"));
     }
-    sqlx::query("INSERT INTO crm.audit_events(user_id,action) VALUES($1,'auth.bootstrap')")
+    sqlx::query("INSERT INTO crm.audit_events(user_id,action,metadata) VALUES($1,'auth.bootstrap',jsonb_build_object('email',$2::text))")
         .bind(id)
+        .bind(&c.email)
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
@@ -230,17 +316,22 @@ async fn bootstrap(
 }
 async fn csrf(State(s): State<AppState>) -> Response {
     let t = token();
-    cookie_response(&s, "crm_csrf", &t, false, 2592000, json!({"csrf_token":t}))
+    cookie_response(&s, "crm_csrf", &t, false, 1209600, json!({"csrf_token":t}))
 }
 async fn login(
     State(s): State<AppState>,
     h: HeaderMap,
-    Json(c): Json<Credentials>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
+    c: Credentials,
 ) -> ApiResult<Response> {
-    validate(&c)?;
-    let key = digest(&c.email.trim().to_lowercase());
-    let attempts:i32=sqlx::query_scalar("INSERT INTO crm.auth_login_attempts VALUES($1,1,now()) ON CONFLICT(attempt_key) DO UPDATE SET attempts=CASE WHEN crm.auth_login_attempts.window_started_at<now()-interval '15 minutes' THEN 1 ELSE crm.auth_login_attempts.attempts+1 END,window_started_at=CASE WHEN crm.auth_login_attempts.window_started_at<now()-interval '15 minutes' THEN now() ELSE crm.auth_login_attempts.window_started_at END RETURNING attempts").bind(&key).fetch_one(&s.pool).await?;
-    if attempts > 5 {
+    let ip = peer.map(|Extension(ConnectInfo(address))| address.ip().to_string());
+    let key = digest(&format!(
+        "{}|{}",
+        c.email.trim().to_lowercase(),
+        ip.as_deref().unwrap_or("unknown")
+    ));
+    let blocked:bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.auth_login_attempts WHERE attempt_key=$1 AND blocked_until>now())").bind(&key).fetch_one(&s.pool).await?;
+    if blocked {
         return Err(bad(
             StatusCode::TOO_MANY_REQUESTS,
             "too many login attempts; try again later",
@@ -271,6 +362,7 @@ async fn login(
     .await
     .map_err(|_| bad(StatusCode::INTERNAL_SERVER_ERROR, "password worker failed"))?;
     if !valid || row.is_none() {
+        login_failure(&s, &key, ip.as_deref()).await?;
         return Err(bad(StatusCode::UNAUTHORIZED, "invalid credentials"));
     }
     let id: Uuid = row.unwrap().get("id");
@@ -284,7 +376,8 @@ async fn login(
         return Err(bad(StatusCode::UNAUTHORIZED, "credentials changed"));
     }
     if let Some(encrypted) = current.get::<Option<String>, _>("totp_secret") {
-        let totp = decrypt_totp(&s, &encrypted, &c.email)?;
+        let totp = decrypt_totp(&s, &encrypted, &c.email)
+            .map_err(|_| bad(StatusCode::UNAUTHORIZED, "TOTP configuration invalid"))?;
         let valid = c
             .totp_code
             .as_ref()
@@ -293,13 +386,15 @@ async fn login(
             let code = c.recovery_code.as_deref().unwrap_or("").trim();
             let n=sqlx::query("UPDATE crm.auth_recovery_codes SET consumed_at=now() WHERE user_id=$1 AND code_hash=$2 AND consumed_at IS NULL").bind(id).bind(digest(code)).execute(&mut *tx).await?.rows_affected();
             if code.is_empty() || n != 1 {
+                tx.rollback().await?;
+                login_failure(&s, &key, ip.as_deref()).await?;
                 return Err(bad(StatusCode::UNAUTHORIZED, "TOTP code required"));
             }
         }
     }
     let t = token();
-    sqlx::query("INSERT INTO crm.sessions(id,user_id,token_hash,expires_at,user_agent) VALUES($1,$2,$3,now()+interval '30 days',$4)")
- .bind(Uuid::new_v4()).bind(id).bind(digest(&t)).bind(h.get("user-agent").and_then(|x|x.to_str().ok())).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO crm.sessions(id,user_id,token_hash,expires_at,user_agent,ip_address) VALUES($1,$2,$3,now()+interval '14 days',$4,$5)")
+ .bind(Uuid::new_v4()).bind(id).bind(digest(&t)).bind(h.get("user-agent").and_then(|x|x.to_str().ok())).bind(&ip).execute(&mut *tx).await?;
     sqlx::query("UPDATE crm.app_users SET last_login_at=now() WHERE id=$1")
         .bind(id)
         .execute(&mut *tx)
@@ -308,8 +403,9 @@ async fn login(
         .bind(key)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("INSERT INTO crm.audit_events(user_id,action) VALUES($1,'auth.login')")
+    sqlx::query("INSERT INTO crm.audit_events(user_id,action,metadata) VALUES($1,'auth.login',jsonb_build_object('ip',$2::text))")
         .bind(id)
+        .bind(ip)
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
@@ -318,9 +414,16 @@ async fn login(
         "crm_session",
         &t,
         true,
-        2592000,
+        1209600,
         json!({"status":"authenticated"}),
     ))
+}
+async fn login_failure(s: &AppState, key: &str, ip: Option<&str>) -> ApiResult<()> {
+    // Count actual failures atomically. Password hashing has already finished,
+    // so this transaction never holds a database lock during expensive work.
+    sqlx::query("WITH failure AS (INSERT INTO crm.auth_login_attempts(attempt_key,attempts,window_started_at,blocked_until) VALUES($1,1,now(),NULL) ON CONFLICT(attempt_key) DO UPDATE SET attempts=CASE WHEN crm.auth_login_attempts.window_started_at<now()-interval '15 minutes' THEN 1 ELSE crm.auth_login_attempts.attempts+1 END, window_started_at=CASE WHEN crm.auth_login_attempts.window_started_at<now()-interval '15 minutes' THEN now() ELSE crm.auth_login_attempts.window_started_at END, blocked_until=CASE WHEN crm.auth_login_attempts.window_started_at>=now()-interval '15 minutes' AND crm.auth_login_attempts.attempts+1>=5 THEN now()+interval '15 minutes' ELSE NULL END RETURNING attempts) INSERT INTO crm.audit_events(action,metadata) SELECT 'auth.login.failed',jsonb_build_object('ip',$2::text,'attempts',attempts) FROM failure")
+        .bind(key).bind(ip).execute(&s.pool).await?;
+    Ok(())
 }
 async fn me(State(s): State<AppState>, h: HeaderMap) -> ApiResult<Json<Value>> {
     let (id, email) = user(&s, &h).await?;
@@ -346,7 +449,7 @@ fn totp(secret: Vec<u8>, email: &str) -> ApiResult<TOTP> {
         1,
         30,
         secret,
-        Some("Monica".into()),
+        Some("Monica Next CRM".into()),
         email.into(),
     )
     .map_err(|_| {
@@ -395,11 +498,22 @@ async fn totp_setup(State(s): State<AppState>, h: HeaderMap) -> ApiResult<Json<V
 struct Code {
     code: String,
 }
-async fn totp_verify(
-    State(s): State<AppState>,
-    h: HeaderMap,
-    Json(c): Json<Code>,
-) -> ApiResult<Json<Value>> {
+impl FromRequest<AppState> for Code {
+    type Rejection = Response;
+    async fn from_request(request: Request, state: &AppState) -> Result<Self, Self::Rejection> {
+        let Json(body) = Json::<Value>::from_request(request, state)
+            .await
+            .map_err(IntoResponse::into_response)?;
+        object_input(&body).map_err(invalid_input)?;
+        let mut errors = Vec::new();
+        string_errors(&body, "code", true, 6, 8, &mut errors);
+        if !errors.is_empty() {
+            return Err(invalid_input(errors));
+        }
+        serde_json::from_value(body).map_err(|_| StatusCode::BAD_REQUEST.into_response())
+    }
+}
+async fn totp_verify(State(s): State<AppState>, h: HeaderMap, c: Code) -> ApiResult<Json<Value>> {
     let (id, email) = user(&s, &h).await?;
     let mut tx = s.pool.begin().await?;
     let encrypted: Option<String> =
@@ -466,4 +580,60 @@ async fn audit(
     let (id, _) = user(&s, &h).await?;
     let rows:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(e)-'user_id' FROM crm.audit_events e WHERE user_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2").bind(id).bind(q.limit.unwrap_or(100).clamp(1,200)).fetch_all(&s.pool).await?;
     Ok(Json(json!(rows)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::{Body, to_bytes};
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn real_python_auth_validation_contract() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../docs/contracts/auth-validation.json"))
+                .unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_millis(100))
+            .connect_lazy("postgres://synthetic:synthetic@127.0.0.1:1/no_database")
+            .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::new(
+            pool,
+            "synthetic-test-secret-at-least-32bytes",
+            "http://testserver".into(),
+            root.path().to_path_buf(),
+        )
+        .await
+        .unwrap();
+        let app = routes(state);
+        for case in fixture["fixtures"].as_array().unwrap() {
+            let request = &case["request"];
+            let mut builder = Request::builder()
+                .method(request["method"].as_str().unwrap())
+                .uri(request["path"].as_str().unwrap())
+                .header("host", "testserver")
+                .header("content-type", "application/json");
+            for (key, value) in request["headers"].as_object().unwrap() {
+                builder = builder.header(key, value.as_str().unwrap());
+            }
+            let response = app
+                .clone()
+                .oneshot(
+                    builder
+                        .body(Body::from(serde_json::to_vec(&request["json"]).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status().as_u16(),
+                case["response"]["status"].as_u64().unwrap() as u16,
+                "request: {request}"
+            );
+            let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+            let actual: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(actual, case["response"]["json"], "request: {request}");
+        }
+    }
 }

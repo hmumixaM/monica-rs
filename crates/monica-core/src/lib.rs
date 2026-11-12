@@ -1,9 +1,30 @@
+pub mod adapter;
+pub mod ai;
+pub mod cdc;
+pub mod collector;
+pub mod connections;
+pub mod content;
+pub mod credentials;
+pub mod domain;
+pub mod faces;
+pub mod identity;
+pub mod imports;
+pub mod link_matching;
+pub mod linking;
+pub mod mail;
+pub mod mail_oauth;
+pub mod media;
 pub mod messages;
+pub mod pages;
+pub mod resources;
+pub mod scheduler;
+pub mod source_blobs;
+pub mod source_time;
+pub mod whatsapp;
 // Durable source ingestion and ordered projection. No production credentials or adapters.
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -13,13 +34,26 @@ pub enum Provider {
     Wechat,
     Instagram,
     Linkedin,
+    Whatsapp,
+    #[serde(rename = "apple_messages")]
+    AppleMessages,
+    #[serde(rename = "apple_contacts")]
+    AppleContacts,
+    Mail,
 }
 impl Provider {
+    pub fn parse(name: &str) -> Result<Self> {
+        serde_json::from_value(Value::String(name.into())).map_err(Into::into)
+    }
     pub fn schema(self) -> &'static str {
         match self {
             Self::Wechat => "wechat",
             Self::Instagram => "instagram",
             Self::Linkedin => "linkedin",
+            Self::Whatsapp => "whatsapp",
+            Self::AppleMessages => "apple_messages",
+            Self::AppleContacts => "apple_contacts",
+            Self::Mail => "mail",
         }
     }
 }
@@ -34,26 +68,27 @@ pub struct Record {
     pub provider: Provider,
     pub account: String,
     pub object: String,
+    #[serde(default = "default_object_kind")]
+    pub kind: String,
     pub event: String,
     pub payload: Value,
 }
 
-/// New-runtime identity. Legacy UUID/canonical-JSON compatibility is not yet claimed.
-pub fn object_id(record: &Record) -> Uuid {
-    Uuid::new_v5(
-        &Uuid::NAMESPACE_URL,
-        &serde_json::to_vec(&(record.provider.schema(), &record.account, &record.object)).unwrap(),
-    )
+fn default_object_kind() -> String {
+    "record".into()
+}
+
+/// Uses the pinned platform's account namespace and explicit object kind.
+pub fn object_id(record: &Record) -> Result<Uuid> {
+    Ok(identity::object_id(
+        identity::account_id(record.provider, &record.account)?,
+        &record.kind,
+        &record.object,
+    ))
 }
 
 pub async fn ingest(pool: &PgPool, r: &Record) -> Result<i64> {
-    if r.account.is_empty() || r.object.is_empty() || r.event.is_empty() {
-        bail!("empty identity");
-    }
-    let s = r.provider.schema();
-    let id = object_id(r);
-    let account_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, &serde_json::to_vec(&(s, &r.account))?);
-    let hash = format!("{:x}", Sha256::digest(serde_json::to_vec(&r.payload)?));
+    identity::validate_json(&r.payload)?;
     let mut tx = pool.begin().await?;
     sqlx::query("SET LOCAL lock_timeout = '5s'")
         .execute(&mut *tx)
@@ -61,81 +96,9 @@ pub async fn ingest(pool: &PgPool, r: &Record) -> Result<i64> {
     sqlx::query("SET LOCAL statement_timeout = '15s'")
         .execute(&mut *tx)
         .await?;
-    sqlx::query(&format!(
-        "INSERT INTO {s}.accounts(id,external_id) VALUES($1,$2) ON CONFLICT DO NOTHING"
-    ))
-    .bind(account_id)
-    .bind(&r.account)
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query(&format!(
-        "INSERT INTO {s}.objects(id,account_id,external_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING"
-    ))
-    .bind(id)
-    .bind(account_id)
-    .bind(&r.object)
-    .execute(&mut *tx)
-    .await?;
-    let previous: i64 = sqlx::query_scalar(&format!(
-        "SELECT revision FROM {s}.objects WHERE id=$1 FOR UPDATE"
-    ))
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await?;
-    if let Some(row) = sqlx::query(&format!(
-        "SELECT hash,version FROM {s}.observations WHERE object_id=$1 AND event_id=$2"
-    ))
-    .bind(id)
-    .bind(&r.event)
-    .fetch_optional(&mut *tx)
-    .await?
-    {
-        if row.get::<String, _>("hash") != hash {
-            bail!("event identity reused with different content");
-        }
-        return Ok(row.get("version"));
-    }
-    let last: Option<String> = sqlx::query_scalar(&format!(
-        "SELECT hash FROM {s}.revisions WHERE object_id=$1 AND version=$2"
-    ))
-    .bind(id)
-    .bind(previous)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let version = if last.as_deref() == Some(&hash) {
-        previous
-    } else {
-        previous + 1
-    };
-    if version != previous {
-        sqlx::query(&format!("INSERT INTO {s}.revisions VALUES($1,$2,$3,$4)"))
-            .bind(id)
-            .bind(version)
-            .bind(&r.payload)
-            .bind(&hash)
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query(&format!("UPDATE {s}.objects SET revision=$2 WHERE id=$1"))
-            .bind(id)
-            .bind(version)
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query("INSERT INTO crm.jobs(provider,object_id,version) VALUES($1,$2,$3)")
-            .bind(s)
-            .bind(id)
-            .bind(version)
-            .execute(&mut *tx)
-            .await?;
-    }
-    sqlx::query(&format!("INSERT INTO {s}.observations VALUES($1,$2,$3,$4)"))
-        .bind(id)
-        .bind(&r.event)
-        .bind(&hash)
-        .bind(version)
-        .execute(&mut *tx)
-        .await?;
+    let observation = domain::observe(&mut tx, r).await?;
     tx.commit().await?;
-    Ok(version)
+    Ok(observation.version)
 }
 
 #[derive(Debug)]
@@ -182,15 +145,9 @@ pub async fn project(pool: &PgPool, lease: &Lease) -> Result<()> {
     sqlx::query("SELECT id FROM crm.jobs WHERE id=$1 AND token=$2 AND state='running' AND lease_until>clock_timestamp() FOR UPDATE")
         .bind(lease.id).bind(lease.token).fetch_optional(&mut *tx).await?.context("lease lost")?;
     let s = lease.provider.schema();
-    let payload: Value = sqlx::query_scalar(&format!(
-        "SELECT payload FROM {s}.revisions WHERE object_id=$1 AND version=$2"
-    ))
-    .bind(lease.object)
-    .bind(lease.version)
-    .fetch_one(&mut *tx)
-    .await?;
-    sqlx::query("INSERT INTO crm.projections VALUES($1,$2,$3,$4) ON CONFLICT(provider,object_id) DO UPDATE SET version=excluded.version,payload=excluded.payload WHERE crm.projections.version<excluded.version")
-        .bind(s).bind(lease.object).bind(lease.version).bind(payload).execute(&mut *tx).await?;
+    domain::project(&mut tx, lease).await?;
+    sqlx::query("INSERT INTO crm.projections(provider,object_id,version) VALUES($1,$2,$3) ON CONFLICT(provider,object_id) DO UPDATE SET version=excluded.version WHERE crm.projections.version<excluded.version")
+        .bind(s).bind(lease.object).bind(lease.version).execute(&mut *tx).await?;
 
     let n=sqlx::query("UPDATE crm.jobs SET state='complete',token=NULL,lease_until=NULL WHERE id=$1 AND token=$2 AND lease_until>clock_timestamp()")
         .bind(lease.id).bind(lease.token).execute(&mut *tx).await?.rows_affected();

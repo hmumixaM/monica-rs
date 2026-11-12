@@ -1,0 +1,15 @@
+{
+  "package": "geonamescache",
+  "version": "3.0.2",
+  "source": "https://www.geonames.org/",
+  "license": "Creative Commons Attribution 4.0 International",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "cities": 34006,
+  "names": 337918,
+  "files": {
+    "states.tsv": "e48c4e58e280bd05b06ad5bbe5364dadd1f1d4cf87f4d00f7bb9709073842e4f",
+    "cities.tsv": "a05a58e629f95c4ea2ddc3ef7bd9dc20a2d0a41a156a89bb7eef277952c748f1",
+    "names.tsv": "f69347a6b720651ac10f9e2513fde6f89a3338f23635b18fe2c9bd1918f57a51",
+    "countries.tsv": "e455fe85d26242fb485fa5357cbac1cfc1bed0a4639be488fe76f116134fe86a"
+  }
+}

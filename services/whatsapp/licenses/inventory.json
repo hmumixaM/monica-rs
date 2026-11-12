@@ -1,0 +1,288 @@
+{
+  "source_commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+  "go": "go version go1.26.0 darwin/arm64",
+  "modules": [
+    {
+      "module": "filippo.io/edwards25519",
+      "version": "v1.2.0",
+      "files": [
+        "filippo.io_edwards25519@v1.2.0/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/DATA-DOG/go-sqlmock",
+      "version": "v1.5.2",
+      "files": [
+        "github.com_DATA-DOG_go-sqlmock@v1.5.2/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/agnivade/levenshtein",
+      "version": "v1.2.1",
+      "files": [
+        "github.com_agnivade_levenshtein@v1.2.1/License.txt"
+      ]
+    },
+    {
+      "module": "github.com/andreyvit/diff",
+      "version": "v0.0.0-20170406064948-c7f18ee00883",
+      "files": [
+        "github.com_andreyvit_diff@v0.0.0-20170406064948-c7f18ee00883/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/beeper/argo-go",
+      "version": "v1.1.2",
+      "files": [
+        "github.com_beeper_argo-go@v1.1.2/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/coder/websocket",
+      "version": "v1.8.15",
+      "files": [
+        "github.com_coder_websocket@v1.8.15/LICENSE.txt"
+      ]
+    },
+    {
+      "module": "github.com/coreos/go-systemd/v22",
+      "version": "v22.7.0",
+      "files": [
+        "github.com_coreos_go-systemd_v22@v22.7.0/LICENSE",
+        "github.com_coreos_go-systemd_v22@v22.7.0/NOTICE"
+      ]
+    },
+    {
+      "module": "github.com/davecgh/go-spew",
+      "version": "v1.1.1",
+      "files": [
+        "github.com_davecgh_go-spew@v1.1.1/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/elliotchance/orderedmap/v3",
+      "version": "v3.1.0",
+      "files": [
+        "github.com_elliotchance_orderedmap_v3@v3.1.0/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/golang/protobuf",
+      "version": "v1.5.0",
+      "files": [
+        "github.com_golang_protobuf@v1.5.0/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/google/go-cmp",
+      "version": "v0.7.0",
+      "files": [
+        "github.com_google_go-cmp@v0.7.0/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/google/uuid",
+      "version": "v1.6.0",
+      "files": [
+        "github.com_google_uuid@v1.6.0/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/mattn/go-colorable",
+      "version": "v0.1.14",
+      "files": [
+        "github.com_mattn_go-colorable@v0.1.14/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/mattn/go-isatty",
+      "version": "v0.0.20",
+      "files": [
+        "github.com_mattn_go-isatty@v0.0.20/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/mattn/go-sqlite3",
+      "version": "v1.14.52",
+      "files": [
+        "github.com_mattn_go-sqlite3@v1.14.52/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/petermattis/goid",
+      "version": "v0.0.0-20260918085751-abfca077860b",
+      "files": [
+        "github.com_petermattis_goid@v0.0.0-20260918085751-abfca077860b/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/pkg/errors",
+      "version": "v0.9.1",
+      "files": [
+        "github.com_pkg_errors@v0.9.1/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/pmezard/go-difflib",
+      "version": "v1.0.0",
+      "files": [
+        "github.com_pmezard_go-difflib@v1.0.0/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/rs/xid",
+      "version": "v1.6.0",
+      "files": [
+        "github.com_rs_xid@v1.6.0/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/rs/zerolog",
+      "version": "v1.35.1",
+      "files": [
+        "github.com_rs_zerolog@v1.35.1/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/sergi/go-diff",
+      "version": "v1.3.1",
+      "files": [
+        "github.com_sergi_go-diff@v1.3.1/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/skip2/go-qrcode",
+      "version": "v0.0.0-20200617195104-da1b6568686e",
+      "files": [
+        "github.com_skip2_go-qrcode@v0.0.0-20200617195104-da1b6568686e/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/stretchr/testify",
+      "version": "v1.12.0",
+      "files": [
+        "github.com_stretchr_testify@v1.12.0/LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/vektah/gqlparser/v2",
+      "version": "v2.5.27",
+      "files": [
+        "github.com_vektah_gqlparser_v2@v2.5.27/LICENSE"
+      ]
+    },
+    {
+      "module": "go.mau.fi/libsignal",
+      "version": "v0.2.2",
+      "files": [
+        "go.mau.fi_libsignal@v0.2.2/LICENSE"
+      ]
+    },
+    {
+      "module": "go.mau.fi/util",
+      "version": "v0.11.0",
+      "files": [
+        "go.mau.fi_util@v0.11.0/LICENSE"
+      ]
+    },
+    {
+      "module": "go.mau.fi/whatsmeow",
+      "version": "v0.0.0-20261110152934-c88388f983b4",
+      "files": [
+        "go.mau.fi_whatsmeow@v0.0.0-20261110152934-c88388f983b4/LICENSE"
+      ]
+    },
+    {
+      "module": "golang.org/x/crypto",
+      "version": "v0.58.0",
+      "files": [
+        "golang.org_x_crypto@v0.58.0/LICENSE"
+      ]
+    },
+    {
+      "module": "golang.org/x/exp",
+      "version": "v0.0.0-20261014143641-f0251eb4aa3e",
+      "files": [
+        "golang.org_x_exp@v0.0.0-20261014143641-f0251eb4aa3e/LICENSE"
+      ]
+    },
+    {
+      "module": "golang.org/x/mod",
+      "version": "v0.42.0",
+      "files": [
+        "golang.org_x_mod@v0.42.0/LICENSE"
+      ]
+    },
+    {
+      "module": "golang.org/x/net",
+      "version": "v0.61.0",
+      "files": [
+        "golang.org_x_net@v0.61.0/LICENSE"
+      ]
+    },
+    {
+      "module": "golang.org/x/sync",
+      "version": "v0.24.0",
+      "files": [
+        "golang.org_x_sync@v0.24.0/LICENSE"
+      ]
+    },
+    {
+      "module": "golang.org/x/sys",
+      "version": "v0.49.0",
+      "files": [
+        "golang.org_x_sys@v0.49.0/LICENSE"
+      ]
+    },
+    {
+      "module": "golang.org/x/term",
+      "version": "v0.47.0",
+      "files": [
+        "golang.org_x_term@v0.47.0/LICENSE"
+      ]
+    },
+    {
+      "module": "golang.org/x/text",
+      "version": "v0.43.0",
+      "files": [
+        "golang.org_x_text@v0.43.0/LICENSE"
+      ]
+    },
+    {
+      "module": "golang.org/x/tools",
+      "version": "v0.52.0",
+      "files": [
+        "golang.org_x_tools@v0.52.0/LICENSE"
+      ]
+    },
+    {
+      "module": "golang.org/x/tools/go/expect",
+      "version": "v0.1.1-deprecated",
+      "files": [
+        "golang.org_x_tools_go_expect@v0.1.1-deprecated/LICENSE"
+      ]
+    },
+    {
+      "module": "golang.org/x/tools/go/packages/packagestest",
+      "version": "v0.1.1-deprecated",
+      "files": [
+        "golang.org_x_tools_go_packages_packagestest@v0.1.1-deprecated/LICENSE"
+      ]
+    },
+    {
+      "module": "google.golang.org/protobuf",
+      "version": "v1.36.12",
+      "files": [
+        "google.golang.org_protobuf@v1.36.12/LICENSE"
+      ]
+    },
+    {
+      "module": "gopkg.in/yaml.v3",
+      "version": "v3.0.1",
+      "files": [
+        "gopkg.in_yaml.v3@v3.0.1/LICENSE",
+        "gopkg.in_yaml.v3@v3.0.1/NOTICE"
+      ]
+    }
+  ]
+}

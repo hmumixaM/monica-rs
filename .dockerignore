@@ -1,0 +1,13 @@
+.git
+.autonomous
+.local-validation
+target
+**/node_modules
+**/dist
+**/target
+**/.env
+**/.env.*
+**/test-results
+**/playwright-report
+apps/native-desktop
+apps/desktop

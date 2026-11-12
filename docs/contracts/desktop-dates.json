@@ -1,0 +1,240 @@
+{
+  "commit": "e35b49e4ca33406f0fdd7ecf8767931b44fdac87",
+  "source": {
+    "path": "services/api/app/significant_dates.py",
+    "sha256": "f7c14870738c225233714b9f3cd8d86d42c95b20ee3f89ea843d166c64203f94"
+  },
+  "today": [
+    2026,
+    11,
+    11
+  ],
+  "cases": [
+    {
+      "input": {
+        "kind": "birthday",
+        "precision": "month_day",
+        "month": 2,
+        "day": 29,
+        "label": "ignored"
+      },
+      "value": {
+        "kind": "birthday",
+        "label": null,
+        "precision": "month_day",
+        "year": null,
+        "month": 2,
+        "day": 29
+      }
+    },
+    {
+      "input": {
+        "kind": "birthday",
+        "precision": "exact",
+        "year": 2000,
+        "month": 2,
+        "day": 29
+      },
+      "value": {
+        "kind": "birthday",
+        "label": null,
+        "precision": "exact",
+        "year": 2000,
+        "month": 2,
+        "day": 29
+      }
+    },
+    {
+      "input": {
+        "kind": "birthday",
+        "precision": "exact",
+        "year": 1900,
+        "month": 2,
+        "day": 29
+      },
+      "error": "invalid_day"
+    },
+    {
+      "input": {
+        "kind": "birthday",
+        "precision": "exact",
+        "year": 2026,
+        "month": 11,
+        "day": 12
+      },
+      "error": "future"
+    },
+    {
+      "input": {
+        "kind": "birthday",
+        "precision": "approximate",
+        "year": 2026
+      },
+      "value": {
+        "kind": "birthday",
+        "label": null,
+        "precision": "approximate",
+        "year": 2026,
+        "month": null,
+        "day": null
+      }
+    },
+    {
+      "input": {
+        "kind": "birthday",
+        "precision": "approximate",
+        "year": 2027
+      },
+      "error": "future"
+    },
+    {
+      "input": {
+        "kind": "other",
+        "precision": "month_day",
+        "year": 2000,
+        "month": 2,
+        "day": 29
+      },
+      "error": "month_day_has_year"
+    },
+    {
+      "input": {
+        "kind": "other",
+        "precision": "approximate",
+        "day": 1
+      },
+      "error": "approximate_empty"
+    },
+    {
+      "input": {
+        "kind": "other",
+        "precision": "approximate",
+        "year": 2000,
+        "day": 1
+      },
+      "error": "day_without_month"
+    },
+    {
+      "input": {
+        "kind": "other",
+        "precision": "exact",
+        "year": 2200,
+        "month": 1,
+        "day": 1,
+        "label": " Future "
+      },
+      "value": {
+        "kind": "other",
+        "label": "Future",
+        "precision": "exact",
+        "year": 2200,
+        "month": 1,
+        "day": 1
+      }
+    },
+    {
+      "input": {
+        "kind": "anniversary",
+        "precision": "approximate",
+        "year": 2000,
+        "month": 2
+      },
+      "value": {
+        "kind": "anniversary",
+        "label": null,
+        "precision": "approximate",
+        "year": 2000,
+        "month": 2,
+        "day": null
+      }
+    },
+    {
+      "input": {
+        "kind": "other",
+        "precision": "month_day",
+        "month": 4,
+        "day": 31
+      },
+      "error": "invalid_day"
+    },
+    {
+      "input": {
+        "kind": "other",
+        "precision": "exact",
+        "year": 1799,
+        "month": 1,
+        "day": 1
+      },
+      "error": "year_range"
+    },
+    {
+      "input": {
+        "kind": "other",
+        "precision": "exact",
+        "year": 2000,
+        "month": 0,
+        "day": 1
+      },
+      "error": "invalid_day"
+    },
+    {
+      "input": {
+        "kind": "other",
+        "precision": "exact",
+        "year": 2000,
+        "month": 1,
+        "day": 0
+      },
+      "error": "invalid_day"
+    },
+    {
+      "input": {
+        "kind": "other",
+        "precision": "exact",
+        "year": 2000,
+        "month": 1
+      },
+      "error": "missing_exact_parts"
+    },
+    {
+      "input": {
+        "kind": "other",
+        "precision": "month_day",
+        "month": 1
+      },
+      "error": "missing_month_day"
+    },
+    {
+      "input": {
+        "kind": "bad",
+        "precision": "approximate",
+        "year": 2000
+      },
+      "error": "kind"
+    },
+    {
+      "input": {
+        "kind": "other",
+        "precision": "bad",
+        "year": 2000
+      },
+      "error": "precision"
+    },
+    {
+      "input": {
+        "kind": "other",
+        "precision": "approximate",
+        "month": 1,
+        "label": " "
+      },
+      "value": {
+        "kind": "other",
+        "label": null,
+        "precision": "approximate",
+        "year": null,
+        "month": 1,
+        "day": null
+      }
+    }
+  ]
+}

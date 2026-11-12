@@ -2,6 +2,7 @@
 
 import {Page, PageHeader} from "../ui/primitives";
 import {AiStatus} from "./ai-status";
+import {ModelSettings} from "./model-settings";
 import {ArchivedProfiles} from "./archived-profiles";
 import {Appearance} from "./appearance";
 import {DeviceSessions} from "./device-sessions";
@@ -15,6 +16,7 @@ export function SettingsView() {
     <ArchivedProfiles />
     <DeviceSessions />
     <TotpSettings />
+    <ModelSettings />
     <AiStatus />
     <TaskStatus />
   </Page>;

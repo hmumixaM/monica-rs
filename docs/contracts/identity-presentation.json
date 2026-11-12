@@ -1,0 +1,460 @@
+{
+  "source_commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+  "cases": [
+    {
+      "provider": "linkedin",
+      "external_id": "Example",
+      "profile_url": null,
+      "key": "example"
+    },
+    {
+      "provider": "linkedin",
+      "external_id": "@ExAmple",
+      "profile_url": null,
+      "key": "example"
+    },
+    {
+      "provider": "linkedin",
+      "external_id": "username:Mixed",
+      "profile_url": null,
+      "key": "mixed"
+    },
+    {
+      "provider": "linkedin",
+      "external_id": "123456",
+      "profile_url": null,
+      "key": "123456"
+    },
+    {
+      "provider": "linkedin",
+      "external_id": "Straße",
+      "profile_url": null,
+      "key": "strasse"
+    },
+    {
+      "provider": "linkedin",
+      "external_id": "Σς",
+      "profile_url": null,
+      "key": "σσ"
+    },
+    {
+      "provider": "linkedin",
+      "external_id": "工程师~李",
+      "profile_url": null,
+      "key": "工程师~李"
+    },
+    {
+      "provider": "linkedin",
+      "external_id": "https://evil.example/in/test",
+      "profile_url": null,
+      "key": null
+    },
+    {
+      "provider": "linkedin",
+      "external_id": "https://uk.linkedin.com/in/Stra%C3%9Fe/",
+      "profile_url": null,
+      "key": "strasse"
+    },
+    {
+      "provider": "linkedin",
+      "external_id": "https://www.instagram.com/ExAmple/",
+      "profile_url": null,
+      "key": null
+    },
+    {
+      "provider": "linkedin",
+      "external_id": "bad value",
+      "profile_url": null,
+      "key": null
+    },
+    {
+      "provider": "linkedin",
+      "external_id": "urn:li:member:A_B-0",
+      "profile_url": null,
+      "key": "urn:li:member:A_B-0"
+    },
+    {
+      "provider": "linkedin",
+      "external_id": "id",
+      "profile_url": "https://www.linkedin.com/in/Other",
+      "key": "other"
+    },
+    {
+      "provider": "linkedin",
+      "external_id": "id",
+      "profile_url": "https://instagram.com/stories",
+      "key": "id"
+    },
+    {
+      "provider": "linkedin",
+      "external_id": "id",
+      "profile_url": "https://instagram.com/user/extra",
+      "key": "id"
+    },
+    {
+      "provider": "instagram",
+      "external_id": "Example",
+      "profile_url": null,
+      "key": "example"
+    },
+    {
+      "provider": "instagram",
+      "external_id": "@ExAmple",
+      "profile_url": null,
+      "key": "example"
+    },
+    {
+      "provider": "instagram",
+      "external_id": "username:Mixed",
+      "profile_url": null,
+      "key": "mixed"
+    },
+    {
+      "provider": "instagram",
+      "external_id": "123456",
+      "profile_url": null,
+      "key": "123456"
+    },
+    {
+      "provider": "instagram",
+      "external_id": "Straße",
+      "profile_url": null,
+      "key": null
+    },
+    {
+      "provider": "instagram",
+      "external_id": "Σς",
+      "profile_url": null,
+      "key": null
+    },
+    {
+      "provider": "instagram",
+      "external_id": "工程师~李",
+      "profile_url": null,
+      "key": null
+    },
+    {
+      "provider": "instagram",
+      "external_id": "https://evil.example/in/test",
+      "profile_url": null,
+      "key": null
+    },
+    {
+      "provider": "instagram",
+      "external_id": "https://uk.linkedin.com/in/Stra%C3%9Fe/",
+      "profile_url": null,
+      "key": null
+    },
+    {
+      "provider": "instagram",
+      "external_id": "https://www.instagram.com/ExAmple/",
+      "profile_url": null,
+      "key": "example"
+    },
+    {
+      "provider": "instagram",
+      "external_id": "bad value",
+      "profile_url": null,
+      "key": null
+    },
+    {
+      "provider": "instagram",
+      "external_id": "urn:li:member:A_B-0",
+      "profile_url": null,
+      "key": null
+    },
+    {
+      "provider": "instagram",
+      "external_id": "id",
+      "profile_url": "https://www.linkedin.com/in/Other",
+      "key": "id"
+    },
+    {
+      "provider": "instagram",
+      "external_id": "id",
+      "profile_url": "https://instagram.com/stories",
+      "key": "id"
+    },
+    {
+      "provider": "instagram",
+      "external_id": "id",
+      "profile_url": "https://instagram.com/user/extra",
+      "key": "id"
+    },
+    {
+      "provider": "wechat",
+      "external_id": "Example",
+      "profile_url": null,
+      "key": "Example"
+    },
+    {
+      "provider": "wechat",
+      "external_id": "@ExAmple",
+      "profile_url": null,
+      "key": "@ExAmple"
+    },
+    {
+      "provider": "wechat",
+      "external_id": "username:Mixed",
+      "profile_url": null,
+      "key": "username:Mixed"
+    },
+    {
+      "provider": "wechat",
+      "external_id": "123456",
+      "profile_url": null,
+      "key": "123456"
+    },
+    {
+      "provider": "wechat",
+      "external_id": "Straße",
+      "profile_url": null,
+      "key": "Straße"
+    },
+    {
+      "provider": "wechat",
+      "external_id": "Σς",
+      "profile_url": null,
+      "key": "Σς"
+    },
+    {
+      "provider": "wechat",
+      "external_id": "工程师~李",
+      "profile_url": null,
+      "key": "工程师~李"
+    },
+    {
+      "provider": "wechat",
+      "external_id": "https://evil.example/in/test",
+      "profile_url": null,
+      "key": "https://evil.example/in/test"
+    },
+    {
+      "provider": "wechat",
+      "external_id": "https://uk.linkedin.com/in/Stra%C3%9Fe/",
+      "profile_url": null,
+      "key": "https://uk.linkedin.com/in/Stra%C3%9Fe/"
+    },
+    {
+      "provider": "wechat",
+      "external_id": "https://www.instagram.com/ExAmple/",
+      "profile_url": null,
+      "key": "https://www.instagram.com/ExAmple/"
+    },
+    {
+      "provider": "wechat",
+      "external_id": "bad value",
+      "profile_url": null,
+      "key": "bad value"
+    },
+    {
+      "provider": "wechat",
+      "external_id": "urn:li:member:A_B-0",
+      "profile_url": null,
+      "key": "urn:li:member:A_B-0"
+    },
+    {
+      "provider": "wechat",
+      "external_id": "id",
+      "profile_url": "https://www.linkedin.com/in/Other",
+      "key": "id"
+    },
+    {
+      "provider": "wechat",
+      "external_id": "id",
+      "profile_url": "https://instagram.com/stories",
+      "key": "id"
+    },
+    {
+      "provider": "wechat",
+      "external_id": "id",
+      "profile_url": "https://instagram.com/user/extra",
+      "key": "id"
+    },
+    {
+      "provider": "monica",
+      "external_id": "Example",
+      "profile_url": null,
+      "key": "Example"
+    },
+    {
+      "provider": "monica",
+      "external_id": "@ExAmple",
+      "profile_url": null,
+      "key": "@ExAmple"
+    },
+    {
+      "provider": "monica",
+      "external_id": "username:Mixed",
+      "profile_url": null,
+      "key": "username:Mixed"
+    },
+    {
+      "provider": "monica",
+      "external_id": "123456",
+      "profile_url": null,
+      "key": "123456"
+    },
+    {
+      "provider": "monica",
+      "external_id": "Straße",
+      "profile_url": null,
+      "key": "Straße"
+    },
+    {
+      "provider": "monica",
+      "external_id": "Σς",
+      "profile_url": null,
+      "key": "Σς"
+    },
+    {
+      "provider": "monica",
+      "external_id": "工程师~李",
+      "profile_url": null,
+      "key": "工程师~李"
+    },
+    {
+      "provider": "monica",
+      "external_id": "https://evil.example/in/test",
+      "profile_url": null,
+      "key": "https://evil.example/in/test"
+    },
+    {
+      "provider": "monica",
+      "external_id": "https://uk.linkedin.com/in/Stra%C3%9Fe/",
+      "profile_url": null,
+      "key": "https://uk.linkedin.com/in/Stra%C3%9Fe/"
+    },
+    {
+      "provider": "monica",
+      "external_id": "https://www.instagram.com/ExAmple/",
+      "profile_url": null,
+      "key": "https://www.instagram.com/ExAmple/"
+    },
+    {
+      "provider": "monica",
+      "external_id": "bad value",
+      "profile_url": null,
+      "key": "bad value"
+    },
+    {
+      "provider": "monica",
+      "external_id": "urn:li:member:A_B-0",
+      "profile_url": null,
+      "key": "urn:li:member:A_B-0"
+    },
+    {
+      "provider": "monica",
+      "external_id": "id",
+      "profile_url": "https://www.linkedin.com/in/Other",
+      "key": "id"
+    },
+    {
+      "provider": "monica",
+      "external_id": "id",
+      "profile_url": "https://instagram.com/stories",
+      "key": "id"
+    },
+    {
+      "provider": "monica",
+      "external_id": "id",
+      "profile_url": "https://instagram.com/user/extra",
+      "key": "id"
+    }
+  ],
+  "rows": [
+    {
+      "id": "0",
+      "provider": "linkedin",
+      "external_id": "Straße",
+      "username": null,
+      "profile_url": null
+    },
+    {
+      "id": "1",
+      "provider": "linkedin",
+      "external_id": "STRASSE",
+      "username": null,
+      "profile_url": null
+    },
+    {
+      "id": "2",
+      "provider": "instagram",
+      "external_id": "123",
+      "username": "@Friend",
+      "profile_url": null
+    },
+    {
+      "id": "3",
+      "provider": "instagram",
+      "external_id": "friend",
+      "username": null,
+      "profile_url": null
+    },
+    {
+      "id": "4",
+      "provider": "instagram",
+      "external_id": "99",
+      "username": null,
+      "profile_url": null
+    },
+    {
+      "id": "5",
+      "provider": "monica",
+      "external_id": "1",
+      "username": null,
+      "profile_url": null
+    },
+    {
+      "id": "6",
+      "provider": "wechat",
+      "external_id": "wxid",
+      "username": null,
+      "profile_url": "https://invalid"
+    },
+    {
+      "id": "7",
+      "provider": "linkedin",
+      "external_id": "urn:li:member:A",
+      "username": null,
+      "profile_url": null
+    }
+  ],
+  "presented": [
+    {
+      "id": "0",
+      "provider": "linkedin",
+      "external_id": "Straße",
+      "username": null,
+      "profile_url": "https://www.linkedin.com/in/strasse"
+    },
+    {
+      "id": "2",
+      "provider": "instagram",
+      "external_id": "123",
+      "username": "@Friend",
+      "profile_url": "https://www.instagram.com/friend/"
+    },
+    {
+      "id": "4",
+      "provider": "instagram",
+      "external_id": "99",
+      "username": null,
+      "profile_url": null
+    },
+    {
+      "id": "6",
+      "provider": "wechat",
+      "external_id": "wxid",
+      "username": null,
+      "profile_url": null
+    },
+    {
+      "id": "7",
+      "provider": "linkedin",
+      "external_id": "urn:li:member:A",
+      "username": null,
+      "profile_url": null
+    }
+  ]
+}

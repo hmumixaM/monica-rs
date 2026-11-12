@@ -16,15 +16,17 @@ const FAILURE: Record<number, string> = {
 };
 
 /** Bare `YYYY-MM-DD` is a calendar day, not UTC midnight, so it must not shift with the time zone. */
-function day(at: string): string {
+function day(at: string | null): string {
+  if (!at) return "日期未知";
   return new Date(at.length === 10 ? `${at}T00:00` : at).toLocaleDateString("zh-CN", { year: "numeric", month: "numeric", day: "numeric" });
 }
 
 function evidenceHref(item: Evidence): string {
+  if (item.citation) return item.citation;
   if (item.kind === "post") return `/timeline?event=${item.id}`;
   if (item.kind === "profile") return `/profiles/${item.id}`;
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  return `/messages?${new URLSearchParams({ conversation: item.conversation_id ?? "", month: item.at.slice(0, 7), timezone })}`;
+  return `/messages?${new URLSearchParams({ conversation: item.conversation_id ?? "", month: item.at?.slice(0, 7) ?? "", timezone })}`;
 }
 
 function evidenceLabel(item: Evidence): string {

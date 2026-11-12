@@ -1,0 +1,306 @@
+{
+  "aliases": [
+    {
+      "args": [
+        "Alice",
+        {
+          "monica.nickname": "a",
+          "wechat.alias": "B",
+          "wechat.nickname": "  A  ",
+          "wechat.remark": "alice"
+        },
+        [
+          [
+            "C",
+            "a"
+          ],
+          [
+            "D",
+            null
+          ]
+        ]
+      ],
+      "expected": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ]
+    },
+    {
+      "args": [
+        "Straße",
+        {
+          "monica.nickname": "İ",
+          "wechat.alias": "FFI",
+          "wechat.nickname": "ﬃ",
+          "wechat.remark": "STRASSE"
+        },
+        [
+          [
+            "i̇",
+            "Σ"
+          ],
+          [
+            "ς",
+            "σ"
+          ]
+        ]
+      ],
+      "expected": [
+        "ﬃ",
+        "İ",
+        "Σ"
+      ]
+    },
+    {
+      "args": [
+        "",
+        {
+          "wechat.alias": 42.0,
+          "wechat.nickname": false,
+          "wechat.remark": 1e-07
+        },
+        [
+          [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11"
+          ]
+        ]
+      ],
+      "expected": [
+        "1e-07",
+        "42.0",
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ]
+    }
+  ],
+  "city": [
+    {
+      "args": {},
+      "expected": null
+    },
+    {
+      "args": {
+        "linkedin.location": " Chicago, Illinois, United States "
+      },
+      "expected": "Chicago"
+    },
+    {
+      "args": {
+        "monica.residence": "Paris",
+        "wechat.city": "Chicago"
+      },
+      "expected": "Paris"
+    },
+    {
+      "args": {
+        "monica.city": "ignored",
+        "wechat.province": "江苏"
+      },
+      "expected": "江苏"
+    }
+  ],
+  "compact": {
+    "args": {
+      "empty": "",
+      "false": false,
+      "list": [],
+      "null": null,
+      "object": {},
+      "one": 1,
+      "summary": {
+        "count": 0
+      },
+      "zero": 0
+    },
+    "expected": {
+      "one": 1,
+      "summary": {
+        "count": 0
+      }
+    }
+  },
+  "excerpt": [
+    {
+      "args": [
+        null,
+        12
+      ],
+      "expected": null
+    },
+    {
+      "args": [
+        " Instagram story ",
+        12
+      ],
+      "expected": null
+    },
+    {
+      "args": [
+        "complete",
+        12
+      ],
+      "expected": null
+    },
+    {
+      "args": [
+        "hello  \nworld",
+        12
+      ],
+      "expected": "hello world"
+    },
+    {
+      "args": [
+        "一个中文的很长动态内容",
+        8
+      ],
+      "expected": "一个中文的很长…"
+    },
+    {
+      "args": [
+        "hello beautiful world",
+        10
+      ],
+      "expected": "hello bea…"
+    }
+  ],
+  "group_names": [
+    {
+      "args": [
+        "one｜ A\ntwo|a\nB\nthree | C",
+        "Alice",
+        [
+          "A"
+        ]
+      ],
+      "expected": [
+        "B",
+        "C"
+      ]
+    },
+    {
+      "args": [
+        "g｜STRASSE\nx|ﬃ\ny|FFI\nz|New",
+        "Straße",
+        []
+      ],
+      "expected": [
+        "ﬃ",
+        "New"
+      ]
+    }
+  ],
+  "headline": [
+    {
+      "args": [
+        {},
+        []
+      ],
+      "expected": null
+    },
+    {
+      "args": [
+        {
+          "linkedin.headline": "Headline",
+          "monica.company": "Manual Co",
+          "monica.job": "Title"
+        },
+        []
+      ],
+      "expected": "Manual Co · Title"
+    },
+    {
+      "args": [
+        {
+          "linkedin.headline": "ignored"
+        },
+        [
+          {
+            "company": "Former",
+            "end_date": "2020",
+            "title": "Old",
+            "type": "employment"
+          },
+          {
+            "company": "Current",
+            "end_date": "至今",
+            "title": "Engineer",
+            "type": "employment"
+          }
+        ]
+      ],
+      "expected": "Current · Engineer"
+    }
+  ],
+  "ordered_experience": {
+    "args": [
+      {
+        "degree": "BSc",
+        "school": "School",
+        "start_date": "2010",
+        "type": "education"
+      },
+      {
+        "company": "Past",
+        "end_date": "2021",
+        "start_date": "2020",
+        "title": "Engineer",
+        "type": "employment"
+      },
+      {
+        "company": "Current",
+        "is_current": true,
+        "start_date": "2024",
+        "title": "Lead",
+        "type": "employment"
+      },
+      {
+        "company": "Current",
+        "description": "duplicate",
+        "is_current": true,
+        "start_date": "2024",
+        "title": "Lead",
+        "type": "employment"
+      }
+    ],
+    "expected": [
+      {
+        "company": "Current",
+        "is_current": true,
+        "start_date": "2024",
+        "title": "Lead",
+        "type": "employment"
+      },
+      {
+        "company": "Past",
+        "end_date": "2021",
+        "start_date": "2020",
+        "title": "Engineer",
+        "type": "employment"
+      },
+      {
+        "degree": "BSc",
+        "school": "School",
+        "start_date": "2010",
+        "type": "education"
+      }
+    ]
+  },
+  "source_commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06"
+}

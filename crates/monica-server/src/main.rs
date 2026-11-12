@@ -1,11 +1,28 @@
+mod ai;
 mod auth;
+mod cache;
+mod cdc;
+mod collector;
+mod connections;
+mod faces;
+mod imports;
+mod linking;
 mod media;
+mod messages;
+mod pages;
 mod profiles;
+mod runtime;
+mod timeline;
+mod web;
 use anyhow::Result;
-use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
+use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::get};
 use clap::{Parser, Subcommand};
+use monica_core::{
+    resources::DatabasePools,
+    scheduler::{Scheduler, SchedulerConfig},
+};
 use serde_json::json;
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use std::{net::SocketAddr, path::PathBuf};
 
 #[derive(Parser)]
@@ -19,6 +36,8 @@ struct Args {
 #[derive(Subcommand)]
 enum Command {
     Migrate,
+    /// Explicitly initialize optional WAL audit (requires wal_level=logical).
+    CdcInitialize,
     Serve {
         #[arg(long, default_value = "127.0.0.1:17494")]
         listen: SocketAddr,
@@ -32,6 +51,14 @@ enum Command {
             default_value = ".local-validation/media"
         )]
         media_root: PathBuf,
+        #[arg(long, env = "MONICA_WEB_ROOT")]
+        web_root: Option<PathBuf>,
+        #[arg(long, env = "MONICA_IMPORT_HMAC_SECRET", hide_env_values = true)]
+        import_hmac_secret: Option<String>,
+        #[arg(long, env = "MONICA_CONTROL_TOKEN", hide_env_values = true)]
+        control_token: Option<String>,
+        #[arg(long, env = "MONICA_START_PAUSED", default_value_t = false)]
+        start_paused: bool,
     },
     Ingest {
         file: PathBuf,
@@ -42,28 +69,49 @@ enum Command {
     },
     Drain,
 }
-async fn ready(State(pool): State<PgPool>) -> StatusCode {
+#[derive(Clone)]
+struct Readiness {
+    pool: PgPool,
+    runtime: monica_core::scheduler::SchedulerHandle,
+}
+async fn ready(State(state): State<Readiness>) -> axum::response::Response {
+    if state.runtime.is_stopped() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"detail":"Background runtime stopped"})),
+        )
+            .into_response();
+    }
     match tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        sqlx::query("SELECT 1 FROM crm.jobs LIMIT 0").execute(&pool),
+        sqlx::query("SELECT 1 FROM crm.jobs LIMIT 0").execute(&state.pool),
     )
     .await
     {
-        Ok(Ok(_)) => StatusCode::OK,
-        _ => StatusCode::SERVICE_UNAVAILABLE,
+        Ok(Ok(_)) => Json(json!({"status":"ready"})).into_response(),
+        _ => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"detail":"Database is not ready"})),
+        )
+            .into_response(),
     }
 }
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt().with_env_filter("info").init();
+    if monica_core::media::probe_entry()? {
+        return Ok(());
+    }
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
+        .init();
     let args = Args::parse();
-    let pool = PgPoolOptions::new()
-        .max_connections(8)
-        .acquire_timeout(std::time::Duration::from_secs(2))
-        .connect(&args.database_url)
-        .await?;
+    let pools = DatabasePools::connect(&args.database_url, Default::default()).await?;
+    let pool = pools.interactive.clone();
     match args.command {
         Command::Migrate => monica_core::migrate(&pool).await?,
+        Command::CdcInitialize => monica_core::cdc::initialize(&pool).await?,
         Command::Ingest { file } => {
             let records: Vec<monica_core::Record> =
                 serde_json::from_slice(&tokio::fs::read(file).await?)?;
@@ -89,39 +137,114 @@ async fn main() -> Result<()> {
             session_secret,
             origin,
             media_root,
+            web_root,
+            import_hmac_secret,
+            control_token,
+            start_paused,
         } => {
-            let state = auth::AppState::new(
+            let mut state = auth::AppState::new(
                 pool.clone(),
                 &session_secret,
                 origin.unwrap_or_else(|| format!("http://{listen}")),
                 media_root,
             )
             .await?;
-            let app = Router::new()
+            state.import_hmac_secret = import_hmac_secret.filter(|secret| !secret.is_empty());
+            if let Some(secret) = &state.import_hmac_secret {
+                anyhow::ensure!(
+                    secret.len() >= 32,
+                    "MONICA_IMPORT_HMAC_SECRET must contain at least 32 bytes"
+                );
+            }
+            monica_core::ai::configure_from_env(&pool).await?;
+            monica_core::adapter::configure_from_env(&pool).await?;
+            let resources = state.resources.clone();
+            let runtime = Scheduler::start_with_sources(
+                pools.background.clone(),
+                pools.control.clone(),
+                resources.clone(),
+                SchedulerConfig {
+                    start_paused,
+                    ..SchedulerConfig::default()
+                },
+                state.media_root.clone(),
+                state.credentials.clone(),
+            )
+            .await?;
+            let mut app = Router::new()
                 .route(
                     "/health",
-                    get(|| async {
-                        Json(json!({"status":"ok","version":env!("CARGO_PKG_VERSION")}))
-                    }),
+                    get(|| async { Json(json!({"status":"ok","service":"api"})) }),
                 )
                 .route(
                     "/api/v1/health",
-                    get(|| async { Json(json!({"status":"ok"})) }),
+                    get(|| async { Json(json!({"status":"ok","service":"api"})) }),
                 )
                 .route("/api/v1/ready", get(ready))
-                .with_state(pool.clone())
-                .merge(auth::routes(state));
+                .with_state(Readiness {
+                    pool: pool.clone(),
+                    runtime: runtime.clone(),
+                })
+                .merge(auth::routes(state.clone()));
+            if let Some(token) = control_token.filter(|token| !token.is_empty()) {
+                app = app.merge(runtime::routes(runtime.clone(), &token, state.clone())?);
+            }
+            if let Some(root) = web_root {
+                app = app.merge(web::routes(root).await?);
+            }
+            app = app.layer(axum::middleware::from_fn(
+                move |request: axum::extract::Request, next: axum::middleware::Next| {
+                    let resources = resources.clone();
+                    async move {
+                        let interactive = request.uri().path().starts_with("/api/v1/")
+                            && !request.uri().path().starts_with("/api/v1/imports/");
+                        let start = std::time::Instant::now();
+                        let response = next.run(request).await;
+                        if interactive {
+                            resources.record_interactive(start.elapsed());
+                        }
+                        response
+                    }
+                },
+            ));
             let listener = tokio::net::TcpListener::bind(listen).await?;
             tracing::info!(address=%listener.local_addr()?,"server ready; authentication enabled, business API in progress");
-            axum::serve(listener, app)
-                .with_graceful_shutdown(async {
-                    let _ = tokio::signal::ctrl_c().await;
+            let stopping = runtime.clone();
+            let served = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
+                .with_graceful_shutdown(async move {
+                    tokio::select! {
+                        _ = shutdown_signal() => {},
+                        _ = async {
+                            while !stopping.is_stopped() {
+                                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                            }
+                            tracing::error!("background supervisor stopped; exiting for managed recovery");
+                        } => {},
+                    }
+                    if let Err(error) = stopping.shutdown().await { tracing::error!(%error,"background shutdown failed"); }
                 })
-                .await?;
+                .await;
+            runtime.shutdown().await?;
+            served?;
         }
     }
-    pool.close().await;
+    pools.close().await;
     Ok(())
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("install SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {},
+            _ = terminate.recv() => {},
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = tokio::signal::ctrl_c().await;
 }
 
 async fn append_file(pool: &PgPool, provider: monica_core::Provider, path: PathBuf) -> Result<()> {

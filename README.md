@@ -1,48 +1,54 @@
 # Monica Rust
 
-Independent Rust implementation for macOS and Linux/NAS. **Development foundation, not a complete Monica replacement.** No production data, synchronization or migration is included. External collectors and model calls are disabled by absence of runtime wiring.
+Rust backend and React application shared by a native macOS app and Linux/NAS containers. This repository targets isolated testing against generated data. It does not migrate personal data, synchronize Mac and NAS, or replace an existing production service.
 
-## Implemented
+The backend uses Tokio, Axum, SQLx and PostgreSQL 16. One database contains CRM and seven independent source schemas: WeChat, Instagram, LinkedIn, WhatsApp, Apple Messages, Apple Contacts and Mail. Native notebook imports remain CRM facts. The **Sources** page is available in both desktop navigation and the mobile bottom bar; Mail has explicit Gmail, Outlook and IMAP connection entries.
 
-- Cargo workspace: shared Rust core and Axum CLI/server.
-- PostgreSQL 16: one database, independent crm/wechat/instagram/linkedin schemas.
-- Atomic source observations/revisions and durable job insertion; object-scoped row locks.
-- Ordered per-object projection, SKIP LOCKED claims, heartbeat, expiring lease tokens and fenced atomic result/ack.
-- Synthetic fixtures and isolated PostgreSQL integration tests.
-- Existing React frontend and external collectors copied from pinned tracked sources with SHA-256 provenance in docs/sources.json.
-- 143 legacy route declarations inventoried in docs/api-coverage.json; auth routes have HTTP smoke coverage, full differential parity remains pending.
-- Bounded immutable message append (1,000 records/4 MiB), streaming JSONL ingestion, generation-coalesced conversation summaries and separate active/history jobs.
-- Auth HTTP routes: bootstrap, Argon2 login, database sessions, CSRF, encrypted TOTP, one-use recovery codes, revoke/logout and audit. Password work has a bounded blocking budget; Host/Origin checks protect the browser boundary.
+## Runtime and data paths
 
-## Local validation
+- Immutable messages use bounded bulk append, stable identities and a separate correction path. Mutable facts retain ordered object revisions, including A→B→A. Account and object locks coordinate changes locally.
+- Source persistence and derived projection use separate short transactions. Durable queues, expiring leases, heartbeats and commit-time fencing support recovery. Derived work coalesces by generation; unrelated objects can proceed concurrently.
+- Page-specific summaries, typed indexes, keyset pagination, scoped cache versions and single-flight rebuilds keep ordinary reads separate from full history. Original JSON and content-addressed media remain available for evidence and rebuilding.
+- Interactive and background work have separate connection and resource budgets. Background network and memory reservations leave capacity for interactive work. CPU-heavy and external work uses bounded executors or managed processes.
+- Authentication includes sessions, CSRF, TOTP and single-use recovery codes. Signed imports verify the original request bytes and persist replay protection. Installation secrets encrypt source credentials.
+- Mail supports Gmail history, Graph delta and read-only IMAP; Apple sources use the native bridge. Browser collectors, Chatlog and the WhatsApp Go bridge are managed adapters. Real sources and model calls require explicit configuration and enabling.
+- The Vite/React Router frontend is served by Rust with `/api` on the same origin. The native shell manages PostgreSQL, the core and optional adapters under a separate Monica Rust identity and data directory.
 
-Run `sh scripts/test.sh` from the repository. It creates a temporary, Unix-socket-only PostgreSQL cluster, runs the tests, and removes only that temporary cluster. Requires Rust and PostgreSQL 16 on the development machine. Set MONICA_PG_BIN to override the PostgreSQL binary directory.
+See [multi-source scope and evidence](docs/MULTISOURCE_PARITY.md), [implementation ledger](docs/IMPLEMENTATION.md), [frozen contracts](docs/contracts/README.md) and [optional WAL history](docs/CDC.md). The registration audit currently finds all 166 frozen operations; registration alone does not prove behavioral parity. Differential, PostgreSQL, HTTP, browser and native lifecycle tests provide separate evidence.
 
-Set MONICA_DATABASE_URL to a **new, dedicated test database**, then run:
+The [2026-11-12 review and parity record](docs/reviews/2026-11-12-rust-parity-review.md) records 13 repaired findings, platform capabilities, validation evidence and remaining acceptance limits.
+
+## Model and platform settings
+
+Both Mac and NAS use **Settings → Model settings** to configure an OpenAI-compatible service, model, encrypted API key, browser QA and the separate background chat/note permissions. These settings start disabled and persist across Mac restarts. Saving configuration does not probe a paid model endpoint. Explicit `MONICA_AI_*` environment settings can override the saved configuration; unset/empty Compose overrides preserve the application's saved choices.
+
+Sources reports whether the native Mac reader is present. Linux/NAS disables Apple Contacts/Messages collection controls while keeping stored evidence readable. WhatsApp pause preserves device pairing; disconnect clears its local pairing keys while retaining imported history.
+
+The optional `wechat` Compose profile reads only explicitly published standalone Chatlog SQLite snapshots. Set `MONICA_CHATLOG_SNAPSHOT_ROOT` to an existing absolute export directory, `MONICA_CHATLOG_ACCOUNT` to its independent source anchor and, when known, `MONICA_CHATLOG_SELF_ID` to the owning account identity. The mount is read-only and does not create a missing source directory. Configure the same independent `MONICA_CONTROL_TOKEN` for the server and collector, then explicitly enable the WeChat adapter through the authenticated import controls. Media references, locations, shared links, interactions and exact original XML are retained; the presence of a remote URL does not prove that its original bytes have been archived locally.
+
+## Local isolated validation
+
+```sh
+sh scripts/test.sh
+# Focused tests also create and dispose of their own PostgreSQL cluster:
+python3 scripts/test-cargo.py -p monica-core --test connections
+```
+
+These commands need Rust and PostgreSQL 16. `MONICA_PG_BIN` overrides the PostgreSQL binary directory. Test clusters listen only on a unique Unix socket and contain synthetic data.
+
+To run manually, set `MONICA_DATABASE_URL` to a new dedicated database, `MONICA_SESSION_SECRET` to a new secret of at least 32 bytes, and `MONICA_MEDIA_ROOT` to an independent directory:
 
 ```sh
 cargo run -p monica-server -- migrate
-python3 scripts/generate-fixtures.py --records 1000 > /tmp/monica-rs-fixtures.json
-cargo run -p monica-server -- ingest /tmp/monica-rs-fixtures.json
-cargo run -p monica-server -- drain
-# Set MONICA_SESSION_SECRET to a new random secret (at least 32 bytes).
 cargo run -p monica-server -- serve
 ```
 
-Server binds 127.0.0.1:17494 and exposes health/readiness, authentication, manual profile/tag operations and multipart media upload/download/profile attachments. Set MONICA_ORIGIN to the browser origin when using a proxy; session cookies are Secure for HTTPS origins. Ingestion is a local development CLI, not a replacement for the signed Import API. The record hash/UUID format is provisional and must pass legacy golden vectors before compatibility is claimed.
+The default address is `127.0.0.1:17494`. Set `MONICA_WEB_ROOT` to the built `apps/web/dist` directory to serve the UI. Set `MONICA_ORIGIN` to the browser origin if using a proxy. Health and readiness are `/health` and `/api/v1/ready`. `MONICA_START_PAUSED=true` starts background work paused. The control API additionally requires an explicit bearer token and is intended for the native supervisor.
 
-## Remaining delivery gates
+## Packaging and acceptance
 
-1. Freeze executable OpenAPI and differential fixtures; complete legacy identity/hash compatibility.
-2. Full business schema, HMAC import, remaining API routes, media storage and worker lifecycle; differential auth parity.
-3. CRM projection rules, account relinking locks, source checkpoints, AI/media scheduling and adapter integration.
-4. React Router/Vite migration and isolated Tauri tray application with managed PostgreSQL.
-5. Multi-architecture images, Mac app bundle, full UI/failure tests and three-round comparative benchmarks.
+The [native application README](apps/native-desktop/README.md) describes the macOS bundle and its managed dependencies. [Compose](infra/compose.yaml) uses separate test database and media volumes, with optional WhatsApp support. Multi-architecture artifact builds target Linux amd64 and arm64. Publishing workflows produce commit-tagged test images.
 
-Copied frontend/collectors are source inputs and are not yet integrated. No Mac app, production image, full API parity or performance improvement is claimed by this initial commit. Current synthetic projection is intentionally separate from the future CRM domain projection. Existing applications and NAS services have not been modified.
+Final refreshed Mac/container artifacts, all-platform acceptance and the complete three-round benchmark are still delivery gates. Existing engineering measurements are not a claim that the requested high-performance thresholds have been reached. The benchmark compares fixed Python main, desktop, multi-source and release Rust using signed synthetic imports, concurrency-eight reads and 1×/10× histories. It reports SQL and WAL per thousand messages as well as latency, throughput and process resources. Runtime, database layout and query changes must be evaluated separately.
 
-## Data-path validation
-
-See docs/DATA_PATHS.md for the immutable/mutable split, coalescing protocol and remaining architectural work. Run `MONICA_BENCH=1 sh scripts/test.sh` for the isolated 10x-scale microbenchmark. The streaming append command is `monica-server append-messages wechat messages.jsonl`; `drain` publishes both object projections and conversation summaries. Dedicated message correction/deletion, full CRM API and a production scheduler are still pending.
-
-Set MONICA_MEDIA_ROOT to an independent test-media directory. The Compose test instance mounts its own named media volume. Multipart uploads stream and deduplicate by SHA-256; downloads authenticate before streaming and support Range/ETag. Complete profile detail, structured filters, source linkage, resumable upload and the rest of the API are still unfinished; see the per-route inventory rather than assuming parity from a route's presence.
+Public signing/distribution, legacy data migration and production switching are outside this test delivery. Original worktrees and their private configuration remain untouched. Source provenance is recorded in [docs/sources.json](docs/sources.json).

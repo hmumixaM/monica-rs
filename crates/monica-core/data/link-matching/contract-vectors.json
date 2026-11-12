@@ -1,0 +1,7091 @@
+{
+  "source_commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+  "normalization": [
+    {
+      "input": "Alice Smith",
+      "words": "alice smith",
+      "compact": "alicesmith",
+      "pinyin": "alicesmith",
+      "username": "alice smith"
+    },
+    {
+      "input": "Smith Alice",
+      "words": "smith alice",
+      "compact": "smithalice",
+      "pinyin": "smithalice",
+      "username": "smith alice"
+    },
+    {
+      "input": "Alice",
+      "words": "alice",
+      "compact": "alice",
+      "pinyin": "alice",
+      "username": "alice"
+    },
+    {
+      "input": "Ａｌｉｃｅ Ｓｍｉｔｈ",
+      "words": "alice smith",
+      "compact": "alicesmith",
+      "pinyin": "alicesmith",
+      "username": "alice smith"
+    },
+    {
+      "input": "张三",
+      "words": "zhang san",
+      "compact": "zhangsan",
+      "pinyin": "zhangsan",
+      "username": "zhang san"
+    },
+    {
+      "input": "张小三",
+      "words": "zhang xiao san",
+      "compact": "zhangxiaosan",
+      "pinyin": "zhangxiaosan",
+      "username": "zhang xiao san"
+    },
+    {
+      "input": "李明",
+      "words": "li ming",
+      "compact": "liming",
+      "pinyin": "liming",
+      "username": "li ming"
+    },
+    {
+      "input": "重庆",
+      "words": "zhong qing",
+      "compact": "zhongqing",
+      "pinyin": "chongqing",
+      "username": "zhong qing"
+    },
+    {
+      "input": "Chong Qing",
+      "words": "chong qing",
+      "compact": "chongqing",
+      "pinyin": "chongqing",
+      "username": "chong qing"
+    },
+    {
+      "input": "Chongqing",
+      "words": "chongqing",
+      "compact": "chongqing",
+      "pinyin": "chongqing",
+      "username": "chongqing"
+    },
+    {
+      "input": "Zhang San",
+      "words": "zhang san",
+      "compact": "zhangsan",
+      "pinyin": "zhangsan",
+      "username": "zhang san"
+    },
+    {
+      "input": "Zhangsan",
+      "words": "zhangsan",
+      "compact": "zhangsan",
+      "pinyin": "zhangsan",
+      "username": "zhangsan"
+    },
+    {
+      "input": "José Garcia",
+      "words": "jose garcia",
+      "compact": "josegarcia",
+      "pinyin": "josegarcia",
+      "username": "jose garcia"
+    },
+    {
+      "input": "Jose Garcia",
+      "words": "jose garcia",
+      "compact": "josegarcia",
+      "pinyin": "josegarcia",
+      "username": "jose garcia"
+    },
+    {
+      "input": "Alex",
+      "words": "alex",
+      "compact": "alex",
+      "pinyin": "alex",
+      "username": "alex"
+    },
+    {
+      "input": "Alex Li",
+      "words": "alex li",
+      "compact": "alexli",
+      "pinyin": "alexli",
+      "username": "alex li"
+    },
+    {
+      "input": "Alexandra Lee",
+      "words": "alexandra lee",
+      "compact": "alexandralee",
+      "pinyin": "alexandralee",
+      "username": "alexandra lee"
+    },
+    {
+      "input": "Engineer at Acme London",
+      "words": "engineer at acme london",
+      "compact": "engineeratacmelondon",
+      "pinyin": "engineeratacmelondon",
+      "username": "engineer at acme london"
+    },
+    {
+      "input": "Ming Li",
+      "words": "ming li",
+      "compact": "mingli",
+      "pinyin": "mingli",
+      "username": "ming li"
+    },
+    {
+      "input": "aaaa_bobbb",
+      "words": "aaaa bobbb",
+      "compact": "aaaabobbb",
+      "pinyin": "aaaabobbb",
+      "username": "bob"
+    },
+    {
+      "input": "王小明",
+      "words": "wang xiao ming",
+      "compact": "wangxiaoming",
+      "pinyin": "wangxiaoming",
+      "username": "wang xiao ming"
+    },
+    {
+      "input": "Wang Xiaoming",
+      "words": "wang xiaoming",
+      "compact": "wangxiaoming",
+      "pinyin": "wangxiaoming",
+      "username": "wang xiaoming"
+    },
+    {
+      "input": "李雷",
+      "words": "li lei",
+      "compact": "lilei",
+      "pinyin": "lilei",
+      "username": "li lei"
+    },
+    {
+      "input": "Li Lei",
+      "words": "li lei",
+      "compact": "lilei",
+      "pinyin": "lilei",
+      "username": "li lei"
+    },
+    {
+      "input": "欧阳娜娜",
+      "words": "ou yang nuo nuo",
+      "compact": "ouyangnuonuo",
+      "pinyin": "ouyangnana",
+      "username": "ou yang nuo nuo"
+    },
+    {
+      "input": "Ouyang Nana",
+      "words": "ouyang nana",
+      "compact": "ouyangnana",
+      "pinyin": "ouyangnana",
+      "username": "ouyang nana"
+    },
+    {
+      "input": "Élodie Martin",
+      "words": "elodie martin",
+      "compact": "elodiemartin",
+      "pinyin": "elodiemartin",
+      "username": "elodie martin"
+    },
+    {
+      "input": "Elodie",
+      "words": "elodie",
+      "compact": "elodie",
+      "pinyin": "elodie",
+      "username": "elodie"
+    }
+  ],
+  "scores": [
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Alice",
+        "username": "Li Lei",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "aaaa_bobbb",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Élodie Martin",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [
+          "li lei"
+        ],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "expected": {
+        "score": 100,
+        "reasons": [
+          "对方资料已填写相同 instagram",
+          "邮箱完全一致",
+          "电话完全一致"
+        ]
+      },
+      "source_keys": [
+        "c:alice",
+        "c:handle31",
+        "c:lilei",
+        "c:staffengineeratacmelondon",
+        "e:synthetic@example.invalid",
+        "p:+1 555 555 1234",
+        "t:acme",
+        "t:alice",
+        "t:engineer",
+        "t:handle",
+        "t:lei",
+        "t:london",
+        "t:staff"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Smith Alice",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "José Garcia",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:smithalice",
+        "c:syntheticuser",
+        "t:alice",
+        "t:handle",
+        "t:smith",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Ａｌｉｃｅ Ｓｍｉｔｈ",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Élodie Martin",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alicesmith",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alice",
+        "t:handle",
+        "t:smith",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Chongqing",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Ａｌｉｃｅ Ｓｍｉｔｈ",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Ming Li",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:chongqing",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:chongqing",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Smith Alice",
+        "username": "Wang Xiaoming",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "张三",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:smithalice",
+        "c:wangxiaoming",
+        "t:alice",
+        "t:handle",
+        "t:smith",
+        "t:wang",
+        "t:xiaoming"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "欧阳娜娜",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Chongqing",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:ouyangnana",
+        "c:ouyangnuonuo",
+        "c:syntheticuser",
+        "t:handle",
+        "t:nana",
+        "t:nuo",
+        "t:ouyang",
+        "t:synthetic",
+        "t:user",
+        "t:yang",
+        "t:yangna"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Li Lei",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "aaaa_bobbb",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Chongqing",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:lilei",
+        "c:staffengineeratacmelondon",
+        "c:syntheticuser",
+        "t:acme",
+        "t:engineer",
+        "t:handle",
+        "t:lei",
+        "t:london",
+        "t:staff",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Ming Li",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "重庆",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:mingli",
+        "c:syntheticuser",
+        "t:handle",
+        "t:ming",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "王小明",
+        "username": "Zhang San",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "李明",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 86,
+        "reasons": [
+          "姓名 86% 接近「李明」"
+        ]
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:wangxiaoming",
+        "c:zhangsan",
+        "t:handle",
+        "t:ming",
+        "t:san",
+        "t:wang",
+        "t:wangxiao",
+        "t:xiao",
+        "t:xiaoming",
+        "t:zhang"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Elodie",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "张小三",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "王小明",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:elodie",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:elodie",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Élodie Martin",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Elodie",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 78,
+        "reasons": [
+          "姓名 78% 接近「Elodie」"
+        ]
+      },
+      "source_keys": [
+        "c:elodiemartin",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:elodie",
+        "t:handle",
+        "t:martin",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Alex Li",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "张三",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "expected": {
+        "score": 99,
+        "reasons": [
+          "邮箱完全一致"
+        ]
+      },
+      "source_keys": [
+        "c:alexli",
+        "c:handle31",
+        "c:syntheticuser",
+        "e:synthetic@example.invalid",
+        "t:alex",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "王小明",
+        "username": "Elodie",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "张小三",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Ouyang Nana",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 71,
+        "reasons": [
+          "姓名 71% 接近「张小三」"
+        ]
+      },
+      "source_keys": [
+        "c:elodie",
+        "c:handle31",
+        "c:staffengineeratacmelondon",
+        "c:wangxiaoming",
+        "t:acme",
+        "t:elodie",
+        "t:engineer",
+        "t:handle",
+        "t:london",
+        "t:ming",
+        "t:staff",
+        "t:wang",
+        "t:wangxiao",
+        "t:xiao",
+        "t:xiaoming"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Jose Garcia",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "José Garcia",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "expected": {
+        "score": 98,
+        "reasons": [
+          "电话完全一致",
+          "姓名与「José Garcia」完全一致",
+          "姓名 100% 接近「José Garcia」"
+        ]
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:josegarcia",
+        "c:syntheticuser",
+        "p:+1 555 555 1234",
+        "t:garcia",
+        "t:handle",
+        "t:jose",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Elodie",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "欧阳娜娜",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:elodie",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:elodie",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Alex",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alexandra Lee",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "张三",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 90,
+        "reasons": [
+          "姓名 90% 接近「Alexandra Lee」"
+        ]
+      },
+      "source_keys": [
+        "c:alex",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alex",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "李雷",
+        "username": "Zhang San",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "aaaa_bobbb",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:lilei",
+        "c:zhangsan",
+        "t:handle",
+        "t:lei",
+        "t:lilei",
+        "t:san",
+        "t:zhang"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Elodie",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Ouyang Nana",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [
+          "synthetic_user"
+        ],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 100,
+        "reasons": [
+          "对方资料已填写相同 wechat"
+        ]
+      },
+      "source_keys": [
+        "c:elodie",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:elodie",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Chongqing",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Élodie Martin",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Ouyang Nana",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:chongqing",
+        "c:handle31",
+        "c:staffengineeratacmelondon",
+        "c:syntheticuser",
+        "t:acme",
+        "t:chongqing",
+        "t:engineer",
+        "t:handle",
+        "t:london",
+        "t:staff",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "张三",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Jose Garcia",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhangsan",
+        "t:handle",
+        "t:san",
+        "t:synthetic",
+        "t:user",
+        "t:zhang",
+        "t:zhangsan"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Ming Li",
+        "username": "Wang Xiaoming",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Élodie Martin",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:mingli",
+        "c:wangxiaoming",
+        "t:handle",
+        "t:ming",
+        "t:wang",
+        "t:xiaoming"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "李明",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alice Smith",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Jose Garcia",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:liming",
+        "c:syntheticuser",
+        "t:handle",
+        "t:liming",
+        "t:ming",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Zhangsan",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Jose Garcia",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "expected": {
+        "score": 99,
+        "reasons": [
+          "邮箱完全一致"
+        ]
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhangsan",
+        "e:synthetic@example.invalid",
+        "t:handle",
+        "t:synthetic",
+        "t:user",
+        "t:zhangsan"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Alice Smith",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alice Smith",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 96,
+        "reasons": [
+          "姓名与「Alice Smith」完全一致",
+          "姓名 100% 接近「Alice Smith」"
+        ]
+      },
+      "source_keys": [
+        "c:alicesmith",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alice",
+        "t:handle",
+        "t:smith",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "重庆",
+        "username": "Alex",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "李明",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Chong Qing",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 93,
+        "reasons": [
+          "姓名拼音 100% 接近「Chong Qing」"
+        ]
+      },
+      "source_keys": [
+        "c:alex",
+        "c:chongqing",
+        "c:handle31",
+        "c:staffengineeratacmelondon",
+        "c:zhongqing",
+        "t:acme",
+        "t:alex",
+        "t:chongqing",
+        "t:engineer",
+        "t:handle",
+        "t:london",
+        "t:qing",
+        "t:staff",
+        "t:zhong"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Zhangsan",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "张三",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 96,
+        "reasons": [
+          "姓名与「张三」完全一致",
+          "姓名拼音 100% 接近「张三」"
+        ]
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhangsan",
+        "t:handle",
+        "t:synthetic",
+        "t:user",
+        "t:zhangsan"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Li Lei",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alice Smith",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "expected": {
+        "score": 98,
+        "reasons": [
+          "电话完全一致"
+        ]
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:lilei",
+        "c:syntheticuser",
+        "p:+1 555 555 1234",
+        "t:handle",
+        "t:lei",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Alex Li",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alexandra Lee",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Chong Qing",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alexli",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alex",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "重庆",
+        "username": "Zhangsan",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "王小明",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:chongqing",
+        "c:handle31",
+        "c:zhangsan",
+        "c:zhongqing",
+        "t:chongqing",
+        "t:handle",
+        "t:qing",
+        "t:zhangsan",
+        "t:zhong"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "José Garcia",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alice Smith",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:josegarcia",
+        "c:syntheticuser",
+        "t:garcia",
+        "t:handle",
+        "t:jose",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "李雷",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Élodie Martin",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Chong Qing",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:lilei",
+        "c:staffengineeratacmelondon",
+        "c:syntheticuser",
+        "t:acme",
+        "t:engineer",
+        "t:handle",
+        "t:lei",
+        "t:lilei",
+        "t:london",
+        "t:staff",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "张小三",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Élodie Martin",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhangxiaosan",
+        "t:handle",
+        "t:san",
+        "t:synthetic",
+        "t:user",
+        "t:xiao",
+        "t:xiaosan",
+        "t:zhang",
+        "t:zhangxiao"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Chong Qing",
+        "username": "Alexandra Lee",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Elodie",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alexandralee",
+        "c:chongqing",
+        "c:handle31",
+        "t:alexandra",
+        "t:chong",
+        "t:handle",
+        "t:lee",
+        "t:qing"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "José Garcia",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alex",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "张三",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "expected": {
+        "score": 99,
+        "reasons": [
+          "邮箱完全一致"
+        ]
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:josegarcia",
+        "c:syntheticuser",
+        "e:synthetic@example.invalid",
+        "t:garcia",
+        "t:handle",
+        "t:jose",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "张小三",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alex",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [
+          "synthetic_user"
+        ],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 100,
+        "reasons": [
+          "对方资料已填写相同 linkedin"
+        ]
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhangxiaosan",
+        "t:handle",
+        "t:san",
+        "t:synthetic",
+        "t:user",
+        "t:xiao",
+        "t:xiaosan",
+        "t:zhang",
+        "t:zhangxiao"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Alice",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Élodie Martin",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alice",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alice",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Elodie",
+        "username": "Li Lei",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "重庆",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "José Garcia",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:elodie",
+        "c:handle31",
+        "c:lilei",
+        "c:staffengineeratacmelondon",
+        "t:acme",
+        "t:elodie",
+        "t:engineer",
+        "t:handle",
+        "t:lei",
+        "t:london",
+        "t:staff"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "José Garcia",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "欧阳娜娜",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:josegarcia",
+        "c:syntheticuser",
+        "t:garcia",
+        "t:handle",
+        "t:jose",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Chong Qing",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Chong Qing",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 96,
+        "reasons": [
+          "姓名与「Chong Qing」完全一致",
+          "姓名 100% 接近「Chong Qing」"
+        ]
+      },
+      "source_keys": [
+        "c:chongqing",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:chong",
+        "t:handle",
+        "t:qing",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Wang Xiaoming",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Elodie",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "张三",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "expected": {
+        "score": 98,
+        "reasons": [
+          "电话完全一致"
+        ]
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:wangxiaoming",
+        "p:+1 555 555 1234",
+        "t:handle",
+        "t:synthetic",
+        "t:user",
+        "t:wang",
+        "t:xiaoming"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Zhangsan",
+        "username": "Wang Xiaoming",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Jose Garcia",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:wangxiaoming",
+        "c:zhangsan",
+        "t:handle",
+        "t:wang",
+        "t:xiaoming",
+        "t:zhangsan"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Zhang San",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Li Lei",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhangsan",
+        "t:handle",
+        "t:san",
+        "t:synthetic",
+        "t:user",
+        "t:zhang"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "张三",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Élodie Martin",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Wang Xiaoming",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:staffengineeratacmelondon",
+        "c:syntheticuser",
+        "c:zhangsan",
+        "t:acme",
+        "t:engineer",
+        "t:handle",
+        "t:london",
+        "t:san",
+        "t:staff",
+        "t:synthetic",
+        "t:user",
+        "t:zhang",
+        "t:zhangsan"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "张小三",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "aaaa_bobbb",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhangxiaosan",
+        "t:handle",
+        "t:san",
+        "t:synthetic",
+        "t:user",
+        "t:xiao",
+        "t:xiaosan",
+        "t:zhang",
+        "t:zhangxiao"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Smith Alice",
+        "username": "Alex Li",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Zhangsan",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "expected": {
+        "score": 99,
+        "reasons": [
+          "邮箱完全一致"
+        ]
+      },
+      "source_keys": [
+        "c:alexli",
+        "c:handle31",
+        "c:smithalice",
+        "e:synthetic@example.invalid",
+        "t:alex",
+        "t:alice",
+        "t:handle",
+        "t:smith"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "张小三",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "欧阳娜娜",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "李明",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhangxiaosan",
+        "t:handle",
+        "t:san",
+        "t:synthetic",
+        "t:user",
+        "t:xiao",
+        "t:xiaosan",
+        "t:zhang",
+        "t:zhangxiao"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Alice Smith",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Ａｌｉｃｅ Ｓｍｉｔｈ",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 96,
+        "reasons": [
+          "姓名与「Ａｌｉｃｅ Ｓｍｉｔｈ」完全一致",
+          "姓名 100% 接近「Ａｌｉｃｅ Ｓｍｉｔｈ」"
+        ]
+      },
+      "source_keys": [
+        "c:alicesmith",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alice",
+        "t:handle",
+        "t:smith",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Jose Garcia",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Elodie",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:josegarcia",
+        "c:syntheticuser",
+        "t:garcia",
+        "t:handle",
+        "t:jose",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Zhang San",
+        "username": "Jose Garcia",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "李明",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Ａｌｉｃｅ Ｓｍｉｔｈ",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:josegarcia",
+        "c:staffengineeratacmelondon",
+        "c:zhangsan",
+        "t:acme",
+        "t:engineer",
+        "t:garcia",
+        "t:handle",
+        "t:jose",
+        "t:london",
+        "t:san",
+        "t:staff",
+        "t:zhang"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Alex",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Chong Qing",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alex",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alex",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "张三",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Engineer at Acme London",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhangsan",
+        "t:handle",
+        "t:san",
+        "t:synthetic",
+        "t:user",
+        "t:zhang",
+        "t:zhangsan"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Ａｌｉｃｅ Ｓｍｉｔｈ",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Li Lei",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Zhang San",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [
+          "synthetic_user"
+        ],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 100,
+        "reasons": [
+          "对方资料已填写相同 instagram"
+        ]
+      },
+      "source_keys": [
+        "c:alicesmith",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alice",
+        "t:handle",
+        "t:smith",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Alice Smith",
+        "username": "Zhang San",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Smith Alice",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "expected": {
+        "score": 98,
+        "reasons": [
+          "电话完全一致",
+          "姓名 100% 接近「Smith Alice」"
+        ]
+      },
+      "source_keys": [
+        "c:alicesmith",
+        "c:handle31",
+        "c:zhangsan",
+        "p:+1 555 555 1234",
+        "t:alice",
+        "t:handle",
+        "t:san",
+        "t:smith",
+        "t:zhang"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Ouyang Nana",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Zhang San",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:ouyangnana",
+        "c:syntheticuser",
+        "t:handle",
+        "t:nana",
+        "t:ouyang",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Elodie",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alex",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "aaaa_bobbb",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:elodie",
+        "c:handle31",
+        "c:staffengineeratacmelondon",
+        "c:syntheticuser",
+        "t:acme",
+        "t:elodie",
+        "t:engineer",
+        "t:handle",
+        "t:london",
+        "t:staff",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Zhangsan",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "李明",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "expected": {
+        "score": 99,
+        "reasons": [
+          "邮箱完全一致"
+        ]
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhangsan",
+        "e:synthetic@example.invalid",
+        "t:handle",
+        "t:synthetic",
+        "t:user",
+        "t:zhangsan"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Alice",
+        "username": "Li Lei",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "张小三",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alice",
+        "c:handle31",
+        "c:lilei",
+        "t:alice",
+        "t:handle",
+        "t:lei"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Smith Alice",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "aaaa_bobbb",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "张三",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:smithalice",
+        "c:syntheticuser",
+        "t:alice",
+        "t:handle",
+        "t:smith",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Elodie",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Zhang San",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:elodie",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:elodie",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Li Lei",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "José Garcia",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:lilei",
+        "c:syntheticuser",
+        "t:handle",
+        "t:lei",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "王小明",
+        "username": "Engineer at Acme London",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Li Lei",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Elodie",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 90,
+        "reasons": [
+          "用户名词组 100% 接近「Acme」"
+        ]
+      },
+      "source_keys": [
+        "c:engineeratacmelondon",
+        "c:handle31",
+        "c:staffengineeratacmelondon",
+        "c:wangxiaoming",
+        "t:acme",
+        "t:engineer",
+        "t:handle",
+        "t:london",
+        "t:ming",
+        "t:staff",
+        "t:wang",
+        "t:wangxiao",
+        "t:xiao",
+        "t:xiaoming"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Ａｌｉｃｅ Ｓｍｉｔｈ",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Ouyang Nana",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alicesmith",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alice",
+        "t:handle",
+        "t:smith",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Chongqing",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alice",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:chongqing",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:chongqing",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "重庆",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Zhang San",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "重庆",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 96,
+        "reasons": [
+          "姓名与「重庆」完全一致",
+          "姓名 100% 接近「重庆」"
+        ]
+      },
+      "source_keys": [
+        "c:chongqing",
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhongqing",
+        "t:chongqing",
+        "t:handle",
+        "t:qing",
+        "t:synthetic",
+        "t:user",
+        "t:zhong"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Alex Li",
+        "username": "Zhangsan",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alex",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 78,
+        "reasons": [
+          "姓名 78% 接近「Alex」"
+        ]
+      },
+      "source_keys": [
+        "c:alexli",
+        "c:handle31",
+        "c:zhangsan",
+        "t:alex",
+        "t:handle",
+        "t:zhangsan"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Ming Li",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "重庆",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "expected": {
+        "score": 98,
+        "reasons": [
+          "电话完全一致"
+        ]
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:mingli",
+        "c:syntheticuser",
+        "p:+1 555 555 1234",
+        "t:handle",
+        "t:ming",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Zhangsan",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "张小三",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "José Garcia",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "expected": {
+        "score": 99,
+        "reasons": [
+          "邮箱完全一致",
+          "姓名拼音 80% 接近「张小三」"
+        ]
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:staffengineeratacmelondon",
+        "c:syntheticuser",
+        "c:zhangsan",
+        "e:synthetic@example.invalid",
+        "t:acme",
+        "t:engineer",
+        "t:handle",
+        "t:london",
+        "t:staff",
+        "t:synthetic",
+        "t:user",
+        "t:zhangsan"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Alice Smith",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alex",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alicesmith",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alice",
+        "t:handle",
+        "t:smith",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Ouyang Nana",
+        "username": "Chongqing",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Chong Qing",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [
+          "chongqing"
+        ],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 100,
+        "reasons": [
+          "对方资料已填写相同 wechat",
+          "账号与「Chong Qing」完全一致",
+          "用户名词组 95% 接近「Chong Qing」"
+        ]
+      },
+      "source_keys": [
+        "c:chongqing",
+        "c:handle31",
+        "c:ouyangnana",
+        "t:chongqing",
+        "t:handle",
+        "t:nana",
+        "t:ouyang"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Alice",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "王小明",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Alex",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alice",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alice",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Zhang San",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Wang Xiaoming",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhangsan",
+        "t:handle",
+        "t:san",
+        "t:synthetic",
+        "t:user",
+        "t:zhang"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "李明",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Smith Alice",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:liming",
+        "c:syntheticuser",
+        "t:handle",
+        "t:liming",
+        "t:ming",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Alex",
+        "username": "Zhang San",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alice",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "李明",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alex",
+        "c:handle31",
+        "c:staffengineeratacmelondon",
+        "c:zhangsan",
+        "t:acme",
+        "t:alex",
+        "t:engineer",
+        "t:handle",
+        "t:london",
+        "t:san",
+        "t:staff",
+        "t:zhang"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "张小三",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alice",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhangxiaosan",
+        "t:handle",
+        "t:san",
+        "t:synthetic",
+        "t:user",
+        "t:xiao",
+        "t:xiaosan",
+        "t:zhang",
+        "t:zhangxiao"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Jose Garcia",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Wang Xiaoming",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:josegarcia",
+        "c:syntheticuser",
+        "t:garcia",
+        "t:handle",
+        "t:jose",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Alexandra Lee",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alex Li",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Chongqing",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alexandralee",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alexandra",
+        "t:handle",
+        "t:lee",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Li Lei",
+        "username": "Élodie Martin",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "张小三",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:elodiemartin",
+        "c:handle31",
+        "c:lilei",
+        "t:elodie",
+        "t:handle",
+        "t:lei",
+        "t:martin"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Ming Li",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Ouyang Nana",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "expected": {
+        "score": 99,
+        "reasons": [
+          "邮箱完全一致"
+        ]
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:mingli",
+        "c:syntheticuser",
+        "e:synthetic@example.invalid",
+        "t:handle",
+        "t:ming",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Chong Qing",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Elodie",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Zhang San",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "expected": {
+        "score": 98,
+        "reasons": [
+          "电话完全一致"
+        ]
+      },
+      "source_keys": [
+        "c:chongqing",
+        "c:handle31",
+        "c:staffengineeratacmelondon",
+        "c:syntheticuser",
+        "p:+1 555 555 1234",
+        "t:acme",
+        "t:chong",
+        "t:engineer",
+        "t:handle",
+        "t:london",
+        "t:qing",
+        "t:staff",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Smith Alice",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Zhangsan",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:smithalice",
+        "c:syntheticuser",
+        "t:alice",
+        "t:handle",
+        "t:smith",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Alice Smith",
+        "username": "Engineer at Acme London",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "李明",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alicesmith",
+        "c:engineeratacmelondon",
+        "c:handle31",
+        "t:acme",
+        "t:alice",
+        "t:engineer",
+        "t:handle",
+        "t:london",
+        "t:smith"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Smith Alice",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Li Lei",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "张小三",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:smithalice",
+        "c:syntheticuser",
+        "t:alice",
+        "t:handle",
+        "t:smith",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "重庆",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Élodie Martin",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:chongqing",
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhongqing",
+        "t:chongqing",
+        "t:handle",
+        "t:qing",
+        "t:synthetic",
+        "t:user",
+        "t:zhong"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Élodie Martin",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Zhangsan",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:elodiemartin",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:elodie",
+        "t:handle",
+        "t:martin",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Engineer at Acme London",
+        "username": "张三",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Engineer at Acme London",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Zhangsan",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 97,
+        "reasons": [
+          "账号与「Zhangsan」完全一致",
+          "姓名与「Engineer at Acme London」完全一致",
+          "姓名 100% 接近「Engineer at Acme London」"
+        ]
+      },
+      "source_keys": [
+        "c:engineeratacmelondon",
+        "c:handle31",
+        "c:staffengineeratacmelondon",
+        "c:zhangsan",
+        "t:acme",
+        "t:engineer",
+        "t:handle",
+        "t:london",
+        "t:san",
+        "t:staff",
+        "t:zhang",
+        "t:zhangsan"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Alex Li",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Li Lei",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [
+          "synthetic_user"
+        ],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 100,
+        "reasons": [
+          "对方资料已填写相同 linkedin",
+          "姓名 77% 接近「Li Lei」"
+        ]
+      },
+      "source_keys": [
+        "c:alexli",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alex",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Alexandra Lee",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "欧阳娜娜",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alexandralee",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alexandra",
+        "t:handle",
+        "t:lee",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Alice",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Zhangsan",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "张三",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alice",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alice",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Wang Xiaoming",
+        "username": "李雷",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Ouyang Nana",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "expected": {
+        "score": 99,
+        "reasons": [
+          "邮箱完全一致"
+        ]
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:lilei",
+        "c:wangxiaoming",
+        "e:synthetic@example.invalid",
+        "t:handle",
+        "t:lei",
+        "t:lilei",
+        "t:wang",
+        "t:xiaoming"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Alexandra Lee",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alice Smith",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alexandralee",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alexandra",
+        "t:handle",
+        "t:lee",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Wang Xiaoming",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Smith Alice",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Elodie",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:staffengineeratacmelondon",
+        "c:syntheticuser",
+        "c:wangxiaoming",
+        "t:acme",
+        "t:engineer",
+        "t:handle",
+        "t:london",
+        "t:staff",
+        "t:synthetic",
+        "t:user",
+        "t:wang",
+        "t:xiaoming"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Alex Li",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Élodie Martin",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "expected": {
+        "score": 98,
+        "reasons": [
+          "电话完全一致"
+        ]
+      },
+      "source_keys": [
+        "c:alexli",
+        "c:handle31",
+        "c:syntheticuser",
+        "p:+1 555 555 1234",
+        "t:alex",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Engineer at Acme London",
+        "username": "Zhangsan",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Ａｌｉｃｅ Ｓｍｉｔｈ",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:engineeratacmelondon",
+        "c:handle31",
+        "c:zhangsan",
+        "t:acme",
+        "t:engineer",
+        "t:handle",
+        "t:london",
+        "t:zhangsan"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "李雷",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "José Garcia",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Ａｌｉｃｅ Ｓｍｉｔｈ",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:lilei",
+        "c:syntheticuser",
+        "t:handle",
+        "t:lei",
+        "t:lilei",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Wang Xiaoming",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Zhang San",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:wangxiaoming",
+        "t:handle",
+        "t:synthetic",
+        "t:user",
+        "t:wang",
+        "t:xiaoming"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Wang Xiaoming",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Ouyang Nana",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:wangxiaoming",
+        "t:handle",
+        "t:synthetic",
+        "t:user",
+        "t:wang",
+        "t:xiaoming"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Zhang San",
+        "username": "张小三",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Chongqing",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Li Lei",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:staffengineeratacmelondon",
+        "c:zhangsan",
+        "c:zhangxiaosan",
+        "t:acme",
+        "t:engineer",
+        "t:handle",
+        "t:london",
+        "t:san",
+        "t:staff",
+        "t:xiao",
+        "t:xiaosan",
+        "t:zhang",
+        "t:zhangxiao"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Wang Xiaoming",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "李明",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:wangxiaoming",
+        "t:handle",
+        "t:synthetic",
+        "t:user",
+        "t:wang",
+        "t:xiaoming"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Chong Qing",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "王小明",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:chongqing",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:chong",
+        "t:handle",
+        "t:qing",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Alex Li",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "李明",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "aaaa_bobbb",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "expected": {
+        "score": 99,
+        "reasons": [
+          "邮箱完全一致"
+        ]
+      },
+      "source_keys": [
+        "c:alexli",
+        "c:handle31",
+        "c:syntheticuser",
+        "e:synthetic@example.invalid",
+        "t:alex",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Alice",
+        "username": "Elodie",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "李明",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alice",
+        "c:elodie",
+        "c:handle31",
+        "t:alice",
+        "t:elodie",
+        "t:handle"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Jose Garcia",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Chongqing",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:josegarcia",
+        "c:syntheticuser",
+        "t:garcia",
+        "t:handle",
+        "t:jose",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Alex",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Élodie Martin",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Alexandra Lee",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [
+          "synthetic_user"
+        ],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 100,
+        "reasons": [
+          "对方资料已填写相同 instagram",
+          "姓名 90% 接近「Alexandra Lee」"
+        ]
+      },
+      "source_keys": [
+        "c:alex",
+        "c:handle31",
+        "c:staffengineeratacmelondon",
+        "c:syntheticuser",
+        "t:acme",
+        "t:alex",
+        "t:engineer",
+        "t:handle",
+        "t:london",
+        "t:staff",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Chongqing",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alexandra Lee",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:chongqing",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:chongqing",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Engineer at Acme London",
+        "username": "李雷",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Ａｌｉｃｅ Ｓｍｉｔｈ",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "expected": {
+        "score": 98,
+        "reasons": [
+          "电话完全一致"
+        ]
+      },
+      "source_keys": [
+        "c:engineeratacmelondon",
+        "c:handle31",
+        "c:lilei",
+        "p:+1 555 555 1234",
+        "t:acme",
+        "t:engineer",
+        "t:handle",
+        "t:lei",
+        "t:lilei",
+        "t:london"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Ming Li",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Chong Qing",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Alex Li",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:mingli",
+        "c:syntheticuser",
+        "t:handle",
+        "t:ming",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Alex Li",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alice Smith",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alexli",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alex",
+        "t:handle",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Chong Qing",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "张小三",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:chongqing",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:chong",
+        "t:handle",
+        "t:qing",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "李明",
+        "username": "Zhang San",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "张三",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Engineer at Acme London",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 97,
+        "reasons": [
+          "账号与「张三」完全一致",
+          "用户名词组 100% 接近「张三」"
+        ]
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:liming",
+        "c:staffengineeratacmelondon",
+        "c:zhangsan",
+        "t:acme",
+        "t:engineer",
+        "t:handle",
+        "t:liming",
+        "t:london",
+        "t:ming",
+        "t:san",
+        "t:staff",
+        "t:zhang"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Wang Xiaoming",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alexandra Lee",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:wangxiaoming",
+        "t:handle",
+        "t:synthetic",
+        "t:user",
+        "t:wang",
+        "t:xiaoming"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "重庆",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Smith Alice",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [
+          "synthetic@example.invalid"
+        ],
+        "phones": []
+      },
+      "expected": {
+        "score": 99,
+        "reasons": [
+          "邮箱完全一致"
+        ]
+      },
+      "source_keys": [
+        "c:chongqing",
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhongqing",
+        "e:synthetic@example.invalid",
+        "t:chongqing",
+        "t:handle",
+        "t:qing",
+        "t:synthetic",
+        "t:user",
+        "t:zhong"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Chong Qing",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Ａｌｉｃｅ Ｓｍｉｔｈ",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "李明",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:chongqing",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:chong",
+        "t:handle",
+        "t:qing",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "王小明",
+        "username": "Zhang San",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Jose Garcia",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:wangxiaoming",
+        "c:zhangsan",
+        "t:handle",
+        "t:ming",
+        "t:san",
+        "t:wang",
+        "t:wangxiao",
+        "t:xiao",
+        "t:xiaoming",
+        "t:zhang"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "重庆",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "重庆",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 96,
+        "reasons": [
+          "姓名与「重庆」完全一致",
+          "姓名 100% 接近「重庆」"
+        ]
+      },
+      "source_keys": [
+        "c:chongqing",
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhongqing",
+        "t:chongqing",
+        "t:handle",
+        "t:qing",
+        "t:synthetic",
+        "t:user",
+        "t:zhong"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "Alex Li",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Staff Engineer at Acme London"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alice Smith",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "José Garcia",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [
+          "Acme"
+        ],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alexli",
+        "c:handle31",
+        "c:staffengineeratacmelondon",
+        "c:syntheticuser",
+        "t:acme",
+        "t:alex",
+        "t:engineer",
+        "t:handle",
+        "t:london",
+        "t:staff",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "张三",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Elodie",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhangsan",
+        "t:handle",
+        "t:san",
+        "t:synthetic",
+        "t:user",
+        "t:zhang",
+        "t:zhangsan"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "Li Lei",
+        "username": "Ａｌｉｃｅ Ｓｍｉｔｈ",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "欧阳娜娜",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alicesmith",
+        "c:handle31",
+        "c:lilei",
+        "t:alice",
+        "t:handle",
+        "t:lei",
+        "t:smith"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "instagram",
+        "external_id": "handle_31",
+        "display_name": "张小三",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Zhangsan",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "Zhang San",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": [
+          "+1 555 555 1234"
+        ]
+      },
+      "expected": {
+        "score": 98,
+        "reasons": [
+          "电话完全一致",
+          "姓名 86% 接近「Zhang San」"
+        ]
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:syntheticuser",
+        "c:zhangxiaosan",
+        "p:+1 555 555 1234",
+        "t:handle",
+        "t:san",
+        "t:synthetic",
+        "t:user",
+        "t:xiao",
+        "t:xiaosan",
+        "t:zhang",
+        "t:zhangxiao"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "linkedin",
+        "external_id": "handle_31",
+        "display_name": "Alice Smith",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Alexandra Lee",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 0,
+        "reasons": []
+      },
+      "source_keys": [
+        "c:alicesmith",
+        "c:handle31",
+        "c:syntheticuser",
+        "t:alice",
+        "t:handle",
+        "t:smith",
+        "t:synthetic",
+        "t:user"
+      ]
+    },
+    {
+      "source": {
+        "account_id": "a",
+        "provider": "wechat",
+        "external_id": "handle_31",
+        "display_name": "欧阳娜娜",
+        "username": "synthetic_user",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [],
+        "emails": [],
+        "phones": []
+      },
+      "target": {
+        "account_id": "b",
+        "provider": "wechat",
+        "external_id": "wxid_target",
+        "display_name": "Zhang San",
+        "username": "",
+        "profile_url": "",
+        "profile_id": null,
+        "profile_name": "",
+        "ready": false,
+        "avatar_media_id": null,
+        "aliases": [],
+        "handles": [
+          "synthetic_user"
+        ],
+        "emails": [],
+        "phones": []
+      },
+      "expected": {
+        "score": 100,
+        "reasons": [
+          "对方资料已填写相同 wechat"
+        ]
+      },
+      "source_keys": [
+        "c:handle31",
+        "c:ouyangnana",
+        "c:ouyangnuonuo",
+        "c:syntheticuser",
+        "t:handle",
+        "t:nana",
+        "t:nuo",
+        "t:ouyang",
+        "t:synthetic",
+        "t:user",
+        "t:yang",
+        "t:yangna"
+      ]
+    }
+  ],
+  "fuzzy": [
+    {
+      "a": "ad",
+      "b": "a",
+      "ratio": 66.66666666666667,
+      "weighted": 90.0
+    },
+    {
+      "a": "b",
+      "b": "",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "a d bccdb",
+      "b": "d  a",
+      "ratio": 30.76923076923077,
+      "weighted": 85.5
+    },
+    {
+      "a": "b a   dd  bac",
+      "b": "d   b accd  c",
+      "ratio": 61.53846153846154,
+      "weighted": 66.5
+    },
+    {
+      "a": "a a",
+      "b": "bac dc",
+      "ratio": 44.44444444444444,
+      "weighted": 85.5
+    },
+    {
+      "a": "c c c cbd dacd",
+      "b": "a",
+      "ratio": 13.33333333333333,
+      "weighted": 60.0
+    },
+    {
+      "a": "cd   adaa a",
+      "b": "a  c   bba  b",
+      "ratio": 50.0,
+      "weighted": 52.77777777777778
+    },
+    {
+      "a": "ca",
+      "b": "ca a  cca",
+      "ratio": 36.36363636363637,
+      "weighted": 90.0
+    },
+    {
+      "a": "c      a  a c b",
+      "b": "bdd",
+      "ratio": 11.111111111111116,
+      "weighted": 45.0
+    },
+    {
+      "a": "aaa bc",
+      "b": "aa d a",
+      "ratio": 50.0,
+      "weighted": 63.333333333333336
+    },
+    {
+      "a": "c b   b   ddaa",
+      "b": "a a a d",
+      "ratio": 38.095238095238095,
+      "weighted": 57.0
+    },
+    {
+      "a": "d cdac  a c",
+      "b": "ad da  a",
+      "ratio": 73.6842105263158,
+      "weighted": 73.6842105263158
+    },
+    {
+      "a": "a ab",
+      "b": "bc     dbac",
+      "ratio": 26.66666666666667,
+      "weighted": 45.0
+    },
+    {
+      "a": "c    b bc",
+      "b": "d  bab  a",
+      "ratio": 44.44444444444444,
+      "weighted": 44.44444444444444
+    },
+    {
+      "a": "ddac d",
+      "b": "adab c",
+      "ratio": 50.0,
+      "weighted": 50.0
+    },
+    {
+      "a": "ca ac d  b    d",
+      "b": "dd ddcacb",
+      "ratio": 33.333333333333336,
+      "weighted": 42.75
+    },
+    {
+      "a": "bc",
+      "b": "d",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "da     c abc c c",
+      "b": "bcaa b ca  d    ac",
+      "ratio": 58.82352941176471,
+      "weighted": 65.76923076923076
+    },
+    {
+      "a": "bacb aadb",
+      "b": "d c   b    ddc",
+      "ratio": 34.78260869565217,
+      "weighted": 42.75
+    },
+    {
+      "a": "",
+      "b": "b    c",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "d",
+      "b": "d  acbd",
+      "ratio": 25.0,
+      "weighted": 90.0
+    },
+    {
+      "a": "b    b dcc",
+      "b": "da",
+      "ratio": 16.666666666666664,
+      "weighted": 45.0
+    },
+    {
+      "a": "ca   b a",
+      "b": "",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "bad",
+      "b": "ad abd",
+      "ratio": 44.44444444444444,
+      "weighted": 72.0
+    },
+    {
+      "a": "c cc  a     d",
+      "b": "b",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "bac cbb c c",
+      "b": "b a   b",
+      "ratio": 55.55555555555556,
+      "weighted": 57.0
+    },
+    {
+      "a": "b bd",
+      "b": "b ab   adb  b",
+      "ratio": 47.05882352941176,
+      "weighted": 85.5
+    },
+    {
+      "a": "c b  a a  dc c",
+      "b": "a",
+      "ratio": 13.33333333333333,
+      "weighted": 60.0
+    },
+    {
+      "a": "bb   c",
+      "b": "a a c  bb",
+      "ratio": 40.0,
+      "weighted": 85.5
+    },
+    {
+      "a": "a   cdd cc c",
+      "b": "bba a  c  a",
+      "ratio": 60.86956521739131,
+      "weighted": 60.86956521739131
+    },
+    {
+      "a": "d",
+      "b": "bc d ad b",
+      "ratio": 19.999999999999996,
+      "weighted": 60.0
+    },
+    {
+      "a": "b bdc",
+      "b": "ccad  dbb cd",
+      "ratio": 35.29411764705882,
+      "weighted": 60.00000000000001
+    },
+    {
+      "a": "d",
+      "b": "dabd dab",
+      "ratio": 22.22222222222222,
+      "weighted": 90.0
+    },
+    {
+      "a": "b b cbccbdaa  c",
+      "b": "caa d  a  c adc",
+      "ratio": 40.0,
+      "weighted": 53.199999999999996
+    },
+    {
+      "a": "c",
+      "b": "b ba   b",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "cac",
+      "b": "cdba abbdddb d",
+      "ratio": 23.529411764705888,
+      "weighted": 45.0
+    },
+    {
+      "a": "b ac",
+      "b": "a ad",
+      "ratio": 50.0,
+      "weighted": 50.0
+    },
+    {
+      "a": "dc    b  a",
+      "b": "b cc b cccc",
+      "ratio": 38.095238095238095,
+      "weighted": 50.666666666666664
+    },
+    {
+      "a": "ccc",
+      "b": "",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "c acca",
+      "b": "b",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "a abbb cb",
+      "b": "c ad a  ad d  b",
+      "ratio": 41.666666666666664,
+      "weighted": 85.5
+    },
+    {
+      "a": "c baa",
+      "b": "",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "",
+      "b": "c",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "caab   cdd b  cb d",
+      "b": "bb",
+      "ratio": 19.999999999999996,
+      "weighted": 38.0
+    },
+    {
+      "a": "b",
+      "b": "c  a a b",
+      "ratio": 22.22222222222222,
+      "weighted": 90.0
+    },
+    {
+      "a": "bba",
+      "b": "cba",
+      "ratio": 66.66666666666667,
+      "weighted": 66.66666666666667
+    },
+    {
+      "a": "b aa da b cb d",
+      "b": "d ab   cb  a",
+      "ratio": 61.53846153846154,
+      "weighted": 72.38095238095238
+    },
+    {
+      "a": "dbd   c",
+      "b": "b b dbabd ad",
+      "ratio": 42.10526315789473,
+      "weighted": 51.42857142857142
+    },
+    {
+      "a": "b  cca  cc",
+      "b": "a a b d c",
+      "ratio": 52.63157894736843,
+      "weighted": 52.63157894736843
+    },
+    {
+      "a": "aa c    a b",
+      "b": "dcbcd ac  c",
+      "ratio": 36.36363636363637,
+      "weighted": 52.77777777777778
+    },
+    {
+      "a": "b d acbaad c",
+      "b": "c ab  d",
+      "ratio": 42.10526315789473,
+      "weighted": 85.5
+    },
+    {
+      "a": "ba c b ad a c  b",
+      "b": "b",
+      "ratio": 11.764705882352944,
+      "weighted": 60.0
+    },
+    {
+      "a": "b  dd bbba",
+      "b": "bd",
+      "ratio": 33.333333333333336,
+      "weighted": 60.00000000000001
+    },
+    {
+      "a": "d dcddbcb",
+      "b": "dcbbb",
+      "ratio": 57.14285714285714,
+      "weighted": 60.00000000000001
+    },
+    {
+      "a": "b b",
+      "b": "ca  c",
+      "ratio": 25.0,
+      "weighted": 36.0
+    },
+    {
+      "a": "cc   c a",
+      "b": "d db   a   a cc",
+      "ratio": 43.47826086956522,
+      "weighted": 85.5
+    },
+    {
+      "a": "c",
+      "b": "dacc d a",
+      "ratio": 22.22222222222222,
+      "weighted": 90.0
+    },
+    {
+      "a": "",
+      "b": "b   d b d dd b",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "d",
+      "b": "b d",
+      "ratio": 50.0,
+      "weighted": 90.0
+    },
+    {
+      "a": "abc d d",
+      "b": "ba     dc",
+      "ratio": 50.0,
+      "weighted": 57.0
+    },
+    {
+      "a": "c cc",
+      "b": "bd ab bd",
+      "ratio": 16.666666666666664,
+      "weighted": 25.71428571428571
+    },
+    {
+      "a": "a     b ad cac",
+      "b": "a  cbcc bcd   d",
+      "ratio": 55.172413793103445,
+      "weighted": 60.454545454545446
+    },
+    {
+      "a": "ac     d     a",
+      "b": "b      aa",
+      "ratio": 60.86956521739131,
+      "weighted": 74.11764705882352
+    },
+    {
+      "a": "",
+      "b": "ba d aac",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "dc bdbdaa ad bcd",
+      "b": "dd ba db c add",
+      "ratio": 60.0,
+      "weighted": 63.333333333333336
+    },
+    {
+      "a": "a    d dc    cc",
+      "b": "ca ad",
+      "ratio": 30.000000000000004,
+      "weighted": 64.125
+    },
+    {
+      "a": "d  a c",
+      "b": "a  a",
+      "ratio": 60.0,
+      "weighted": 85.5
+    },
+    {
+      "a": "d",
+      "b": "c    a",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "ba bd      cc",
+      "b": "",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "db db",
+      "b": "c b  b   bac cd",
+      "ratio": 30.000000000000004,
+      "weighted": 64.125
+    },
+    {
+      "a": "",
+      "b": "a aaac",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "bd  b",
+      "b": "a  d b cc   d",
+      "ratio": 33.333333333333336,
+      "weighted": 85.5
+    },
+    {
+      "a": "a b ad  c cdd  bc",
+      "b": "d  b bd  a abdcbd",
+      "ratio": 52.94117647058824,
+      "weighted": 63.333333333333336
+    },
+    {
+      "a": "bb d",
+      "b": "cadc",
+      "ratio": 25.0,
+      "weighted": 25.0
+    },
+    {
+      "a": "bb c  dcb   d",
+      "b": "d c  a   a",
+      "ratio": 60.86956521739131,
+      "weighted": 71.25
+    },
+    {
+      "a": "ddbc  a",
+      "b": "b    cb bac",
+      "ratio": 44.44444444444444,
+      "weighted": 54.0
+    },
+    {
+      "a": "d  a c bac  bcb",
+      "b": "ad   aa    ca",
+      "ratio": 64.28571428571428,
+      "weighted": 64.28571428571428
+    },
+    {
+      "a": "b dd  a",
+      "b": "dd",
+      "ratio": 44.44444444444444,
+      "weighted": 90.0
+    },
+    {
+      "a": "d  b",
+      "b": "bc",
+      "ratio": 33.333333333333336,
+      "weighted": 60.00000000000001
+    },
+    {
+      "a": "cbb",
+      "b": "bbbd  b",
+      "ratio": 40.0,
+      "weighted": 72.0
+    },
+    {
+      "a": "c d  abaac",
+      "b": "c",
+      "ratio": 18.181818181818176,
+      "weighted": 60.0
+    },
+    {
+      "a": "c c",
+      "b": "bc dc   d dc",
+      "ratio": 40.0,
+      "weighted": 85.5
+    },
+    {
+      "a": "add ddd",
+      "b": "d dcc  a    ca a",
+      "ratio": 26.086956521739136,
+      "weighted": 54.0
+    },
+    {
+      "a": "bc   a a",
+      "b": "ca a b",
+      "ratio": 57.14285714285714,
+      "weighted": 76.0
+    },
+    {
+      "a": "d  d   da   c",
+      "b": "babbd",
+      "ratio": 11.111111111111116,
+      "weighted": 30.000000000000004
+    },
+    {
+      "a": "c bd a   d  aba c",
+      "b": "caa",
+      "ratio": 30.000000000000004,
+      "weighted": 60.00000000000001
+    },
+    {
+      "a": "ab   cd bd",
+      "b": "c c  ad",
+      "ratio": 47.05882352941176,
+      "weighted": 63.33333333333332
+    },
+    {
+      "a": "d    c",
+      "b": "b    b    d ca  b",
+      "ratio": 43.47826086956522,
+      "weighted": 85.5
+    },
+    {
+      "a": "bca c  a",
+      "b": "abcc dbd",
+      "ratio": 50.0,
+      "weighted": 50.666666666666664
+    },
+    {
+      "a": "d  d",
+      "b": "adadca dd b",
+      "ratio": 40.0,
+      "weighted": 85.5
+    },
+    {
+      "a": "d    d",
+      "b": "d cb  cc a",
+      "ratio": 62.5,
+      "weighted": 85.5
+    },
+    {
+      "a": "b  adca bac   d",
+      "b": "b ad aaa c",
+      "ratio": 56.00000000000001,
+      "weighted": 85.5
+    },
+    {
+      "a": "d  da bcad d",
+      "b": "b aaac d",
+      "ratio": 50.0,
+      "weighted": 85.5
+    },
+    {
+      "a": "bc",
+      "b": "a dab",
+      "ratio": 28.57142857142857,
+      "weighted": 60.00000000000001
+    },
+    {
+      "a": "aad dbcd  ddda",
+      "b": "",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "bb  cb a a",
+      "b": "a  d  bbd",
+      "ratio": 42.10526315789473,
+      "weighted": 67.85714285714286
+    },
+    {
+      "a": "d  bbdcad dc ca",
+      "b": "c",
+      "ratio": 12.5,
+      "weighted": 60.0
+    },
+    {
+      "a": "b d b  c  c bc",
+      "b": "c",
+      "ratio": 13.33333333333333,
+      "weighted": 60.0
+    },
+    {
+      "a": "d bc d  aaa a ccd",
+      "b": "acc",
+      "ratio": 30.000000000000004,
+      "weighted": 60.00000000000001
+    },
+    {
+      "a": "c d dbb",
+      "b": "cd  c      a",
+      "ratio": 31.57894736842105,
+      "weighted": 85.5
+    },
+    {
+      "a": "acd    d",
+      "b": "ba ada a ad",
+      "ratio": 52.63157894736843,
+      "weighted": 52.63157894736843
+    },
+    {
+      "a": "b  da d c bb",
+      "b": "",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "a",
+      "b": "d",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "b d",
+      "b": "d   d",
+      "ratio": 50.0,
+      "weighted": 85.5
+    },
+    {
+      "a": "aacb  ddd a a",
+      "b": "d  abaa   c",
+      "ratio": 41.666666666666664,
+      "weighted": 63.33333333333332
+    },
+    {
+      "a": "b a",
+      "b": "ad  a   abd",
+      "ratio": 28.57142857142857,
+      "weighted": 85.5
+    },
+    {
+      "a": "b",
+      "b": "bd a b",
+      "ratio": 28.57142857142857,
+      "weighted": 90.0
+    },
+    {
+      "a": "cd  bcd   dba d",
+      "b": "c  b c   b",
+      "ratio": 72.0,
+      "weighted": 72.0
+    },
+    {
+      "a": "ac",
+      "b": "",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "cc",
+      "b": "a  b    a",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "",
+      "b": "cc b dd     d",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "cd b  d  a ac",
+      "b": "b  c",
+      "ratio": 47.05882352941176,
+      "weighted": 85.5
+    },
+    {
+      "a": "b a   cc dbaaabaa",
+      "b": "a  dd   ca",
+      "ratio": 44.44444444444444,
+      "weighted": 85.5
+    },
+    {
+      "a": "bd  c b  bc  a",
+      "b": "a aac  d ac  a",
+      "ratio": 64.28571428571428,
+      "weighted": 64.28571428571428
+    },
+    {
+      "a": "bc  d",
+      "b": "a  bb  d",
+      "ratio": 61.53846153846154,
+      "weighted": 85.5
+    },
+    {
+      "a": "bdc  b  cd   b",
+      "b": "",
+      "ratio": 0.0,
+      "weighted": 0.0
+    },
+    {
+      "a": "dadc adbb ccccc",
+      "b": "bdad c  cd dca",
+      "ratio": 55.172413793103445,
+      "weighted": 55.172413793103445
+    },
+    {
+      "a": "dada  daaccaa",
+      "b": "cc a a",
+      "ratio": 42.10526315789473,
+      "weighted": 72.0
+    },
+    {
+      "a": "cd ba",
+      "b": "cb dbcdbd b ddbdd",
+      "ratio": 36.36363636363637,
+      "weighted": 64.125
+    },
+    {
+      "a": "c    ad",
+      "b": "d",
+      "ratio": 25.0,
+      "weighted": 90.0
+    }
+  ]
+}

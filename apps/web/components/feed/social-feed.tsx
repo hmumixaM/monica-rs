@@ -1,7 +1,9 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "@/router/navigation";
-import { useEffect, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "../../src/router/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { fetchJson } from "../../lib/queries";
 
 import { monthLabel } from "../../lib/months";
 import { ButtonLink, Button } from "../ui/button";
@@ -49,73 +51,46 @@ export function SocialFeed({ profileId, preview, sticky = false, title }: { prof
     if (!preview) scope("provider", value);
   }
   useEffect(() => { setLocalProvider(search.get("provider") || "all"); }, [search]);
-  const [events, setEvents] = useState<FeedEvent[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [more, setMore] = useState(false);
-  const [error, setError] = useState("");
   const [selected, setSelected] = useState<{ event: FeedEvent; origin: HTMLElement | null } | null>(null);
-  const version = useRef(0);
-  const request = useRef<AbortController | null>(null);
-  const busy = useRef(false);
+  const [deepLinkError, setDeepLinkError] = useState('');
   const pageSize = preview ?? 12;
-
-  async function load(cursor?: string) {
-    if (cursor && busy.current) return;
-    request.current?.abort();
-    const abort = new AbortController();
-    request.current = abort;
-    const current = ++version.current;
-    busy.current = true;
-    setLoading(true);
-    setError("");
-    const params = new URLSearchParams({ limit: String(pageSize) });
-    if (profileId) params.set("profile_id", profileId);
-    if (provider !== "all") params.set("provider", provider);
-    if (cursor) params.set("cursor", cursor);
-    if (month && MONTH.test(month)) {
-      const start = new Date(`${month}-01T00:00:00Z`);
-      const end = new Date(start);
-      end.setUTCMonth(end.getUTCMonth() + 1);
-      params.set("after", start.toISOString());
-      params.set("before", end.toISOString());
-    }
-    try {
-      const response = await fetch(`/api/v1/timeline?${params}`, { signal: abort.signal });
-      if (!response.ok) throw new Error(String(response.status));
-      const rows: FeedEvent[] = await response.json();
-      if (current !== version.current) return;
-      setEvents((previous) => cursor ? [...previous, ...rows.filter((row) => !previous.some((old) => old.id === row.id))] : rows);
-      setMore(rows.length === pageSize);
-      const eventId = new URLSearchParams(window.location.search).get("event");
-      const target = rows.find((row) => row.id === eventId);
-      if (target) setSelected({ event: target, origin: null });
-      else if (eventId && !cursor) {
-        const detail = await fetch(`/api/v1/timeline/${encodeURIComponent(eventId)}`);
-        if (detail.ok && current === version.current) {
-          const event = await detail.json();
-          setSelected({ event: { ...event, profile_name: event.profile_display_name, media: event.media || [] }, origin: null });
-        }
+  const feed = useInfiniteQuery({
+    queryKey: ['feed', profileId, provider, month, pageSize],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) => {
+      const params = new URLSearchParams({ limit: String(pageSize) });
+      if (profileId) params.set('profile_id', profileId);
+      if (provider !== 'all') params.set('provider', provider);
+      if (pageParam) params.set('cursor', pageParam);
+      if (month && MONTH.test(month)) {
+        const start = new Date(`${month}-01T00:00:00Z`);
+        const end = new Date(start); end.setUTCMonth(end.getUTCMonth() + 1);
+        params.set('after', start.toISOString()); params.set('before', end.toISOString());
       }
-    } catch {
-      if (!abort.signal.aborted && current === version.current) setError("动态加载失败，请重试。");
-    } finally {
-      if (current === version.current) {
-        busy.current = false;
-        setLoading(false);
-      }
-    }
-  }
+      return fetchJson<FeedEvent[]>(`/api/v1/timeline?${params}`, { signal });
+    },
+    getNextPageParam: page => page.length === pageSize ? page.at(-1)?.cursor : undefined,
+  });
+  const events = useMemo(() => {
+    const seen = new Set<string>();
+    return (feed.data?.pages.flat() ?? []).filter(event => !seen.has(event.id) && !!seen.add(event.id));
+  }, [feed.data]);
+  const loading = feed.isFetching;
+  const more = feed.hasNextPage;
+  const error = feed.isError ? '动态加载失败，请重试。' : deepLinkError;
+  const load = (cursor?: string) => cursor ? feed.fetchNextPage() : feed.refetch();
+  const eventId = search.get('event');
   useEffect(() => {
-    setEvents([]);
-    setMore(false);
-    void load();
-    return () => {
-      request.current?.abort();
-      version.current++;
-      busy.current = false;
-    };
-  }, [provider, profileId, month]);
-
+    setDeepLinkError('');
+    if (!eventId) return;
+    const target = events.find(event => event.id === eventId);
+    if (target) { setSelected({ event: target, origin: null }); return; }
+    const controller = new AbortController();
+    void fetchJson<FeedEvent & { profile_display_name?: string }>(`/api/v1/timeline/${encodeURIComponent(eventId)}`, { signal: controller.signal })
+      .then(event => setSelected({ event: { ...event, profile_name: event.profile_display_name, media: event.media || [] }, origin: null }))
+      .catch(() => { if (!controller.signal.aborted) setDeepLinkError('引用的动态暂时无法读取。'); });
+    return () => controller.abort();
+  }, [eventId, events]);
   const fullHref = profileId ? `/profiles/${profileId}?tab=timeline` : "/timeline";
 
   return <section className={styles.feed} id="timeline" aria-label={title ?? "动态"} data-preview={preview ? "" : undefined}>

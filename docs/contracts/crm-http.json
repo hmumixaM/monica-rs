@@ -1,0 +1,828 @@
+{
+  "fixtures": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/health",
+        "headers": {},
+        "json": null
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "status": "ok",
+          "service": "api"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/health",
+        "headers": {},
+        "json": null
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "status": "ok",
+          "service": "api"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/profiles",
+        "headers": {},
+        "json": {
+          "display_name": "Synthetic Person"
+        }
+      },
+      "response": {
+        "status": 403,
+        "json": {
+          "detail": "CSRF token required"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/profiles",
+        "headers": {
+          "cookie": "crm_csrf=synthetic",
+          "x-csrf-token": "synthetic"
+        },
+        "json": {}
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "missing",
+              "loc": [
+                "body",
+                "display_name"
+              ],
+              "msg": "Field required",
+              "input": {}
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/profiles",
+        "headers": {
+          "cookie": "crm_csrf=synthetic",
+          "x-csrf-token": "synthetic"
+        },
+        "json": {
+          "display_name": ""
+        }
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "string_too_short",
+              "loc": [
+                "body",
+                "display_name"
+              ],
+              "msg": "String should have at least 1 character",
+              "input": "",
+              "ctx": {
+                "min_length": 1
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/profiles/not-a-uuid",
+        "headers": {},
+        "json": null
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "uuid_parsing",
+              "loc": [
+                "path",
+                "profile_id"
+              ],
+              "msg": "Input should be a valid UUID, invalid character: found `n` at 1",
+              "input": "not-a-uuid",
+              "ctx": {
+                "error": "invalid character: found `n` at 1"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "dependencies": {
+    "fastapi": "0.141.1",
+    "pydantic": "2.13.5",
+    "starlette": "1.6.0",
+    "sqlalchemy": "2.0.54",
+    "httpx": "0.28.1"
+  },
+  "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+  "sources": [
+    {
+      "path": "services/api/app/__init__.py",
+      "sha256": "92d55f1bacbf89a2f1f506bca0c47cbdf0163cf3411b71d674aaa42a7115d61b"
+    },
+    {
+      "path": "services/api/app/__main__.py",
+      "sha256": "83bedd46e56d01a2f1b9cc174c59287da96bd86ad540fa4cb154f9067cc17925"
+    },
+    {
+      "path": "services/api/app/account_links.py",
+      "sha256": "2489e0a90db8066b674b1e97c548ee01e0b45ff9bc65ca6728246b1da46da008"
+    },
+    {
+      "path": "services/api/app/aggregate_cache.py",
+      "sha256": "681c56a2f622aa3bbfcd8325e5f8fba73e805eb12108e8a1d28cbc16ebe6680d"
+    },
+    {
+      "path": "services/api/app/ai/__init__.py",
+      "sha256": "7f55b1d1e7f3d0dd0e6bf1fbc2642a81fe8594fefa84cf18c392c4d2b4180a93"
+    },
+    {
+      "path": "services/api/app/ai/chat_excerpts.py",
+      "sha256": "986e70f8449ba24735515302b0c5c9f6f14ac89e56a538cdfc8a2049a2971879"
+    },
+    {
+      "path": "services/api/app/ai/client.py",
+      "sha256": "14ed722cb05ecdc0333ac33685ad21a7000808d86ed7c33352e27e6b4cf882a9"
+    },
+    {
+      "path": "services/api/app/ai/communities.py",
+      "sha256": "4acfb0bfcdddf963364a6aa55411b51627ce00c3f93028c4123bdde5dacd0369"
+    },
+    {
+      "path": "services/api/app/ai/digest.py",
+      "sha256": "38d3bdb4dde469295703cd61827595abf8ee90df5f25b5cb758589bcd05ccafc"
+    },
+    {
+      "path": "services/api/app/ai/image_ocr.py",
+      "sha256": "09b3508a544f80d395b2a26100691d5b22c065e86342f487009c96e470925063"
+    },
+    {
+      "path": "services/api/app/ai/jobs.py",
+      "sha256": "784a134cd9127d9ebc4c97d2f7d58108a6e127ee5750ec5a6986b8030598e249"
+    },
+    {
+      "path": "services/api/app/ai/link_changes.py",
+      "sha256": "a7851a7887110bc85b698cb67d437391ea0f474c9763961a6cf2b3d0797e59e3"
+    },
+    {
+      "path": "services/api/app/ai/network_context.py",
+      "sha256": "a7afb2c875cc64b5af1f19eeb423af14b27ebd5299187ec57fa8586e6e42f3dd"
+    },
+    {
+      "path": "services/api/app/ai/payloads.py",
+      "sha256": "4f590f86e3352779f868abd193bb91240dbd0a57a9a4f717741f86d721bf2d64"
+    },
+    {
+      "path": "services/api/app/ai/person_context.py",
+      "sha256": "da585880c4443f9e995e1c653f22360a1881a39321b9deb4325af44d0cfb93ce"
+    },
+    {
+      "path": "services/api/app/ai/person_memory.py",
+      "sha256": "166fbda6eb3917ad94dc6fed3158867babd1df0f23d66f2d44a2ffb863da80c1"
+    },
+    {
+      "path": "services/api/app/ai/person_weekly.py",
+      "sha256": "bdadfd78523846710c93cabf404d8756f1e0fe77a2a0a3cf8b41c3abc3d39ed7"
+    },
+    {
+      "path": "services/api/app/ai/post_media.py",
+      "sha256": "e3b33bd05d9b0f501ceb66b73da6373bbbed15ee27591aed933c38d99569b2b7"
+    },
+    {
+      "path": "services/api/app/ai/profiles.py",
+      "sha256": "d88d9365ad30ab17983051a248e8962400ebcf3ac2b35e9bc0000c9f6eb20e54"
+    },
+    {
+      "path": "services/api/app/ai/prompts.py",
+      "sha256": "7d2068d63e2f1a5de9de78f9d9ac0144055bf7e8bb2591032fbaedc8d394726a"
+    },
+    {
+      "path": "services/api/app/ai/queue.py",
+      "sha256": "8477d72b4bf04fe7dd2ccbcf0581e36c0cb60422be84dec798df7b863ac8dc5e"
+    },
+    {
+      "path": "services/api/app/ai/reconnect.py",
+      "sha256": "dc28c1f0399244b4717e4800e57909794fb9af56582dbd948604bc6b292b66cd"
+    },
+    {
+      "path": "services/api/app/ai/router.py",
+      "sha256": "48e0fc08aab995f08f2f7209b857f0b7f2f901bdd1f453e82288189bdce4f23b"
+    },
+    {
+      "path": "services/api/app/ai/schedule.py",
+      "sha256": "91bd0b58303a9feff3f322f152e77acad5ed2394e2cd2c890d4cbd70db9d8aa6"
+    },
+    {
+      "path": "services/api/app/ai/schemas.py",
+      "sha256": "c331dc546e27c10e2d7f678a30a1c048dd31739a99498793666f75e0d5956550"
+    },
+    {
+      "path": "services/api/app/ai/store.py",
+      "sha256": "a823eafe1f25272c1847cf0557aec7f5a411d68283a9f5882570e8a5324b6e2b"
+    },
+    {
+      "path": "services/api/app/archive_detached_profiles.py",
+      "sha256": "e638d3c52f8cb940932a90d472d3bddcdd137e8294d01335d76b842d3bc6c77b"
+    },
+    {
+      "path": "services/api/app/archive_linkedin.py",
+      "sha256": "e4df49760c9a2baf238d5e48fb2493d4dfdd749ce7d1cf1c4723be8a6feab421"
+    },
+    {
+      "path": "services/api/app/archive_media.py",
+      "sha256": "6124ea9ff6ba35f272aeb50ea39fb981ff0919f69ff507f8ec60778e5eda6be7"
+    },
+    {
+      "path": "services/api/app/auth.py",
+      "sha256": "72010472e80ff3f53b4816da2ab9390c38a83e4dbab04a735f90ee6f92a7c2c9"
+    },
+    {
+      "path": "services/api/app/bulk_moments.py",
+      "sha256": "c935683c1941a501c74841d847f3d06f8c18e826686c7b6ffca3b0c2ca02acbc"
+    },
+    {
+      "path": "services/api/app/cache_warmup.py",
+      "sha256": "739d29c823063ba6c775fe97a6c5f21791094bc8bc081bebc263c9fb348e82e3"
+    },
+    {
+      "path": "services/api/app/chat_months.py",
+      "sha256": "faedac07a52bc7f4b6f0cb6ed5a8960c46817604b424fca8d8e412903ee2d280"
+    },
+    {
+      "path": "services/api/app/chatlog_proxy.py",
+      "sha256": "88d3f54da7f95073be2e1aeb9f082ea7dd02d18a7e514fc98060a051f1634138"
+    },
+    {
+      "path": "services/api/app/city_reference.py",
+      "sha256": "08f38d157163f9083d1e8afe54b968c1d05477e18f452c64fcf3ae3d446c4738"
+    },
+    {
+      "path": "services/api/app/community_names.py",
+      "sha256": "d61bd37e5988a869f3ea8ae39fbacba1929dbe31203987e11fbe8386c1b4dc4e"
+    },
+    {
+      "path": "services/api/app/compact_message_search.py",
+      "sha256": "af73e9d80ca73061b6b52141544bc7405086b60114c07ec2302845a3b2b668b0"
+    },
+    {
+      "path": "services/api/app/config.py",
+      "sha256": "38749f966c9cc3e330f6a33dd81c4166e68843eb20eae9e5f15d729a6b42b708"
+    },
+    {
+      "path": "services/api/app/contact_calendar.py",
+      "sha256": "ea63ebec7a259291ac15c471dd8496241a99fe28f32948967a6a21bb8df7779e"
+    },
+    {
+      "path": "services/api/app/contact_events.py",
+      "sha256": "71b89e61ef5410a9de508349466831ae66df3061e5ee558083fe0916acc07a53"
+    },
+    {
+      "path": "services/api/app/contact_stats.py",
+      "sha256": "9b221fbd54764cffdfe9538b8740f0077d3150c43eb35e6a771210567b88d3e3"
+    },
+    {
+      "path": "services/api/app/content.py",
+      "sha256": "75647075852a28bee1eace6efc7cd2ea9a77385236a6d89f608114398964bd64"
+    },
+    {
+      "path": "services/api/app/data_versions.py",
+      "sha256": "b98bff3bb12c418abb7c26556f2af373dd61067b1d791eace568573b4b634c42"
+    },
+    {
+      "path": "services/api/app/db.py",
+      "sha256": "71f06d0fb399bc6381e6527942cfbac3987f38dc2545f82915435ea77428cc5f"
+    },
+    {
+      "path": "services/api/app/directory.py",
+      "sha256": "84406d0535c9b80b49ad21e48dd979f09cb0a58e4db3ed224490032318a07519"
+    },
+    {
+      "path": "services/api/app/event_metadata.py",
+      "sha256": "2696e7cb62281a02a47543daeb6bcb94e27f678e5a6b467bba2c041ba13f6e57"
+    },
+    {
+      "path": "services/api/app/faces/__init__.py",
+      "sha256": "219a902f53f98a6b9610ef6380f0fac04692b25f137c77660334240dc1d4d90b"
+    },
+    {
+      "path": "services/api/app/faces/device.py",
+      "sha256": "02b20f1b0ffbdd37ca72b0241cce34c9be631a611e55c4a075802a5b6d87edbc"
+    },
+    {
+      "path": "services/api/app/faces/photos.py",
+      "sha256": "6e5cda9cc854021aa7607cfc0222548c419b914646b8c5ce80e534b09ae09640"
+    },
+    {
+      "path": "services/api/app/faces/review.py",
+      "sha256": "b21065b2b471b5f28862066009be9105b8aa9918dfc478ed71b583395407c660"
+    },
+    {
+      "path": "services/api/app/faces/signals.py",
+      "sha256": "775a982fbaa684981357aa0cc80cf69b6962f7bf23922b6c3cc8d428033872c0"
+    },
+    {
+      "path": "services/api/app/faces/signing.py",
+      "sha256": "b3947e04e717fda3e75d58f94ac5b3ec7366932300a4080889acfeb51994f6e6"
+    },
+    {
+      "path": "services/api/app/full_migration.py",
+      "sha256": "8e823d4974ef4b2c101411b9fd852a87155805124670243fbfc4cccea4c42bcb"
+    },
+    {
+      "path": "services/api/app/graph.py",
+      "sha256": "c5b942605e0ad5f777b0540a5cea2a48dfb623e99a993a16ac6489030848df1e"
+    },
+    {
+      "path": "services/api/app/graph_layout.py",
+      "sha256": "6915fa07e2d20017fb949cdf44d930522b7ac97e9a9a6bbdb3f2d61c04fdb3a0"
+    },
+    {
+      "path": "services/api/app/home.py",
+      "sha256": "08ca124b35f592d3480d2876af1d3ca59585bc6e3e34ca97d0bbb35c070eb399"
+    },
+    {
+      "path": "services/api/app/identity_rules.py",
+      "sha256": "3d54884b243d66cbf7794e0a7aee099501103a36a72b705f419ecf6d583bedbf"
+    },
+    {
+      "path": "services/api/app/import_common.py",
+      "sha256": "0188945e326bb7459df2b5d99a32abbbee7da7d6ba9376cbdb1dc2d4c50cdc8e"
+    },
+    {
+      "path": "services/api/app/import_messages.py",
+      "sha256": "8aa13f954ebb624a7b1e7a4f8a99724854b4ef9b555d0cc40feb37540dc0916d"
+    },
+    {
+      "path": "services/api/app/imports.py",
+      "sha256": "1a558ac8694145adae36b620f41f201cd3d7b48a540f9f93de82ba600e2adb77"
+    },
+    {
+      "path": "services/api/app/insights.py",
+      "sha256": "ca6d80c9103c3a395074739d704b43daf184ef9e5ed4fafcd6a620151800c53f"
+    },
+    {
+      "path": "services/api/app/instagram_posts.py",
+      "sha256": "ea800a8be41482a54cc9b8e8e91664225e7d6b154901a428abe3a0f956619b89"
+    },
+    {
+      "path": "services/api/app/interactions.py",
+      "sha256": "c1b0ca1c78eadfc30c0bd28d5bb79658df02d9515aad1bc3da28f6a4dab2143b"
+    },
+    {
+      "path": "services/api/app/job_queue.py",
+      "sha256": "e05430ffff79f62048d868da68a4a1beae9c72917178b18986bd0863839a22e0"
+    },
+    {
+      "path": "services/api/app/jobs.py",
+      "sha256": "7487182fad516e70c6315b15196efbd73cbca9b8eb6b111f59e7305d11ca9f3b"
+    },
+    {
+      "path": "services/api/app/link_matching.py",
+      "sha256": "67a5925152cf71f3d8d9adb16d8b16f175c87a6ecac6b0319db27f724e5209c9"
+    },
+    {
+      "path": "services/api/app/link_ownership.py",
+      "sha256": "b5bb250f99ff8f8b71913473144b8b1ca2cb4f3bc75d270906c1adcfaabb6a99"
+    },
+    {
+      "path": "services/api/app/link_review.py",
+      "sha256": "7d6f99669cf70ea399f1eebead7aa2fbb94b865da4180ac6eed7b179619b3fb0"
+    },
+    {
+      "path": "services/api/app/linkedin_collection.py",
+      "sha256": "e4dce8f4a4cd682848a7a9d9259785bbd71456d0e2f292070641f25354465d73"
+    },
+    {
+      "path": "services/api/app/linkedin_connection_profiles.py",
+      "sha256": "3f86fb2837a597ccf6cf0332e500f7034fdb201c60e438e85f321bea9ccb1453"
+    },
+    {
+      "path": "services/api/app/linkedin_import.py",
+      "sha256": "a0edf3c4635a145b2ec3678fe629459fcafc9ffd87a7ee231404187d238eeff7"
+    },
+    {
+      "path": "services/api/app/location_atlas.py",
+      "sha256": "dffae947a1e7942cc920d2bec73205fb2dae3b3f8cdfe8bb23a63d0ad17ce20b"
+    },
+    {
+      "path": "services/api/app/location_index.py",
+      "sha256": "4f5cae411b10bef448892739fd2defa94c61234d72e6b7dc90de9b56933df5ee"
+    },
+    {
+      "path": "services/api/app/location_points.py",
+      "sha256": "066075e8e4af6589b2fc2f8ebb7b82252c87dbdb30b4fadcb39074703b9c4d36"
+    },
+    {
+      "path": "services/api/app/main.py",
+      "sha256": "31e10fbb199a6bd737c65ecb5228ee9eb552796e4710b4614b10784a0d8d53c6"
+    },
+    {
+      "path": "services/api/app/manual_media.py",
+      "sha256": "3cb70733695d8e73d2bd1ae726cf3a5d92e96bdbe700c4fd7dc74365d113b085"
+    },
+    {
+      "path": "services/api/app/media_dimensions.py",
+      "sha256": "e399ca7ea4f2a1f776218b1ef1752bb64c87b24f891cf1ac806662d0b660cb83"
+    },
+    {
+      "path": "services/api/app/media_store.py",
+      "sha256": "1400dbdd215e722cb67f3b479401fe8b14c30c749d4d44849276676bcf8fb9e7"
+    },
+    {
+      "path": "services/api/app/merge_profiles.py",
+      "sha256": "25b897b6cf024fd740aeb30a3fc0dc925b9d7ff5e8675bd718e56920c4d9e0fb"
+    },
+    {
+      "path": "services/api/app/message_key_audit.py",
+      "sha256": "350df046246044a589548f135b6208e4a17d64d8ba85d8e82d60bae0781b341a"
+    },
+    {
+      "path": "services/api/app/metric_index.py",
+      "sha256": "7d06402bd711afb79707ae60d4ae9737adc00c23ea10655b6cf471169c6b8685"
+    },
+    {
+      "path": "services/api/app/moments_posts.py",
+      "sha256": "f44acf7299d2b8d0acf67a0c032387c8278804d551f83c60013987f9899441cb"
+    },
+    {
+      "path": "services/api/app/moments_xml.py",
+      "sha256": "7b6e818a07e65bac35869ce75a6e736a162ea4163d27a484fcfa07be9948b530"
+    },
+    {
+      "path": "services/api/app/orbit.py",
+      "sha256": "feed077117e15df662b17d4e1028c95e2a36f19b2cc6b25c713d5679723de3b0"
+    },
+    {
+      "path": "services/api/app/overview.py",
+      "sha256": "1636f5c0abd324a8d540d5cf8b94381d79535f3cb8b673136341bf45b0ecf3f1"
+    },
+    {
+      "path": "services/api/app/ownership.py",
+      "sha256": "17afc5d3668a2a0f62b4927a2275a96e61cfd9d742a54ccd55bb9cba74b0e9fd"
+    },
+    {
+      "path": "services/api/app/photo_preview.py",
+      "sha256": "cd0b24bdaaf16864e7e2057b8e3d3e3d21bb13ee08b006998c3256c15e134412"
+    },
+    {
+      "path": "services/api/app/platform_migrate.py",
+      "sha256": "79535869bf054d2db1a56d0f2d6a33952e03367c0ebd95b7b83469afaefb930f"
+    },
+    {
+      "path": "services/api/app/platform_schema.sql",
+      "sha256": "8dfdc1302cb1b7994da0528b134ad78051d26b6404f5b3eb5ecc29e726748c83"
+    },
+    {
+      "path": "services/api/app/platform_store.py",
+      "sha256": "ee68dade9ad9213265dc3628e13728d8ae009a924365bcbdf46b561ebb74f1bb"
+    },
+    {
+      "path": "services/api/app/platform_trim.py",
+      "sha256": "0e3f819b212f523398c7ebe0a52e953c4a6c6428fcd9cd91e3dca848e20d5153"
+    },
+    {
+      "path": "services/api/app/post_text.py",
+      "sha256": "5ec707520a4dbabb782f9d8215cf750c54f28e2585929518db871015ec87ef50"
+    },
+    {
+      "path": "services/api/app/profile_facts.py",
+      "sha256": "6092d72fada65b14c3866a64046e71489caa3b45942e1e9880ca65a6a78b2c68"
+    },
+    {
+      "path": "services/api/app/profile_presentation.py",
+      "sha256": "59fede0ffbfa27e2246f1400dfbcc36b6cebb8285796b2414fc6a3ad41593a95"
+    },
+    {
+      "path": "services/api/app/profile_retirement.py",
+      "sha256": "99f7412663b60c64d01403b7d93ce07e0ecef2e0223aae6d0a413350eb3f077e"
+    },
+    {
+      "path": "services/api/app/profile_summary.py",
+      "sha256": "fa6f65a6f7f0f743d07ca6b1e602c3d640b25a63bf868961de7d8d2221c8cf0d"
+    },
+    {
+      "path": "services/api/app/project_messages.py",
+      "sha256": "7b873dd09923636e43083f674a95728aa5916d5af12c935291aa77268e8fda14"
+    },
+    {
+      "path": "services/api/app/project_profiles.py",
+      "sha256": "42a0814c052ec4bfd53a13536a1a688f3891ddd7e234cd271629b140bdc62bcd"
+    },
+    {
+      "path": "services/api/app/project_social.py",
+      "sha256": "b8cae56bfde1575f5f2681e818768a7ef2ac78cff4386d77e2a403ca2654130a"
+    },
+    {
+      "path": "services/api/app/query_services.py",
+      "sha256": "ce502a2abfd03b9f49a248ec09fb19358d965a854f26f960ee64d8b62d1b457f"
+    },
+    {
+      "path": "services/api/app/reconcile_notebook.py",
+      "sha256": "500c865922e8c17dcb1d8850ad9391c512d810afee9b4ebb91ca62cf4c44f43c"
+    },
+    {
+      "path": "services/api/app/reconcile_sources.py",
+      "sha256": "1f1ab84482c6f4b3e108eb9f5cbb2d6562d6bdc54d635c00e6ebe2221c9b4f00"
+    },
+    {
+      "path": "services/api/app/remote_media.py",
+      "sha256": "437304a2331fe0ad3b19cca7b811b0d0cd802c76e900e307b27641267a094a58"
+    },
+    {
+      "path": "services/api/app/repair_identity.py",
+      "sha256": "47142d963655e589a6cc45955e772c14ab64d5663a0daebb1d8c982bba6c41f9"
+    },
+    {
+      "path": "services/api/app/repair_moments_channels.py",
+      "sha256": "1255ff21ad9c7ab2ed6b5138160a01fd25e5c2ee80fc4254f8b85073f707cb4f"
+    },
+    {
+      "path": "services/api/app/repair_moments_links.py",
+      "sha256": "493c5699b8d91e607f1f1a7ca69e393bbe7b6d61234f0e2d761b8f4d47bf9b76"
+    },
+    {
+      "path": "services/api/app/repositories.py",
+      "sha256": "0f90971a9ab2163eebd94ad8b163eb96ff044cde3cd3fae9ebabd0e4c1d101bd"
+    },
+    {
+      "path": "services/api/app/request_timing.py",
+      "sha256": "99fb5515d01ea0cd6761ba38918cb096ac71d1208caa5add8fea8575705010c3"
+    },
+    {
+      "path": "services/api/app/ribbon.py",
+      "sha256": "c6e8fdacaa17ac0781c2ab5b92e8c0b8624d3134514fdd2a2779d159d2215f41"
+    },
+    {
+      "path": "services/api/app/routers/__init__.py",
+      "sha256": "d7ddd689885a042492d72ac03b67d8124a266eeecba5655ee1dd1d5e27eafe10"
+    },
+    {
+      "path": "services/api/app/routers/auth.py",
+      "sha256": "1570347610c63e6ec85df61985ce8a471194c589815db20b7fff9fdaa7d82c24"
+    },
+    {
+      "path": "services/api/app/routers/chatlog_proxy.py",
+      "sha256": "1d06f366c0c9d3b608352f6cb6602d81b4a521d860e010069689d17fafd28a0c"
+    },
+    {
+      "path": "services/api/app/routers/imports_api.py",
+      "sha256": "a8b31e65e6bda8d94c7eb72cfb3abb2f60ea61f7ea4ab61a8eb1b4703dab9b54"
+    },
+    {
+      "path": "services/api/app/routers/locations.py",
+      "sha256": "1b241aebe4909353971f7b2d8809adf0d10864d03c119f7a67debe5c3251d085"
+    },
+    {
+      "path": "services/api/app/routers/media.py",
+      "sha256": "6ce44fcc5dd862e106a6b360191a236e2e85b306b5a9109f177f917d93a8fc25"
+    },
+    {
+      "path": "services/api/app/routers/messages.py",
+      "sha256": "515d09a24601d9fa10e79337818fabcfb6d8c1c20085cd9ba12bda358d133649"
+    },
+    {
+      "path": "services/api/app/routers/profile_dates.py",
+      "sha256": "d2b5592b4b5cc1b4d97b656af2bc5e6645deb7dd0a83c843f146049affdf32a9"
+    },
+    {
+      "path": "services/api/app/routers/profile_details.py",
+      "sha256": "f2ec19b3f1624708c15c102e2a6e8e7c2d87f3d8bc76df9f08708a7b82f4de7c"
+    },
+    {
+      "path": "services/api/app/routers/timeline.py",
+      "sha256": "3a53623e530bd565182960ad16f150f6b0423d9b0c97fb4ac0844f129651e985"
+    },
+    {
+      "path": "services/api/app/run_media.py",
+      "sha256": "dac8257b80856495abb08f381c5999e3fdc4685bc9219acbd8fd70e1e123bd2a"
+    },
+    {
+      "path": "services/api/app/runtime_status.py",
+      "sha256": "6745514746c14ce327391ef69f126c99b810f732042c9c079768fab29c6ba64c"
+    },
+    {
+      "path": "services/api/app/schemas.py",
+      "sha256": "b18dd25e05f6044f2f5242b25785fc20cf451ca7f46c322a3da139af586394ee"
+    },
+    {
+      "path": "services/api/app/search.py",
+      "sha256": "6d02af4c7881fa9670e9a1f46b6bba9493977096407c16f14b4c6d40a2792ea8"
+    },
+    {
+      "path": "services/api/app/security.py",
+      "sha256": "5e4fb88bad5e0584ac61c677720d1fd62b4a246c3af4d03ddccffe15ec680a97"
+    },
+    {
+      "path": "services/api/app/significant_dates.py",
+      "sha256": "f7c14870738c225233714b9f3cd8d86d42c95b20ee3f89ea843d166c64203f94"
+    },
+    {
+      "path": "services/api/app/social_analytics.py",
+      "sha256": "1ec09dcade421f17c94b0db4cc0357a3f664d53c6573d1181017b01fc8d34d11"
+    },
+    {
+      "path": "services/api/app/source_projection.py",
+      "sha256": "b96f24e640472f62e9abf31b0c99b492b76fbbf16d37ee0f90bf6ddf6f98b51a"
+    },
+    {
+      "path": "services/api/app/source_time.py",
+      "sha256": "a6892468e7af28179f85612882b74e65768e105dcfa786c196ab467abcb5656a"
+    },
+    {
+      "path": "services/api/app/source_verification.py",
+      "sha256": "197d1058f8021b8b3e567526a4b312c3d372315cc1ec7c16ea3e39c17a7f8b05"
+    },
+    {
+      "path": "services/api/app/sqlite_snapshot.py",
+      "sha256": "e10c2a93be3a11e7b8c2db6edc3319ecef6bbd3f5a193e4353dfa8d49151e5f5"
+    },
+    {
+      "path": "services/api/app/structured_facts.py",
+      "sha256": "50019a107db492eeebbbd66f03ea210f64d1a903f2d0d6805a53c8ef9c3131e1"
+    },
+    {
+      "path": "services/api/app/sync_archives.py",
+      "sha256": "f897d46397dc50782c5b71b82e2a8df956d6e167977da9c13e232c022a72ef4e"
+    },
+    {
+      "path": "services/api/app/sync_instagram_stories.py",
+      "sha256": "96e071ade00b675a8e925e25f8199416d1eca1bfd335d766f244ac6d2c4a206a"
+    },
+    {
+      "path": "services/api/app/sync_linkedin.py",
+      "sha256": "706b3b80fd6ed15b6af5d8724b667735d4edb9656e353578b04c34c948ec2008"
+    },
+    {
+      "path": "services/api/app/wechat_contacts.py",
+      "sha256": "6c31022f770b48ccccc154c70732e6c15b715d1ebd47b4248e5b2893b7a59ac8"
+    },
+    {
+      "path": "services/api/app/weekly_facts.py",
+      "sha256": "4892abf96cc573f32ad8b68ee35d506e97f26eeaf6fa3d58f40a52c0010b05b7"
+    }
+  ],
+  "dependency_sources": [
+    {
+      "path": "services/api/pyproject.toml",
+      "sha256": "54bfefebb7fc8f859548fd7303035f41417ee6dfa44a43db238bb826421ea8bf"
+    },
+    {
+      "path": "services/api/uv.lock",
+      "sha256": "2334ec086595d3db0219b5a41c88d995b8695b8bbe2e9f28b3d5cb3e2148d74b"
+    }
+  ],
+  "ledger_missing_runtime_routes": [
+    [
+      "GET",
+      "/api/v1/faces/device/anchors"
+    ],
+    [
+      "GET",
+      "/api/v1/faces/device/work"
+    ],
+    [
+      "GET",
+      "/api/v1/faces/groups"
+    ],
+    [
+      "GET",
+      "/api/v1/faces/in-media"
+    ],
+    [
+      "GET",
+      "/api/v1/faces/media/{media_id}/reading"
+    ],
+    [
+      "GET",
+      "/api/v1/faces/people/{profile_id}"
+    ],
+    [
+      "GET",
+      "/api/v1/faces/people/{profile_id}/photos"
+    ],
+    [
+      "GET",
+      "/api/v1/faces/people/{profile_id}/photos/status"
+    ],
+    [
+      "GET",
+      "/api/v1/faces/summary"
+    ],
+    [
+      "POST",
+      "/api/v1/faces/decide"
+    ],
+    [
+      "POST",
+      "/api/v1/faces/device/batch"
+    ],
+    [
+      "POST",
+      "/api/v1/faces/device/media"
+    ],
+    [
+      "POST",
+      "/api/v1/faces/restore"
+    ]
+  ],
+  "ledger_routes_absent_at_runtime": [
+    [
+      "GET",
+      "/anchors"
+    ],
+    [
+      "GET",
+      "/api/v1/cdc/events"
+    ],
+    [
+      "GET",
+      "/api/v1/cdc/events/{event}"
+    ],
+    [
+      "GET",
+      "/api/v1/cdc/status"
+    ],
+    [
+      "GET",
+      "/api/v1/pipeline/status"
+    ],
+    [
+      "GET",
+      "/groups"
+    ],
+    [
+      "GET",
+      "/in-media"
+    ],
+    [
+      "GET",
+      "/media/{media_id}/reading"
+    ],
+    [
+      "GET",
+      "/people/{profile_id}"
+    ],
+    [
+      "GET",
+      "/people/{profile_id}/photos"
+    ],
+    [
+      "GET",
+      "/people/{profile_id}/photos/status"
+    ],
+    [
+      "GET",
+      "/summary"
+    ],
+    [
+      "GET",
+      "/work"
+    ],
+    [
+      "POST",
+      "/api/v1/pipeline/tasks/{event}/retry"
+    ],
+    [
+      "POST",
+      "/batch"
+    ],
+    [
+      "POST",
+      "/decide"
+    ],
+    [
+      "POST",
+      "/media"
+    ],
+    [
+      "POST",
+      "/restore"
+    ]
+  ]
+}

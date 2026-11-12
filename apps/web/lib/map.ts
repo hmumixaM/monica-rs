@@ -1,3 +1,4 @@
+import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import type { LngLatLike, Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
 
 import { cssVar, resolvedTheme } from "./theme";
@@ -52,6 +53,7 @@ export async function createMap(container: HTMLElement, view = WORLD_VIEW) {
   container.style.position = "relative";
   container.append(host);
   const [maplibregl, { style, offline }] = await Promise.all([import("maplibre-gl"), basemap()]);
+  maplibregl.setWorkerUrl(mapWorkerUrl);
   const map = new maplibregl.Map({
     container: host, style, ...view, minZoom: 0, maxZoom: 18,
     attributionControl: { compact: true }, dragRotate: false, pitchWithRotate: false, fadeDuration: 150,

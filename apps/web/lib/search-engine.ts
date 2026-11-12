@@ -113,4 +113,3 @@ export function searchDirectory(directory: Directory, text: string, filters: Dir
   }
   return limit ? results.slice(0, limit) : results;
 }
-

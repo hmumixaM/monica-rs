@@ -55,6 +55,7 @@ pub struct RuntimeStatus {
     pub active_jobs: u64,
     pub error: Option<String>,
     pub data_directory: String,
+    pub chatlog: crate::chatlog::Status,
     pub adapters_enabled: bool,
     pub ai_enabled: bool,
     pub postgres_pid: Option<u32>,
@@ -62,6 +63,7 @@ pub struct RuntimeStatus {
 }
 
 pub struct Supervisor {
+    chatlog: crate::chatlog::Chatlog,
     paths: Paths,
     secrets: Secrets,
     _lock: File,
@@ -230,7 +232,17 @@ impl Supervisor {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| e.to_string())?;
+        let chatlog = crate::chatlog::Chatlog::new(
+            paths.data.join("chatlog"),
+            paths
+                .server
+                .parent()
+                .ok_or("运行目录无效")?
+                .join("tools/bin/chatlog-alpha"),
+            paths.logs.join("chatlog.log"),
+        )?;
         Ok(Self {
+            chatlog,
             paths,
             secrets,
             _lock: lock,
@@ -245,7 +257,9 @@ impl Supervisor {
         })
     }
     pub fn status(&self) -> RuntimeStatus {
-        self.status.clone()
+        let mut status = self.status.clone();
+        status.chatlog = self.chatlog.status();
+        status
     }
     pub fn logs(&self) -> &Path {
         &self.paths.logs
@@ -271,6 +285,20 @@ impl Supervisor {
     }
     fn server_command(&self, log: &str) -> Result<Command> {
         let mut command = self.logged(&self.paths.server, log)?;
+        let tools = self
+            .paths
+            .server
+            .parent()
+            .ok_or("运行目录无效")?
+            .join("tools/bin");
+        let mut paths = vec![tools];
+        paths.extend(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        ));
+        command.env(
+            "PATH",
+            std::env::join_paths(paths).map_err(|e| e.to_string())?,
+        );
         command
             .env("MONICA_DATABASE_URL", self.db_url())
             .env("MONICA_SESSION_SECRET", &self.secrets.session)
@@ -280,8 +308,14 @@ impl Supervisor {
                 format!("http://127.0.0.1:{}", self.web_port),
             )
             .env("MONICA_MEDIA_ROOT", self.paths.data.join("media"))
+            .env("MONICA_NATIVE_ROOT", self.paths.data.join("raw"))
+            .env(
+                "MONICA_COLLECTOR_DATA_ROOT",
+                self.paths.data.join("collector-data"),
+            )
+            .env("MONICA_CHATLOG_ALPHA_URL", self.chatlog.url())
             .env("MONICA_WEB_ROOT", &self.paths.web)
-            .env("MONICA_AI_ENABLED", "false")
+            .env_remove("MONICA_AI_ENABLED")
             .env("MONICA_ADAPTERS_ENABLED", "false")
             .env(
                 "MONICA_START_PAUSED",
@@ -289,6 +323,37 @@ impl Supervisor {
             )
             .env("AI_ENABLED", "false")
             .env("RUST_LOG", "info");
+        // Do not inherit another installation's account or snapshot directory.
+        command
+            .env_remove("MONICA_CHATLOG_SNAPSHOT_ROOT")
+            .env_remove("MONICA_CHATLOG_ACCOUNT");
+        if let Some((snapshots, account)) = self.chatlog.snapshot_source()? {
+            command
+                .env("MONICA_CHATLOG_SNAPSHOT_ROOT", snapshots)
+                .env("MONICA_CHATLOG_ACCOUNT", account);
+        }
+        let runtime = self.paths.server.parent().ok_or("运行目录无效")?;
+        for (name, relative) in [
+            (
+                "MONICA_COLLECTOR_PYTHON",
+                "collectors/python/bin/python3.12",
+            ),
+            ("MONICA_COLLECTOR_BRIDGE", "collectors/run-bridge"),
+            ("MONICA_COLLECTOR_ENTRY", "collectors/run-collector"),
+            ("MONICA_WHATSAPP_BINARY", "tools/bin/monica-whatsapp"),
+        ] {
+            let asset = runtime.join(relative);
+            if asset.is_file() {
+                command.env(name, asset);
+            } else {
+                command.env_remove(name);
+            }
+        }
+        if runtime.join("collectors/run-bridge").is_file() {
+            command.env("MONICA_COLLECTOR_RUNTIME", runtime.join("collectors"));
+        } else {
+            command.env_remove("MONICA_COLLECTOR_RUNTIME");
+        }
         Ok(command)
     }
     pub fn start(&mut self) -> Result<RuntimeStatus> {
@@ -457,6 +522,9 @@ impl Supervisor {
         let mut migrate = self.server_command("server.log")?;
         migrate.arg("migrate");
         bounded_command(migrate, Duration::from_secs(120))?;
+        self.start_server()
+    }
+    fn start_server(&mut self) -> Result<()> {
         let mut server = self.server_command("server.log")?;
         server.args(["serve", "--listen", &format!("127.0.0.1:{}", self.web_port)]);
         self.server = Some(server.spawn().map_err(|e| e.to_string())?);
@@ -493,6 +561,22 @@ impl Supervisor {
             self.control("pause")?;
         }
         Ok(())
+    }
+    #[cfg(target_os = "macos")]
+    pub fn native_transport(&self) -> Result<crate::native_control::Transport> {
+        if self.status.phase != "running" || self.status.paused || self.status.draining {
+            return Err("请先启动或恢复后台任务".into());
+        }
+        Ok(crate::native_control::Transport {
+            url: self.status.url.clone().ok_or("服务尚未就绪")?,
+            token: self.secrets.control.clone(),
+        })
+    }
+    pub fn collector_transport(&self) -> Result<crate::native_control::Transport> {
+        Ok(crate::native_control::Transport {
+            url: self.status.url.clone().ok_or("请先启动后台服务")?,
+            token: self.secrets.control.clone(),
+        })
     }
     fn control(&mut self, action: &str) -> Result<Value> {
         let url = self.status.url.as_ref().ok_or("本地服务尚未就绪")?;
@@ -548,6 +632,7 @@ impl Supervisor {
     pub fn pause(&mut self) -> Result<RuntimeStatus> {
         self.control("pause")?;
         self.desired_paused = true;
+        self.chatlog.stop()?;
         self.save_preferences()?;
         Ok(self.status())
     }
@@ -555,7 +640,79 @@ impl Supervisor {
         self.control("resume")?;
         self.desired_paused = false;
         self.save_preferences()?;
+        self.tick();
         Ok(self.status())
+    }
+    pub fn chatlog_action(
+        &mut self,
+        action: &str,
+        source: Option<&Path>,
+        key: Option<&str>,
+    ) -> Result<RuntimeStatus> {
+        match action {
+            "configure" => {
+                let source = source.ok_or("缺少微信目录")?;
+                let key = key.ok_or("缺少数据库密钥")?;
+                if !source.is_absolute()
+                    || key.len() != 64
+                    || !key.bytes().all(|b| b.is_ascii_hexdigit())
+                {
+                    return Err("请输入绝对微信数据目录与64位十六进制数据库密钥".into());
+                }
+                self.adapter_enabled("wechat", false)?;
+                // Environment is immutable after spawn. Drain only our Rust child,
+                // retain PostgreSQL and the browser origin, then install fresh env.
+                self.desired_paused = self.status.paused;
+                stop_child(&mut self.server, libc::SIGTERM, Duration::from_secs(120))?;
+                self.status.server_pid = None;
+                let configured = self.chatlog.configure(source, key);
+                if let Err(error) = self.start_server() {
+                    let cleanup = self.stop();
+                    self.status.phase = "failed".into();
+                    self.status.error = Some(if let Err(stop_error) = cleanup {
+                        format!("{error}；{stop_error}")
+                    } else {
+                        error.clone()
+                    });
+                    return Err(error);
+                }
+                configured?;
+            }
+            "enable" => {
+                if !self.chatlog.status().configured {
+                    return Err("请先配置微信目录和数据库密钥".into());
+                }
+                // Store user intent in both control planes before starting. If startup
+                // fails, the visible error and owned-child retry preserve that intent.
+                self.adapter_enabled("wechat", true)?;
+                self.chatlog.enable(true, self.status.paused)?;
+            }
+            "disable" => {
+                self.chatlog.enable(false, true)?;
+                self.adapter_enabled("wechat", false)?;
+            }
+            _ => return Err("未知微信来源操作".into()),
+        };
+        Ok(self.status())
+    }
+    fn adapter_enabled(&self, provider: &str, enabled: bool) -> Result<()> {
+        let response = self
+            .client
+            .post(format!(
+                "{}/internal/adapter-state",
+                self.status.url.as_ref().ok_or("请先启动后台服务")?
+            ))
+            .bearer_auth(&self.secrets.control)
+            .json(&json!({"provider":provider,"enabled":enabled,"paused":!enabled}))
+            .send()
+            .map_err(|_| "无法连接采集控制接口")?;
+        if !response.status().is_success() {
+            return Err(format!(
+                "采集控制未完成（HTTP {}）",
+                response.status().as_u16()
+            ));
+        }
+        Ok(())
     }
     pub fn bootstrap(&self, email: &str, password: &str) -> Result<()> {
         let url = self.status.url.as_ref().ok_or("本地服务尚未就绪")?;
@@ -580,6 +737,7 @@ impl Supervisor {
         self.status.phase = "stopping".into();
         stop_child(&mut self.server, libc::SIGTERM, Duration::from_secs(120))?;
         self.status.server_pid = None;
+        self.chatlog.stop()?;
         stop_child(&mut self.postgres, libc::SIGINT, Duration::from_secs(60))?;
         self.status.postgres_pid = None;
         self.status.url = None;
@@ -644,6 +802,40 @@ impl Supervisor {
                 }
             }
         }
+        if self.chatlog.status().enabled && self.status.error.is_none() {
+            let allowed = self
+                .status
+                .url
+                .as_ref()
+                .and_then(|url| {
+                    self.client
+                        .get(format!("{url}/internal/adapter-state"))
+                        .bearer_auth(&self.secrets.control)
+                        .send()
+                        .ok()
+                })
+                .filter(|r| r.status().is_success())
+                .and_then(|r| r.json::<Vec<Value>>().ok())
+                .map(|values| {
+                    values.iter().any(|v| {
+                        v["provider"] == "wechat" && v["enabled"] == true && v["paused"] == false
+                    })
+                });
+            match allowed {
+                Some(true) => self
+                    .chatlog
+                    .tick(self.status.paused || self.status.draining),
+                Some(false) => {
+                    let _ = self.chatlog.enable(false, true);
+                }
+                None => {
+                    let _ = self.chatlog.stop();
+                    self.status.error = Some("无法确认微信采集状态，已暂停本机读取".into());
+                }
+            }
+        } else {
+            let _ = self.chatlog.stop();
+        }
     }
 }
 impl Drop for Supervisor {
@@ -663,6 +855,40 @@ mod tests {
             server: root.join("monica-server"),
             web: root.join("web"),
         }
+    }
+    #[test]
+    fn collector_environment_requires_an_explicit_chatlog_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let supervisor = Supervisor::new(paths(temp.path())).unwrap();
+        fs::write(&supervisor.paths.server, b"synthetic executable marker").unwrap();
+        let command = supervisor.server_command("fixture.log").unwrap();
+        for name in ["MONICA_CHATLOG_SNAPSHOT_ROOT", "MONICA_CHATLOG_ACCOUNT"] {
+            assert!(
+                command
+                    .get_envs()
+                    .any(|(key, value)| key == name && value.is_none())
+            );
+        }
+        let mut supervisor = supervisor;
+        let source = temp.path().join("explicit source");
+        supervisor
+            .chatlog
+            .configure(&source, &"1".repeat(64))
+            .unwrap();
+        let command = supervisor.server_command("fixture.log").unwrap();
+        let (root, account) = supervisor.chatlog.snapshot_source().unwrap().unwrap();
+        assert!(
+            command
+                .get_envs()
+                .any(|(key, value)| key == "MONICA_CHATLOG_SNAPSHOT_ROOT"
+                    && value == Some(root.as_os_str()))
+        );
+        assert!(
+            command
+                .get_envs()
+                .any(|(key, value)| key == "MONICA_CHATLOG_ACCOUNT"
+                    && value == Some(std::ffi::OsStr::new(&account)))
+        );
     }
     #[test]
     fn credentials_private_stable_and_not_in_status() {

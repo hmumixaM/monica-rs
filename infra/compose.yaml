@@ -2,6 +2,7 @@ name: monica-rs-test
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: monica_rust_test
       POSTGRES_USER: monica
@@ -16,25 +17,153 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile
-    image: monica-rs:local
+    image: ${MONICA_IMAGE:-monica-rs:local}
     command: [migrate]
     environment: &runtime
       MONICA_DATABASE_URL: postgresql://monica:${MONICA_TEST_DB_PASSWORD}@postgres/monica_rust_test
       MONICA_SESSION_SECRET: ${MONICA_SESSION_SECRET:?Set an isolated random secret of at least 32 bytes}
-      MONICA_ORIGIN: http://127.0.0.1:17494
+      MONICA_ORIGIN: ${MONICA_ORIGIN:-http://127.0.0.1:17494}
       MONICA_MEDIA_ROOT: /data/media
+      MONICA_IMPORT_HMAC_SECRET: ${MONICA_IMPORT_HMAC_SECRET:-}
+      MONICA_CONTROL_TOKEN: ${MONICA_CONTROL_TOKEN:-}
+      MONICA_COLLECTOR_DATA_ROOT: /data/collectors
+      MONICA_ADAPTER_INSTAGRAM_SPOOL: /data/collectors/spool/instagram
+      MONICA_ADAPTER_LINKEDIN_SPOOL: /data/collectors/spool/linkedin
+      MONICA_ADAPTER_LINKEDIN_MESSAGES_SPOOL: /data/collectors/spool/linkedin_messages
+      MONICA_ADAPTER_WECHAT_SPOOL: /data/collectors/spool/wechat
+      # Empty overrides preserve settings saved in the application.
+      MONICA_AI_ENABLED: ${MONICA_AI_ENABLED:-}
+      MONICA_AI_BASE_URL: ${MONICA_AI_BASE_URL:-}
+      MONICA_AI_API_KEY: ${MONICA_AI_API_KEY:-}
+      MONICA_AI_MODEL: ${MONICA_AI_MODEL:-}
+      MONICA_AI_PROVIDER: ${MONICA_AI_PROVIDER:-}
+      MONICA_AI_QA_ENABLED: ${MONICA_AI_QA_ENABLED:-}
+      MONICA_AI_QA_CONTEXT_WINDOW: ${MONICA_AI_QA_CONTEXT_WINDOW:-}
+      MONICA_AI_QA_MAX_TOKENS: ${MONICA_AI_QA_MAX_TOKENS:-}
+      MONICA_AI_INCLUDE_MESSAGES: ${MONICA_AI_INCLUDE_MESSAGES:-}
+      MONICA_AI_INCLUDE_PRIVATE_NOTES: ${MONICA_AI_INCLUDE_PRIVATE_NOTES:-}
+      MONICA_OCR_ENABLED: ${MONICA_OCR_ENABLED:-}
+      MONICA_OCR_DAILY_LIMIT: ${MONICA_OCR_DAILY_LIMIT:-}
+      MONICA_OCR_INCLUDE_CHAT: ${MONICA_OCR_INCLUDE_CHAT:-}
+      MONICA_OCR_MODEL: ${MONICA_OCR_MODEL:-}
     depends_on:
       postgres:
         condition: service_healthy
   server:
-    image: monica-rs:local
+    image: ${MONICA_IMAGE:-monica-rs:local}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 120s
     environment: *runtime
-    ports: ['127.0.0.1:17494:17494']
+    ports: ['${MONICA_BIND_ADDRESS:-127.0.0.1}:17494:17494']
     volumes:
       - test-media:/data/media
+      - test-collectors:/data/collectors
     depends_on:
       migrate:
         condition: service_completed_successfully
+  whatsapp:
+    profiles: [whatsapp]
+    build:
+      context: ..
+      dockerfile: infra/whatsapp.Dockerfile
+    image: ${MONICA_WHATSAPP_IMAGE:-monica-rs-whatsapp:local}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      MONICA_WHATSAPP_CONNECTION_ID: ${MONICA_WHATSAPP_CONNECTION_ID:-}
+    volumes:
+      - test-media:/data/media
+    depends_on:
+      server:
+        condition: service_started
+  wechat:
+    profiles: [wechat]
+    build:
+      context: ..
+      dockerfile: infra/collectors.Dockerfile
+    image: ${MONICA_COLLECTORS_IMAGE:-monica-rs-collectors:local}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+    cpus: 1
+    mem_limit: 768m
+    entrypoint: [/opt/monica/collectors/.venv/bin/python, /opt/monica/collector-supervisor.py]
+    command: [--provider, wechat]
+    environment:
+      MONICA_CONTROL_TOKEN: ${MONICA_CONTROL_TOKEN:-}
+      MONICA_CHATLOG_ACCOUNT: ${MONICA_CHATLOG_ACCOUNT:-}
+      MONICA_CHATLOG_SELF_ID: ${MONICA_CHATLOG_SELF_ID:-}
+    volumes:
+      - test-collectors:/data/collectors
+      - type: bind
+        source: ${MONICA_CHATLOG_SNAPSHOT_ROOT:-/nonexistent/monica-chatlog-snapshots}
+        target: /data/chatlog-snapshots
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      server:
+        condition: service_healthy
+  instagram:
+    profiles: [instagram]
+    build:
+      context: ..
+      dockerfile: infra/collectors.Dockerfile
+    image: ${MONICA_COLLECTORS_IMAGE:-monica-rs-collectors:local}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+    cpus: 1
+    mem_limit: 768m
+    entrypoint: [/opt/monica/collectors/.venv/bin/python, /opt/monica/collector-supervisor.py]
+    command: [--provider, instagram]
+    environment: &collector_environment
+      MONICA_CONTROL_TOKEN: ${MONICA_CONTROL_TOKEN:-}
+    volumes: &collector_volumes
+      - test-collectors:/data/collectors
+    depends_on:
+      server:
+        condition: service_healthy
+  linkedin:
+    profiles: [linkedin]
+    build:
+      context: ..
+      dockerfile: infra/collectors.Dockerfile
+    image: ${MONICA_COLLECTORS_IMAGE:-monica-rs-collectors:local}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+    cpus: 1
+    mem_limit: 768m
+    entrypoint: [/opt/monica/collectors/.venv/bin/python, /opt/monica/collector-supervisor.py]
+    command: [--provider, linkedin]
+    environment: *collector_environment
+    volumes: *collector_volumes
+    depends_on:
+      server:
+        condition: service_healthy
+  linkedin-messages:
+    profiles: [linkedin-messages]
+    build:
+      context: ..
+      dockerfile: infra/collectors.Dockerfile
+    image: ${MONICA_COLLECTORS_IMAGE:-monica-rs-collectors:local}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+    cpus: 1
+    mem_limit: 768m
+    entrypoint: [/opt/monica/collectors/.venv/bin/python, /opt/monica/collector-supervisor.py]
+    command: [--provider, linkedin, --lane, messages]
+    environment: *collector_environment
+    volumes: *collector_volumes
+    depends_on:
+      server:
+        condition: service_healthy
+
 volumes:
   test-postgres:
   test-media:
+  test-collectors:

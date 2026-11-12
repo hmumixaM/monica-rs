@@ -2,14 +2,13 @@ use crate::auth::{ApiError, AppState, user};
 use axum::{
     Json, Router,
     body::Body,
-    extract::{Multipart, Path, Request, State},
+    extract::{Multipart, Path, Query, Request, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use sqlx::Row;
 use tokio::io::AsyncWriteExt;
 use tower::ServiceExt;
@@ -20,8 +19,123 @@ const MAX_FILE: u64 = 500 * 1024 * 1024;
 fn storage() -> ApiError {
     ApiError(StatusCode::SERVICE_UNAVAILABLE, "media storage unavailable")
 }
+pub(crate) fn media_error(error: anyhow::Error) -> ApiError {
+    if let Some(error) = error.downcast_ref::<monica_core::media::MediaError>() {
+        return ApiError(
+            StatusCode::from_u16(error.0).unwrap_or(StatusCode::SERVICE_UNAVAILABLE),
+            error.1,
+        );
+    }
+    tracing::warn!(error=%error,"media operation failed");
+    storage()
+}
+fn store(s: &AppState) -> Result<monica_core::media::MediaStore> {
+    monica_core::media::MediaStore::new(s.pool.clone(), s.media_root.clone(), s.resources.clone())
+        .map_err(media_error)
+}
+#[derive(Deserialize)]
+struct Initiate {
+    expected_sha256: Option<String>,
+    expected_byte_length: Option<u64>,
+    #[serde(default = "default_type")]
+    media_type: String,
+    file_name: Option<String>,
+}
+fn default_type() -> String {
+    "application/octet-stream".into()
+}
+async fn initiate(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(input): Json<Initiate>,
+) -> Result<(StatusCode, Json<Value>)> {
+    let (actor, _) = user(&s, &h).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(
+            store(&s)?
+                .initiate(
+                    actor,
+                    input.expected_sha256,
+                    input.expected_byte_length,
+                    input.media_type,
+                    input.file_name,
+                )
+                .await
+                .map_err(media_error)?,
+        ),
+    ))
+}
+async fn upload_status(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>> {
+    let (actor, _) = user(&s, &h).await?;
+    Ok(Json(
+        store(&s)?
+            .upload_status(id, actor)
+            .await
+            .map_err(media_error)?,
+    ))
+}
+async fn upload_chunk(
+    State(s): State<AppState>,
+    Path((id, chunk)): Path<(Uuid, i32)>,
+    request: Request,
+) -> Result<Json<Value>> {
+    let (actor, _) = user(&s, request.headers()).await?;
+    // Reserve before buffering, so concurrent clients cannot bypass the host's
+    // memory budget while waiting for the disk writer.
+    let _permit = s
+        .resources
+        .acquire(monica_core::resources::TaskResources {
+            memory_bytes: monica_core::media::MAX_CHUNK,
+            ..Default::default()
+        })
+        .await
+        .map_err(media_error)?;
+    let body = axum::body::to_bytes(request.into_body(), monica_core::media::MAX_CHUNK)
+        .await
+        .map_err(|_| {
+            ApiError(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "invalid or oversized upload chunk",
+            )
+        })?;
+    Ok(Json(
+        store(&s)?
+            .chunk(id, actor, chunk, &body)
+            .await
+            .map_err(media_error)?,
+    ))
+}
+async fn complete_upload(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<(StatusCode, Json<Value>)> {
+    let (actor, _) = user(&s, &h).await?;
+    let asset = store(&s)?.complete(id, actor).await.map_err(media_error)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::to_value(asset).map_err(|_| storage())?),
+    ))
+}
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/api/v1/imports/media/initiate", post(initiate))
+        .route("/api/v1/imports/media/{upload}", get(upload_status))
+        .route(
+            "/api/v1/imports/media/{upload}/chunks/{chunk}",
+            axum::routing::put(upload_chunk).layer(axum::extract::DefaultBodyLimit::max(
+                monica_core::media::MAX_CHUNK,
+            )),
+        )
+        .route(
+            "/api/v1/imports/media/{upload}/complete",
+            post(complete_upload),
+        )
         .route(
             "/api/v1/media",
             post(upload).layer(axum::extract::DefaultBodyLimit::max(
@@ -29,11 +143,75 @@ pub fn routes() -> Router<AppState> {
             )),
         )
         .route("/api/v1/media/{id}", get(download))
+        .route("/api/v1/media/{id}/preview", get(preview))
+        .route("/api/v1/media/{id}/ocr", get(ocr))
         .route("/api/v1/profiles/{id}/photos", get(photos).post(attach))
         .route(
             "/api/v1/profiles/{id}/photos/{media}",
             axum::routing::delete(detach),
         )
+}
+async fn ocr(State(s): State<AppState>, h: HeaderMap, Path(id): Path<Uuid>) -> Result<Json<Value>> {
+    user(&s, &h).await?;
+    Ok(Json(sqlx::query_scalar("SELECT jsonb_build_object('status',status,'summary',summary,'description',description,'category',category,'text',text,'model',model,'generated_at',generated_at,'error',error) FROM crm.image_ocr_readings WHERE media_id=$1").bind(id).fetch_optional(&s.pool).await?.ok_or(ApiError(StatusCode::NOT_FOUND,"Image is not in the OCR backfill"))?))
+}
+#[derive(Deserialize)]
+struct PreviewQuery {
+    face_id: Option<Uuid>,
+}
+async fn preview(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    Query(q): Query<PreviewQuery>,
+    request: Request,
+) -> Result<Response> {
+    user(&s, request.headers()).await?;
+    let store = store(&s)?;
+    let asset = store.asset(id).await.map_err(media_error)?;
+    let crop: Option<Vec<f32>> = if let Some(face) = q.face_id {
+        Some(
+            sqlx::query_scalar("SELECT box FROM crm.faces WHERE id=$1 AND media_id=$2")
+                .bind(face)
+                .bind(id)
+                .fetch_optional(&s.pool)
+                .await?
+                .ok_or(ApiError(StatusCode::NOT_FOUND, "face not found"))?,
+        )
+    } else {
+        None
+    };
+    let (path, key) = store
+        .preview(&asset, crop.as_deref())
+        .await
+        .map_err(media_error)?;
+    let etag = format!("\"{key}\"");
+    if request
+        .headers()
+        .get("if-none-match")
+        .and_then(|x| x.to_str().ok())
+        .is_some_and(|x| {
+            x.split(',')
+                .any(|t| t.trim() == etag || t.trim() == "*" || t.trim() == format!("W/{etag}"))
+        })
+    {
+        return Ok((StatusCode::NOT_MODIFIED, [("etag", etag)]).into_response());
+    }
+    let mut response = ServeFile::new(path)
+        .oneshot(request)
+        .await
+        .map_err(|_| storage())?
+        .map(Body::new);
+    response
+        .headers_mut()
+        .insert("etag", HeaderValue::from_str(&etag).unwrap());
+    response
+        .headers_mut()
+        .insert("content-type", HeaderValue::from_static("image/webp"));
+    response.headers_mut().insert(
+        "cache-control",
+        HeaderValue::from_static("private, max-age=31536000, immutable"),
+    );
+    Ok(response)
 }
 async fn upload(
     State(s): State<AppState>,
@@ -41,11 +219,17 @@ async fn upload(
     mut parts: Multipart,
 ) -> Result<(StatusCode, Json<Value>)> {
     user(&s, &h).await?;
-    let _permit = s
-        .media_io
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| ApiError(StatusCode::SERVICE_UNAVAILABLE, "media capacity busy"))?;
+    let _permit = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        s.resources.acquire(monica_core::resources::TaskResources {
+            disk: 1,
+            memory_bytes: 256 * 1024,
+            ..Default::default()
+        }),
+    )
+    .await
+    .map_err(|_| ApiError(StatusCode::SERVICE_UNAVAILABLE, "media capacity busy"))?
+    .map_err(|_| ApiError(StatusCode::SERVICE_UNAVAILABLE, "media capacity busy"))?;
     let staging = s.media_root.join(".staging");
     tokio::fs::create_dir_all(&staging)
         .await
@@ -59,9 +243,7 @@ async fn upload(
         .open(temp.path())
         .await
         .map_err(|_| storage())?;
-    let mut hash = Sha256::new();
     let mut bytes = 0_u64;
-    let mut head = Vec::new();
     let mut filename = None;
     let mut found = false;
     while let Some(mut field) = parts
@@ -100,10 +282,6 @@ async fn upload(
                     "File exceeds 500 MB",
                 ));
             }
-            if head.len() < 16384 {
-                head.extend_from_slice(&chunk[..chunk.len().min(16384 - head.len())]);
-            }
-            hash.update(&chunk);
             writer.write_all(&chunk).await.map_err(|_| storage())?;
         }
     }
@@ -115,53 +293,22 @@ async fn upload(
     }
     writer.sync_all().await.map_err(|_| storage())?;
     drop(writer);
-    let digest = format!("{:x}", hash.finalize());
-    let kind = infer::get(&head)
-        .map(|t| t.mime_type())
-        .unwrap_or("application/octet-stream")
-        .to_string();
-    let relative = format!("sha256/{}/{}/{}", &digest[..2], &digest[2..4], digest);
-    let target = s.media_root.join(&relative);
-    let parent = target.parent().unwrap();
-    tokio::fs::create_dir_all(parent)
+    drop(_permit);
+    let store = store(&s)?;
+    let asset = store
+        .ingest_path(temp.path(), filename.as_deref(), "manual", None, None, None)
         .await
-        .map_err(|_| storage())?;
-    // Hard-link publication is atomic and cannot overwrite a previously published blob.
-    match tokio::fs::hard_link(temp.path(), &target).await {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(_) => return Err(storage()),
-    }
-    let root = s.media_root.clone();
-    let parent = parent.to_path_buf();
-    tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-        let mut p = Some(parent.as_path());
-        while let Some(dir) = p {
-            std::fs::File::open(dir)?.sync_all()?;
-            if dir == root {
-                break;
-            }
-            p = dir.parent();
-        }
-        Ok(())
-    })
-    .await
-    .map_err(|_| storage())?
-    .map_err(|_| storage())?;
-    // All file I/O has finished before taking a database connection for registration.
-    sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,file_name) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(sha256) DO NOTHING")
- .bind(Uuid::new_v4()).bind(&digest).bind(kind).bind(bytes as i64).bind(relative).bind(filename).execute(&s.pool).await?;
-    let row: Value =
-        sqlx::query_scalar("SELECT to_jsonb(m) FROM crm.media_assets m WHERE sha256=$1")
-            .bind(digest)
-            .fetch_one(&s.pool)
-            .await?;
-    Ok((StatusCode::CREATED, Json(row)))
+        .map_err(media_error)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::to_value(asset).map_err(|_| storage())?),
+    ))
 }
+
 async fn download(
     State(s): State<AppState>,
     Path(id): Path<Uuid>,
-    request: Request,
+    mut request: Request,
 ) -> Result<Response> {
     user(&s, request.headers()).await?;
     let row = sqlx::query("SELECT sha256,media_type,file_name FROM crm.media_assets WHERE id=$1")
@@ -175,7 +322,34 @@ async fn download(
     let path = s
         .media_root
         .join(format!("sha256/{}/{}/{}", &hash[..2], &hash[2..4], hash));
-    let etag = format!("\"{hash}\"");
+    if !tokio::fs::try_exists(&path).await.map_err(|_| storage())? {
+        return Err(ApiError(StatusCode::NOT_FOUND, "media not found"));
+    }
+    let etag = format!("\"{}\"", &hash[..32]);
+    if let Some(condition) = request
+        .headers()
+        .get("if-range")
+        .and_then(|x| x.to_str().ok())
+        .map(str::to_owned)
+    {
+        let modified = tokio::fs::metadata(&path)
+            .await
+            .map_err(|_| storage())?
+            .modified()
+            .map_err(|_| storage())?;
+        let unchanged = condition == etag
+            || chrono::DateTime::parse_from_rfc2822(&condition)
+                .ok()
+                .is_some_and(|date| {
+                    modified
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .is_ok_and(|mtime| date.timestamp() >= mtime.as_secs() as i64)
+                });
+        request.headers_mut().remove("if-range");
+        if !unchanged {
+            request.headers_mut().remove("range");
+        }
+    }
     if request
         .headers()
         .get("if-none-match")

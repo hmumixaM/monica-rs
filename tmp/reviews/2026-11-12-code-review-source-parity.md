@@ -1,0 +1,3 @@
+# Source parity finding C4
+
+High: `scripts/collector-chatlog.py:post` discards Moments media references, locations, shared links, likes, comments, replies and mentions. `connections.rs` does not materialize embedded social interactions for connection-scoped posts. The ordinary NAS baseline parses and retains these fields (`moments_posts.py`, `moments_xml.py`, commit 6d59cfef). New Chatlog snapshots therefore lose visible existing functionality despite retaining raw XML. Repair the parser and connection projection; test actual retained metadata and interaction reads. Remote originals still require an available source/cache; reference retention must not be described as a completed real-account archival test.

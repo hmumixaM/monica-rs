@@ -1,0 +1,2787 @@
+{
+  "notice": "Static route registration audit only. Does not establish contract or behavior correctness. Read differential, integration and UI evidence separately.",
+  "operations": [
+    {
+      "method": "DELETE",
+      "path": "/api/v1/ai/suggestions/{profile_id}/{key}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai.rs",
+          "line": 44,
+          "path": "/api/v1/ai/suggestions/{id}/{key}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/communities/{community_id}/name",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/engagement.rs",
+          "line": 18,
+          "path": "/api/v1/communities/{id}/name"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/profiles/{profile_id}/dates/{date_id}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profile_dates.rs",
+          "line": 17,
+          "path": "/api/v1/profiles/{id}/dates/{date}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/profiles/{profile_id}/details",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profile_details.rs",
+          "line": 16,
+          "path": "/api/v1/profiles/{id}/details"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/profiles/{profile_id}/linkedin-targets/{aid}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/collector.rs",
+          "line": 35,
+          "path": "/api/v1/profiles/{id}/linkedin-targets/{aid}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/profiles/{profile_id}/photos/{media_id}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/media.rs",
+          "line": 149,
+          "path": "/api/v1/profiles/{id}/photos/{media}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/profiles/{profile_id}/tags/{tag_id}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profiles.rs",
+          "line": 47,
+          "path": "/api/v1/profiles/{id}/tags/{tag}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/reconnect/{profile_id}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai.rs",
+          "line": 53,
+          "path": "/api/v1/reconnect/{id}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/activities",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/activities.rs",
+          "line": 23,
+          "path": "/api/v1/activities"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/browser-model",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai_browser.rs",
+          "line": 16,
+          "path": "/api/v1/ai/browser-model"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/profiles/{profile_id}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai.rs",
+          "line": 41,
+          "path": "/api/v1/ai/profiles/{id}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/status",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai.rs",
+          "line": 37,
+          "path": "/api/v1/ai/status"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/suggestions",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai.rs",
+          "line": 43,
+          "path": "/api/v1/ai/suggestions"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/weekly-highlights",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai.rs",
+          "line": 51,
+          "path": "/api/v1/ai/weekly-highlights"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ai/weekly-people",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai.rs",
+          "line": 50,
+          "path": "/api/v1/ai/weekly-people"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/archived-profiles",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 69,
+          "path": "/api/v1/archived-profiles"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/audit/events",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/auth.rs",
+          "line": 189,
+          "path": "/api/v1/audit/events"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/csrf",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/auth.rs",
+          "line": 180,
+          "path": "/api/v1/auth/csrf"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/sessions",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/auth.rs",
+          "line": 187,
+          "path": "/api/v1/auth/sessions"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/totp/status",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/auth.rs",
+          "line": 186,
+          "path": "/api/v1/auth/totp/status"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/cdc/events",
+      "baselines": [
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/cdc.rs",
+          "line": 15,
+          "path": "/api/v1/cdc/events"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/cdc/events/{event}",
+      "baselines": [
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/cdc.rs",
+          "line": 16,
+          "path": "/api/v1/cdc/events/{event}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/cdc/status",
+      "baselines": [
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/cdc.rs",
+          "line": 17,
+          "path": "/api/v1/cdc/status"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/conversations",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/messages.rs",
+          "line": 21,
+          "path": "/api/v1/conversations"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/conversations/{conversation_id}/messages",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/messages.rs",
+          "line": 22,
+          "path": "/api/v1/conversations/{id}/messages"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/digests",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai.rs",
+          "line": 48,
+          "path": "/api/v1/digests"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/digests/{week_start}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai.rs",
+          "line": 49,
+          "path": "/api/v1/digests/{week}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/directory",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/directory.rs",
+          "line": 13,
+          "path": "/api/v1/directory"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/directory/posts",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/directory.rs",
+          "line": 14,
+          "path": "/api/v1/directory/posts"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/evidence",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/connections.rs",
+          "line": 55,
+          "path": "/api/v1/evidence"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/evidence/{evidence_id}",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/connections.rs",
+          "line": 56,
+          "path": "/api/v1/evidence/{id}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/evidence/{evidence_id}/files/{digest}",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/connections.rs",
+          "line": 57,
+          "path": "/api/v1/evidence/{id}/files/{digest}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/faces/device/anchors",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/faces.rs",
+          "line": 65,
+          "path": "/api/v1/faces/device/anchors"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/faces/device/work",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/faces.rs",
+          "line": 64,
+          "path": "/api/v1/faces/device/work"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/faces/groups",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/faces.rs",
+          "line": 73,
+          "path": "/api/v1/faces/groups"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/faces/in-media",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/faces.rs",
+          "line": 76,
+          "path": "/api/v1/faces/in-media"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/faces/media/{media_id}/reading",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/faces.rs",
+          "line": 77,
+          "path": "/api/v1/faces/media/{media}/reading"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/faces/people/{profile_id}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/faces.rs",
+          "line": 78,
+          "path": "/api/v1/faces/people/{profile}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/faces/people/{profile_id}/photos",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/faces.rs",
+          "line": 79,
+          "path": "/api/v1/faces/people/{profile}/photos"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/faces/people/{profile_id}/photos/status",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/faces.rs",
+          "line": 80,
+          "path": "/api/v1/faces/people/{profile}/photos/status"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/faces/summary",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/faces.rs",
+          "line": 72,
+          "path": "/api/v1/faces/summary"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/groups/{group_id}/members",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profile_relationships.rs",
+          "line": 16,
+          "path": "/api/v1/groups/{id}/members"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/health",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/main.rs",
+          "line": 179,
+          "path": "/api/v1/health"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/home",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/engagement.rs",
+          "line": 12,
+          "path": "/api/v1/home"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/identity-candidates",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 79,
+          "path": "/api/v1/identity-candidates"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/imports/batches",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/imports.rs",
+          "line": 27,
+          "path": "/api/v1/imports/batches"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/imports/batches/{batch_id}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/imports.rs",
+          "line": 28,
+          "path": "/api/v1/imports/batches/{id}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/imports/cursors",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/imports.rs",
+          "line": 32,
+          "path": "/api/v1/imports/cursors"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/imports/events",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/imports.rs",
+          "line": 34,
+          "path": "/api/v1/imports/events"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/imports/jobs",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/imports.rs",
+          "line": 33,
+          "path": "/api/v1/imports/jobs"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/imports/media/{upload_id}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/media.rs",
+          "line": 128,
+          "path": "/api/v1/imports/media/{upload}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/imports/reconciliation",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/imports.rs",
+          "line": 35,
+          "path": "/api/v1/imports/reconciliation"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/imports/tokens",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/imports.rs",
+          "line": 30,
+          "path": "/api/v1/imports/tokens"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/insights",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/engagement.rs",
+          "line": 13,
+          "path": "/api/v1/insights"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/insights/calendar",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/engagement.rs",
+          "line": 14,
+          "path": "/api/v1/insights/calendar"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/insights/calendar/day",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/engagement.rs",
+          "line": 15,
+          "path": "/api/v1/insights/calendar/day"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/insights/orbit",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/engagement.rs",
+          "line": 17,
+          "path": "/api/v1/insights/orbit"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/jobs/status",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai.rs",
+          "line": 39,
+          "path": "/api/v1/jobs/status"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/link-review",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 68,
+          "path": "/api/v1/link-review"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/link-review/contacts",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 72,
+          "path": "/api/v1/link-review/contacts"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/link-review/linked",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 71,
+          "path": "/api/v1/link-review/linked"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/linkedin/collection-targets",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/collector.rs",
+          "line": 39,
+          "path": "/api/v1/linkedin/collection-targets"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/mail-oauth/callback",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/connections.rs",
+          "line": 60,
+          "path": "/api/v1/mail-oauth/callback"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/mail-oauth/config",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/connections.rs",
+          "line": 58,
+          "path": "/api/v1/mail-oauth/config"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/auth.rs",
+          "line": 183,
+          "path": "/api/v1/me"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/media/{media_id}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/media.rs",
+          "line": 145,
+          "path": "/api/v1/media/{id}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/media/{media_id}/ocr",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/media.rs",
+          "line": 147,
+          "path": "/api/v1/media/{id}/ocr"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/media/{media_id}/preview",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/media.rs",
+          "line": 146,
+          "path": "/api/v1/media/{id}/preview"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/metrics/locations",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/maps.rs",
+          "line": 18,
+          "path": "/api/v1/metrics/locations"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/metrics/people-overview",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/metrics.rs",
+          "line": 12,
+          "path": "/api/v1/metrics/people-overview"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/metrics/snapshots",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/metrics.rs",
+          "line": 13,
+          "path": "/api/v1/metrics/snapshots"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/metrics/social",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/timeline.rs",
+          "line": 28,
+          "path": "/api/v1/metrics/social"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/metrics/summary",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/metrics.rs",
+          "line": 11,
+          "path": "/api/v1/metrics/summary"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/pipeline/status",
+      "baselines": [
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/cdc.rs",
+          "line": 18,
+          "path": "/api/v1/pipeline/status"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profiles.rs",
+          "line": 39,
+          "path": "/api/v1/profiles"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profile_read.rs",
+          "line": 17,
+          "path": "/api/v1/profiles/{id}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/chat-months",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/messages.rs",
+          "line": 24,
+          "path": "/api/v1/profiles/{id}/chat-months"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/contact-events",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/messages.rs",
+          "line": 25,
+          "path": "/api/v1/profiles/{id}/contact-events"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/contact-events/summary",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/messages.rs",
+          "line": 26,
+          "path": "/api/v1/profiles/{id}/contact-events/summary"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/group-speech",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/collector.rs",
+          "line": 40,
+          "path": "/api/v1/profiles/{id}/group-speech"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/history",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profiles.rs",
+          "line": 41,
+          "path": "/api/v1/profiles/{id}/history"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/linkedin-targets",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/collector.rs",
+          "line": 31,
+          "path": "/api/v1/profiles/{id}/linkedin-targets"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/locations",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/maps.rs",
+          "line": 19,
+          "path": "/api/v1/profiles/{id}/locations"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/messages",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/messages.rs",
+          "line": 23,
+          "path": "/api/v1/profiles/{id}/messages"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/metrics",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/metrics.rs",
+          "line": 14,
+          "path": "/api/v1/profiles/{id}/metrics"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/moments-circle",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/link_graph.rs",
+          "line": 16,
+          "path": "/api/v1/profiles/{id}/moments-circle"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/overview",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/overview.rs",
+          "line": 9,
+          "path": "/api/v1/profiles/{id}/overview"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/photos",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/media.rs",
+          "line": 148,
+          "path": "/api/v1/profiles/{id}/photos"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/relationships",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profile_relationships.rs",
+          "line": 17,
+          "path": "/api/v1/profiles/{id}/relationships"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/ribbon",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/engagement.rs",
+          "line": 16,
+          "path": "/api/v1/profiles/{id}/ribbon"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile}/source-coverage",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/connections.rs",
+          "line": 54,
+          "path": "/api/v1/profiles/{id}/source-coverage"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/structured-history",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profile_read.rs",
+          "line": 18,
+          "path": "/api/v1/profiles/{id}/structured-history"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{profile_id}/summary",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profile_summary.rs",
+          "line": 15,
+          "path": "/api/v1/profiles/{id}/summary"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ready",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/main.rs",
+          "line": 183,
+          "path": "/api/v1/ready"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/reconnect",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai.rs",
+          "line": 52,
+          "path": "/api/v1/reconnect"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/relationships",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profile_relationships.rs",
+          "line": 21,
+          "path": "/api/v1/relationships"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/relationships/graph",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/link_graph.rs",
+          "line": 15,
+          "path": "/api/v1/relationships/graph"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/search",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/directory.rs",
+          "line": 15,
+          "path": "/api/v1/search"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/source-accounts",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 66,
+          "path": "/api/v1/source-accounts"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/source-connections",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/connections.rs",
+          "line": 39,
+          "path": "/api/v1/source-connections"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/source-connections/{connection}/people",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/connections.rs",
+          "line": 47,
+          "path": "/api/v1/source-connections/{id}/people"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sources",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/connections.rs",
+          "line": 38,
+          "path": "/api/v1/sources"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tags",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profiles.rs",
+          "line": 46,
+          "path": "/api/v1/tags"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/timeline",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/timeline.rs",
+          "line": 25,
+          "path": "/api/v1/timeline"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/timeline/summary",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/timeline.rs",
+          "line": 26,
+          "path": "/api/v1/timeline/summary"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/timeline/{event_id}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/timeline.rs",
+          "line": 27,
+          "path": "/api/v1/timeline/{id}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "GET",
+      "path": "/health",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/main.rs",
+          "line": 175,
+          "path": "/health"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/activities/{activity_id}/state",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/activities.rs",
+          "line": 25,
+          "path": "/api/v1/activities/{id}/state"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/ai/image-ocr",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai.rs",
+          "line": 40,
+          "path": "/api/v1/ai/image-ocr"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/profiles/{profile_id}/fields",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profiles.rs",
+          "line": 40,
+          "path": "/api/v1/profiles/{id}/fields"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/activities",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/activities.rs",
+          "line": 23,
+          "path": "/api/v1/activities"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/chat/completions",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai_browser.rs",
+          "line": 17,
+          "path": "/api/v1/ai/chat/completions"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/jobs/{job_type}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai.rs",
+          "line": 38,
+          "path": "/api/v1/ai/jobs/{kind}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/profiles/{profile_id}/refresh",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai.rs",
+          "line": 42,
+          "path": "/api/v1/ai/profiles/{id}/refresh"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ai/suggestions/{profile_id}/{key}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai.rs",
+          "line": 44,
+          "path": "/api/v1/ai/suggestions/{id}/{key}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/bootstrap",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/auth.rs",
+          "line": 179,
+          "path": "/api/v1/auth/bootstrap"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/auth.rs",
+          "line": 181,
+          "path": "/api/v1/auth/login"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/auth.rs",
+          "line": 182,
+          "path": "/api/v1/auth/logout"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/sessions/{session_id}/revoke",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/auth.rs",
+          "line": 188,
+          "path": "/api/v1/auth/sessions/{id}/revoke"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/totp/setup",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/auth.rs",
+          "line": 184,
+          "path": "/api/v1/auth/totp/setup"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/totp/verify",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/auth.rs",
+          "line": 185,
+          "path": "/api/v1/auth/totp/verify"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/faces/decide",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/faces.rs",
+          "line": 74,
+          "path": "/api/v1/faces/decide"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/faces/device/batch",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/faces.rs",
+          "line": 67,
+          "path": "/api/v1/faces/device/batch"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/faces/device/media",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/faces.rs",
+          "line": 66,
+          "path": "/api/v1/faces/device/media"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/faces/restore",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/faces.rs",
+          "line": 75,
+          "path": "/api/v1/faces/restore"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/groups/{group_id}/members",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profile_relationships.rs",
+          "line": 16,
+          "path": "/api/v1/groups/{id}/members"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/identities",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 77,
+          "path": "/api/v1/identities"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/identity-candidates",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 79,
+          "path": "/api/v1/identity-candidates"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/identity-candidates/{candidate_id}/accept",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 83,
+          "path": "/api/v1/identity-candidates/{id}/accept"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/identity-candidates/{candidate_id}/reject",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 87,
+          "path": "/api/v1/identity-candidates/{id}/reject"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/imports/batches",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/imports.rs",
+          "line": 27,
+          "path": "/api/v1/imports/batches"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/imports/batches/{batch_id}/replay",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/imports.rs",
+          "line": 29,
+          "path": "/api/v1/imports/batches/{id}/replay"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/imports/media/initiate",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/media.rs",
+          "line": 127,
+          "path": "/api/v1/imports/media/initiate"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/imports/media/{upload_id}/complete",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/media.rs",
+          "line": 135,
+          "path": "/api/v1/imports/media/{upload}/complete"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/imports/tokens",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/imports.rs",
+          "line": 30,
+          "path": "/api/v1/imports/tokens"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/imports/tokens/{token_id}/revoke",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/imports.rs",
+          "line": 31,
+          "path": "/api/v1/imports/tokens/{id}/revoke"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/link-review/batch",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 76,
+          "path": "/api/v1/link-review/batch"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/link-review/confirm",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 73,
+          "path": "/api/v1/link-review/confirm"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/link-review/reject",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 74,
+          "path": "/api/v1/link-review/reject"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/link-review/skip",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 75,
+          "path": "/api/v1/link-review/skip"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/mail-oauth/start",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/connections.rs",
+          "line": 59,
+          "path": "/api/v1/mail-oauth/start"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/media",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/media.rs",
+          "line": 139,
+          "path": "/api/v1/media"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/pipeline/tasks/{event}/retry",
+      "baselines": [
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/cdc.rs",
+          "line": 19,
+          "path": "/api/v1/pipeline/tasks/{event}/retry"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profiles.rs",
+          "line": 39,
+          "path": "/api/v1/profiles"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles/{profile_id}/dates",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profile_dates.rs",
+          "line": 16,
+          "path": "/api/v1/profiles/{id}/dates"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles/{profile_id}/history/{revision_id}/restore",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profiles.rs",
+          "line": 42,
+          "path": "/api/v1/profiles/{id}/history/{revision}/restore"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles/{profile}/identifiers",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/connections.rs",
+          "line": 53,
+          "path": "/api/v1/profiles/{id}/identifiers"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles/{profile_id}/identities",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 78,
+          "path": "/api/v1/profiles/{id}/identities"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles/{profile_id}/photos",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/media.rs",
+          "line": 148,
+          "path": "/api/v1/profiles/{id}/photos"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles/{profile_id}/relationships",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profile_relationships.rs",
+          "line": 17,
+          "path": "/api/v1/profiles/{id}/relationships"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles/{profile_id}/restore",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 70,
+          "path": "/api/v1/profiles/{id}/restore"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/profiles/{profile_id}/tags/{tag_id}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profiles.rs",
+          "line": 47,
+          "path": "/api/v1/profiles/{id}/tags/{tag}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/reconnect/{profile_id}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/ai.rs",
+          "line": 53,
+          "path": "/api/v1/reconnect/{id}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/source-connections",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/connections.rs",
+          "line": 39,
+          "path": "/api/v1/source-connections"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/source-connections/{connection}/action",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/connections.rs",
+          "line": 46,
+          "path": "/api/v1/source-connections/{id}/action"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/source-connections/{connection}/identity",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/connections.rs",
+          "line": 48,
+          "path": "/api/v1/source-connections/{id}/identity"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/source-connections/{connection}/mail-rules",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/connections.rs",
+          "line": 49,
+          "path": "/api/v1/source-connections/{id}/mail-rules"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tags",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profiles.rs",
+          "line": 46,
+          "path": "/api/v1/tags"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/whatsapp/phone-export",
+      "baselines": [
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/connections.rs",
+          "line": 32,
+          "path": "/api/v1/whatsapp/phone-export"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/activities/{activity_id}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/activities.rs",
+          "line": 24,
+          "path": "/api/v1/activities/{id}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/communities/{community_id}/name",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/pages/engagement.rs",
+          "line": 18,
+          "path": "/api/v1/communities/{id}/name"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/imports/media/{upload_id}/chunks/{chunk}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/media.rs",
+          "line": 129,
+          "path": "/api/v1/imports/media/{upload}/chunks/{chunk}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/profiles/{profile_id}/dates/{date_id}",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profile_dates.rs",
+          "line": 17,
+          "path": "/api/v1/profiles/{id}/dates/{date}"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/profiles/{profile_id}/details",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/profile_details.rs",
+          "line": 16,
+          "path": "/api/v1/profiles/{id}/details"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/profiles/{profile_id}/linkedin-targets",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/collector.rs",
+          "line": 31,
+          "path": "/api/v1/profiles/{id}/linkedin-targets"
+        }
+      ],
+      "status": "registered"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/source-accounts/{account_id}/link",
+      "baselines": [
+        "crm",
+        "desktop",
+        "multisource"
+      ],
+      "registration": [
+        {
+          "file": "crates/monica-server/src/linking.rs",
+          "line": 67,
+          "path": "/api/v1/source-accounts/{id}/link"
+        }
+      ],
+      "status": "registered"
+    }
+  ],
+  "missing": []
+}

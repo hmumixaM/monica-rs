@@ -1,10 +1,9 @@
 "use client";
 
 import { Heart, MessageCircle, X } from "lucide-react";
-import Link from "@/router/link";
+import Link from "../../src/router/link";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 
-import { linkedinPostUrl } from "../../lib/linkedin-post";
 import { localMediaUrl } from "../../lib/media";
 import { recordText } from "../../lib/record-text";
 import { useZoomFrom } from "../../lib/zoom";
@@ -40,7 +39,6 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
   const media = detail?.media || event.media || [];
   const link = (detail?.content as { shared_link?: SharedLink } | undefined)?.shared_link || event.shared_link;
   const body = recordText(detail?.content) || recordText(detail?.summary || event.summary);
-  const originalUrl = event.provider === "linkedin" ? linkedinPostUrl(detail?.content) : undefined;
   const interactions = detail?.interactions?.filter((item) => item.interaction_type !== "mention") ?? [];
   const hasPhotos = !link && media.length > 0;
   const ratio = media[0]?.width && media[0]?.height ? media[0].width / media[0].height
@@ -69,7 +67,6 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
     <div className={styles.detailText}>
       {link && <SharedLinkCard link={link} media={media[0]} />}
       {body && <p className={styles.body}>{body}</p>}
-      {originalUrl && <p><a href={originalUrl} target="_blank" rel="noopener noreferrer">查看 LinkedIn 原文 ↗</a></p>}
       <ChannelsInfo media={media[0]} />
       {hasPhotos && <PhotoPeople mediaIds={media.flatMap((item) => !isVideo(item) && item.id && localMediaUrl(item.id) ? [item.id] : [])} />}
       <EventAnnotations metadata={metadata} detailed />

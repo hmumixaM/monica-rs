@@ -1,0 +1,9 @@
+CREATE TABLE crm.source_account_link_revisions (
+ id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,account_id uuid NOT NULL REFERENCES crm.source_accounts(id),
+ old_profile_id uuid REFERENCES crm.profiles(id),new_profile_id uuid REFERENCES crm.profiles(id),
+ actor_user_id uuid REFERENCES crm.app_users(id),evidence jsonb NOT NULL DEFAULT '{}',created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE crm.platform_link_decisions(account_id uuid NOT NULL REFERENCES crm.source_accounts(id),profile_id uuid NOT NULL REFERENCES crm.profiles(id),status text NOT NULL CHECK(status IN ('confirmed','rejected','skipped')),evidence jsonb NOT NULL DEFAULT '{}',actor_user_id uuid REFERENCES crm.app_users(id),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(account_id,profile_id));
+CREATE TABLE crm.identities(id uuid PRIMARY KEY,profile_id uuid REFERENCES crm.profiles(id),source_account_id uuid REFERENCES crm.source_accounts(id),provider text NOT NULL,external_id text NOT NULL,username text,profile_url text,display_name text,status text NOT NULL DEFAULT 'pending',first_seen_at timestamptz NOT NULL DEFAULT now(),last_seen_at timestamptz NOT NULL DEFAULT now(),UNIQUE(provider,external_id));
+CREATE TABLE crm.identity_candidates(id uuid PRIMARY KEY,identity_id uuid NOT NULL REFERENCES crm.identities(id),candidate_profile_id uuid NOT NULL REFERENCES crm.profiles(id),score double precision NOT NULL CHECK(score BETWEEN 0 AND 1),evidence jsonb NOT NULL DEFAULT '{}',status text NOT NULL DEFAULT 'pending',reviewed_by uuid REFERENCES crm.app_users(id),reviewed_at timestamptz);
+CREATE TABLE crm.profile_redirects(old_profile_id uuid PRIMARY KEY REFERENCES crm.profiles(id),new_profile_id uuid NOT NULL REFERENCES crm.profiles(id),created_at timestamptz NOT NULL DEFAULT now(),CHECK(old_profile_id<>new_profile_id));

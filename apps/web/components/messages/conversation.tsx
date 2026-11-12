@@ -2,19 +2,20 @@
 
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Search, X } from "lucide-react";
-import Link from "@/router/link";
-import { useSearchParams } from "@/router/navigation";
+import Link from "../../src/router/link";
+import { useSearchParams } from "../../src/router/navigation";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { monthLabel } from "../../lib/months";
 import { fetchJson, queryKeys } from "../../lib/queries";
 import { Button, IconButton } from "../ui/button";
 import { SearchInput } from "../ui/field";
+import { VirtualList } from "../ui/virtual-list";
 import { LoadMore } from "../ui/load-more";
 import { Failure, Loading, Muted } from "../ui/primitives";
 import styles from "./conversation.module.css";
 
-type Message = { id: string; occurred_at: string; message_type: string; text?: string; sender_profile_id?: string; sender_name?: string };
+type Message = { id: string; occurred_at: string; message_type: string; text?: string; sender_profile_id?: string; sender_name?: string; direction?: string };
 const PAGE = 50;
 const KIND: Record<string, string> = { "3": "图片", "34": "语音", "43": "视频", "47": "表情", "49": "分享", "10000": "系统消息" };
 
@@ -71,19 +72,6 @@ export function Conversation({ profileId, conversationId, counterpartId, heading
     const seen = new Set<string>();
     return (messages.data?.pages.flat() ?? []).filter((row) => !seen.has(row.id) && !!seen.add(row.id));
   }, [messages.data]);
-  const positioned = useRef<string | null>(null);
-  useEffect(() => {
-    if (anchor && positioned.current !== anchor && rows.some((row) => row.id === anchor)) {
-      positioned.current = anchor;
-      document.getElementById(`message-${anchor}`)?.scrollIntoView({ block: "center" });
-    }
-  }, [anchor, rows]);
-  const days = useMemo(() => rows.reduce<{ key: string; rows: Message[] }[]>((groups, row) => {
-    const key = dayKey(row.occurred_at);
-    if (groups.at(-1)?.key === key) groups.at(-1)!.rows.push(row);
-    else groups.push({ key, rows: [row] });
-    return groups;
-  }, []), [rows]);
   const allMonths = profileId ? `/profiles/${profileId}?tab=messages` : `/messages?conversation=${conversationId}`;
   const group = !counterpartId;
 
@@ -119,18 +107,18 @@ export function Conversation({ profileId, conversationId, counterpartId, heading
     </p>}
     {messages.isError && <Failure onRetry={() => void messages.refetch()}>聊天记录读取失败。</Failure>}
     <div className={styles.thread} data-group={group ? "" : undefined}>
-      {days.map((day) => <section key={day.key} aria-label={dayLabel.format(new Date(day.rows[0].occurred_at))}>
-        <h3 className={styles.day}><span>{dayLabel.format(new Date(day.rows[0].occurred_at))}</span></h3>
-        {day.rows.map((row, index) => {
+      <VirtualList anchor={anchor} items={rows.map((row, index) => {
           const system = row.message_type === "10000";
           const mine = !!counterpartId && row.sender_profile_id !== counterpartId;
-          const above = day.rows[index - 1];
+          const above = rows[index - 1];
           const sameSender = !!above && above.message_type !== "10000" && above.sender_profile_id === row.sender_profile_id && above.sender_name === row.sender_name;
-          const below = day.rows[index + 1];
+          const below = rows[index + 1];
           const lastOfRun = !below || below.sender_profile_id !== row.sender_profile_id || below.sender_name !== row.sender_name
             || new Date(row.occurred_at).getTime() - new Date(below.occurred_at).getTime() > TIME_GAP;
           const body = readable(row);
-          return <article id={`message-${row.id}`} data-highlighted={row.id === anchor ? "" : undefined} key={row.id} className={styles.message} data-mine={mine ? "" : undefined} data-system={system ? "" : undefined}
+          return { key: row.id, content: <>
+          {(!above || dayKey(above.occurred_at) !== dayKey(row.occurred_at)) && <h3 className={styles.day}><span>{dayLabel.format(new Date(row.occurred_at))}</span></h3>}
+          <article id={`message-${row.id}`} data-highlighted={row.id === anchor ? "" : undefined} key={row.id} className={styles.message} data-mine={mine ? "" : undefined} data-system={system ? "" : undefined}
             data-continued={sameSender ? "" : undefined} title={clock.format(new Date(row.occurred_at))}>
             {group && !system && !sameSender && <header>{row.sender_profile_id
               ? <Link href={`/profiles/${row.sender_profile_id}`}>{row.sender_name || "联系人"}</Link>
@@ -138,9 +126,8 @@ export function Conversation({ profileId, conversationId, counterpartId, heading
               : <span>发送者未关联</span>}</header>}
             <p>{body.quote && <q>{body.quote}</q>}{body.text}</p>
             {lastOfRun && !system && <time dateTime={row.occurred_at}>{clock.format(new Date(row.occurred_at))}</time>}
-          </article>;
-        })}
-      </section>)}
+          </article></> };
+        })} />
     </div>
     {messages.isPending && <Loading />}
     {messages.isSuccess && !rows.length && <Muted>{query ? "没有找到匹配的消息。" : "尚无符合条件的已收录消息。"}</Muted>}

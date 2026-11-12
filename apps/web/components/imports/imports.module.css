@@ -1,5 +1,12 @@
 .panel { padding: var(--space-4) var(--space-5); border-radius: var(--radius-panel); background: var(--color-surface);
   @media (max-width: 720px) { padding: var(--space-4); } }
+.historyDiff { margin: var(--space-4) 0; display: grid; gap: var(--space-4);
+  & dt { font-weight: 600; margin-block-end: var(--space-2); }
+  & dd { margin: 0; display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: var(--space-3); }
+  & dd > div { min-inline-size: 0; padding: var(--space-3); background: var(--color-sunken); border-radius: var(--radius-control); }
+  & small { color: var(--color-text-faint); }
+  & pre { margin: var(--space-2) 0 0; font: inherit; font-size: var(--text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+  @media (max-width: 600px) { & dd { grid-template-columns: minmax(0,1fr); } } }
 .note { margin: 0; color: var(--color-text-soft); font-size: var(--text-xs); }
 .none { margin: 0; color: var(--color-text-faint); font-size: var(--text-sm); }
 .failed { color: var(--color-danger); }

@@ -1,0 +1,574 @@
+{
+  "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+  "dependencies": {
+    "fastapi": "0.141.1",
+    "pydantic": "2.13.5",
+    "starlette": "1.6.0",
+    "sqlalchemy": "2.0.54",
+    "httpx": "0.28.1"
+  },
+  "fixtures": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/bootstrap",
+        "headers": {},
+        "json": {}
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "missing",
+              "loc": [
+                "body",
+                "email"
+              ],
+              "msg": "Field required",
+              "input": {}
+            },
+            {
+              "type": "missing",
+              "loc": [
+                "body",
+                "password"
+              ],
+              "msg": "Field required",
+              "input": {}
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/bootstrap",
+        "headers": {},
+        "json": []
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "model_attributes_type",
+              "loc": [
+                "body"
+              ],
+              "msg": "Input should be a valid dictionary or object to extract fields from",
+              "input": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/bootstrap",
+        "headers": {},
+        "json": {
+          "email": 123,
+          "password": null
+        }
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "string_type",
+              "loc": [
+                "body",
+                "email"
+              ],
+              "msg": "Input should be a valid string",
+              "input": 123
+            },
+            {
+              "type": "string_type",
+              "loc": [
+                "body",
+                "password"
+              ],
+              "msg": "Input should be a valid string",
+              "input": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/bootstrap",
+        "headers": {},
+        "json": {
+          "email": "a",
+          "password": "短短短短短短短短短短短"
+        }
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "string_too_short",
+              "loc": [
+                "body",
+                "email"
+              ],
+              "msg": "String should have at least 3 characters",
+              "input": "a",
+              "ctx": {
+                "min_length": 3
+              }
+            },
+            {
+              "type": "string_too_short",
+              "loc": [
+                "body",
+                "password"
+              ],
+              "msg": "String should have at least 12 characters",
+              "input": "短短短短短短短短短短短",
+              "ctx": {
+                "min_length": 12
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/bootstrap",
+        "headers": {},
+        "json": {
+          "email": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "password": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "string_too_long",
+              "loc": [
+                "body",
+                "email"
+              ],
+              "msg": "String should have at most 320 characters",
+              "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "ctx": {
+                "max_length": 320
+              }
+            },
+            {
+              "type": "string_too_long",
+              "loc": [
+                "body",
+                "password"
+              ],
+              "msg": "String should have at most 512 characters",
+              "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "ctx": {
+                "max_length": 512
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/login",
+        "headers": {},
+        "json": {}
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "missing",
+              "loc": [
+                "body",
+                "email"
+              ],
+              "msg": "Field required",
+              "input": {}
+            },
+            {
+              "type": "missing",
+              "loc": [
+                "body",
+                "password"
+              ],
+              "msg": "Field required",
+              "input": {}
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/login",
+        "headers": {},
+        "json": []
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "model_attributes_type",
+              "loc": [
+                "body"
+              ],
+              "msg": "Input should be a valid dictionary or object to extract fields from",
+              "input": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/login",
+        "headers": {},
+        "json": {
+          "email": 123,
+          "password": null
+        }
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "string_type",
+              "loc": [
+                "body",
+                "email"
+              ],
+              "msg": "Input should be a valid string",
+              "input": 123
+            },
+            {
+              "type": "string_type",
+              "loc": [
+                "body",
+                "password"
+              ],
+              "msg": "Input should be a valid string",
+              "input": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/login",
+        "headers": {},
+        "json": {
+          "email": "a",
+          "password": "短短短短短短短短短短短"
+        }
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "string_too_short",
+              "loc": [
+                "body",
+                "email"
+              ],
+              "msg": "String should have at least 3 characters",
+              "input": "a",
+              "ctx": {
+                "min_length": 3
+              }
+            },
+            {
+              "type": "string_too_short",
+              "loc": [
+                "body",
+                "password"
+              ],
+              "msg": "String should have at least 12 characters",
+              "input": "短短短短短短短短短短短",
+              "ctx": {
+                "min_length": 12
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/login",
+        "headers": {},
+        "json": {
+          "email": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "password": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "string_too_long",
+              "loc": [
+                "body",
+                "email"
+              ],
+              "msg": "String should have at most 320 characters",
+              "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "ctx": {
+                "max_length": 320
+              }
+            },
+            {
+              "type": "string_too_long",
+              "loc": [
+                "body",
+                "password"
+              ],
+              "msg": "String should have at most 512 characters",
+              "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "ctx": {
+                "max_length": 512
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/login",
+        "headers": {},
+        "json": {
+          "email": "fixture@example.invalid",
+          "password": "synthetic-password-only",
+          "totp_code": "12345"
+        }
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "string_too_short",
+              "loc": [
+                "body",
+                "totp_code"
+              ],
+              "msg": "String should have at least 6 characters",
+              "input": "12345",
+              "ctx": {
+                "min_length": 6
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/totp/verify",
+        "headers": {
+          "cookie": "crm_csrf=synthetic",
+          "x-csrf-token": "synthetic"
+        },
+        "json": {
+          "code": "12345"
+        }
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "string_too_short",
+              "loc": [
+                "body",
+                "code"
+              ],
+              "msg": "String should have at least 6 characters",
+              "input": "12345",
+              "ctx": {
+                "min_length": 6
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/login",
+        "headers": {},
+        "json": {
+          "email": "fixture@example.invalid",
+          "password": "synthetic-password-only",
+          "totp_code": "123456789"
+        }
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "string_too_long",
+              "loc": [
+                "body",
+                "totp_code"
+              ],
+              "msg": "String should have at most 8 characters",
+              "input": "123456789",
+              "ctx": {
+                "max_length": 8
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/totp/verify",
+        "headers": {
+          "cookie": "crm_csrf=synthetic",
+          "x-csrf-token": "synthetic"
+        },
+        "json": {
+          "code": "123456789"
+        }
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "string_too_long",
+              "loc": [
+                "body",
+                "code"
+              ],
+              "msg": "String should have at most 8 characters",
+              "input": "123456789",
+              "ctx": {
+                "max_length": 8
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/login",
+        "headers": {},
+        "json": {
+          "email": "fixture@example.invalid",
+          "password": "synthetic-password-only",
+          "totp_code": 123456
+        }
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "string_type",
+              "loc": [
+                "body",
+                "totp_code"
+              ],
+              "msg": "Input should be a valid string",
+              "input": 123456
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/totp/verify",
+        "headers": {
+          "cookie": "crm_csrf=synthetic",
+          "x-csrf-token": "synthetic"
+        },
+        "json": {
+          "code": 123456
+        }
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "string_type",
+              "loc": [
+                "body",
+                "code"
+              ],
+              "msg": "Input should be a valid string",
+              "input": 123456
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/totp/verify",
+        "headers": {
+          "cookie": "crm_csrf=synthetic",
+          "x-csrf-token": "synthetic"
+        },
+        "json": {}
+      },
+      "response": {
+        "status": 422,
+        "json": {
+          "detail": [
+            {
+              "type": "missing",
+              "loc": [
+                "body",
+                "code"
+              ],
+              "msg": "Field required",
+              "input": {}
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

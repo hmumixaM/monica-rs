@@ -18,6 +18,8 @@ use tauri_plugin_opener::OpenerExt;
 
 struct AppState {
     runtime: Mutex<Supervisor>,
+    native: crate::native_control::NativeControl,
+    collectors: Mutex<crate::collectors::Collectors>,
     snapshot: Mutex<RuntimeStatus>,
     busy: AtomicBool,
     quitting: AtomicBool,
@@ -40,6 +42,91 @@ fn publish_error(app: &AppHandle, error: String) {
         snapshot.error = Some(error);
     }
     show_settings(app);
+}
+#[tauri::command]
+async fn collector_status(
+    app: AppHandle,
+) -> Result<std::collections::BTreeMap<String, crate::collectors::Status>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let transport = state
+            .runtime
+            .try_lock()
+            .ok()
+            .and_then(|runtime| runtime.collector_transport().ok());
+        let mut collectors = state.collectors.lock().map_err(|_| "采集状态已锁定")?;
+        if let Some(transport) = transport {
+            collectors.refresh(&transport)?;
+        }
+        collectors.statuses()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn collector_action(
+    app: AppHandle,
+    provider: String,
+    action: String,
+    username: Option<String>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let transport = state
+            .runtime
+            .lock()
+            .map_err(|_| "运行状态已锁定")?
+            .collector_transport()
+            .ok();
+        let mut collectors = state.collectors.lock().map_err(|_| "采集状态已锁定")?;
+        collectors.action(transport.as_ref(), &provider, &action, username.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn chatlog_action(
+    app: AppHandle,
+    action: String,
+    source: Option<String>,
+    key: Option<String>,
+) -> Result<RuntimeStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let mut runtime = state.runtime.lock().map_err(|_| "运行状态已锁定")?;
+        let result = runtime.chatlog_action(
+            &action,
+            source.as_deref().map(std::path::Path::new),
+            key.as_deref(),
+        );
+        publish(&app, runtime.status());
+        result
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+fn native_status(
+    app: AppHandle,
+) -> Result<std::collections::BTreeMap<String, crate::native_control::Status>, String> {
+    app.state::<AppState>().native.status()
+}
+#[tauri::command]
+async fn native_action(app: AppHandle, provider: String, action: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let transport = {
+            let runtime = state.runtime.lock().map_err(|_| "运行状态已锁定")?;
+            if action == "disable" {
+                runtime.collector_transport()?
+            } else {
+                runtime.native_transport()?
+            }
+        };
+        state.native.action(&transport, &provider, &action)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 fn runtime_status(app: AppHandle) -> Result<RuntimeStatus, String> {
@@ -68,6 +155,13 @@ async fn runtime_action(app: AppHandle, action: String) -> Result<RuntimeStatus,
     let result = tauri::async_runtime::spawn_blocking(move || {
         let state = copy.state::<AppState>();
         let mut runtime = state.runtime.lock().map_err(|_| "运行状态已锁定")?;
+        if ["pause", "stop"].contains(&action.as_str()) {
+            state
+                .collectors
+                .lock()
+                .map_err(|_| "采集状态已锁定")?
+                .stop()?;
+        }
         let result = match action.as_str() {
             "start" => runtime.start(),
             "pause" => runtime.pause(),
@@ -152,6 +246,9 @@ fn begin_quit(app: &AppHandle) {
     }
     let app = app.clone();
     thread::spawn(move || {
+        if let Ok(mut collectors) = app.state::<AppState>().collectors.lock() {
+            let _ = collectors.stop();
+        }
         let result = app
             .state::<AppState>()
             .runtime
@@ -235,6 +332,11 @@ pub fn run() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
+            collector_status,
+            collector_action,
+            chatlog_action,
+            native_status,
+            native_action,
             runtime_status,
             runtime_action,
             create_account,
@@ -255,9 +357,10 @@ pub fn run() {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let home = app.path().home_dir()?;
             let bundle = if cfg!(debug_assertions) {
-                std::env::var_os("MONICA_RUST_RUNTIME")
-                    .map(PathBuf::from)
-                    .unwrap_or(app.path().resource_dir()?.join("runtime"))
+                match std::env::var_os("MONICA_RUST_RUNTIME") {
+                    Some(path) => PathBuf::from(path),
+                    None => app.path().resource_dir()?.join("runtime"),
+                }
             } else {
                 app.path().resource_dir()?.join("runtime")
             };
@@ -276,7 +379,7 @@ pub fn run() {
                 home.join("Library/Logs/Monica Rust")
             };
             let runtime = Supervisor::new(Paths {
-                data,
+                data: data.clone(),
                 logs,
                 postgres_bin: bundle.join("postgres/bin"),
                 server: bundle.join("monica-server"),
@@ -287,12 +390,45 @@ pub fn run() {
             snapshot.phase = "starting".into();
             app.manage(AppState {
                 runtime: Mutex::new(runtime),
+                collectors: Mutex::new(
+                    crate::collectors::Collectors::new(
+                        data.join("collector-data"),
+                        bundle.join("collectors/run-collector"),
+                    )
+                    .map_err(std::io::Error::other)?,
+                ),
+                native: crate::native_control::NativeControl::new(data)
+                    .map_err(std::io::Error::other)?,
                 snapshot: Mutex::new(snapshot),
                 busy: AtomicBool::new(false),
                 quitting: AtomicBool::new(false),
                 allow_exit: AtomicBool::new(false),
             });
             install_tray(app.handle())?;
+            for provider in crate::native_control::PROVIDERS {
+                let handle = app.handle().clone();
+                thread::spawn(move || {
+                    loop {
+                        thread::sleep(Duration::from_secs(15));
+                        let state = handle.state::<AppState>();
+                        if state.quitting.load(Ordering::SeqCst) {
+                            break;
+                        }
+                        if !state.native.enabled(provider) {
+                            continue;
+                        }
+                        let transport = state
+                            .runtime
+                            .try_lock()
+                            .ok()
+                            .and_then(|r| r.native_transport().ok());
+                        if let Some(transport) = transport {
+                            let _ = state.native.sync(&transport, provider, false);
+                        }
+                    }
+                });
+            }
+
             #[cfg(unix)]
             {
                 let mut signals = signal_hook::iterator::Signals::new([

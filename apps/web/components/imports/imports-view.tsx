@@ -9,6 +9,7 @@ import {Failure, formatDateTime, formatNumber, Loading, Page, PageHeader, provid
 import {CollectorTokens} from "./collector-tokens";
 import {IdentityReview} from "./identity-review";
 import {RawData} from "./raw-data";
+import {HistoryChanges} from "./history-changes";
 import styles from "./imports.module.css";
 
 type Batch = {
@@ -56,6 +57,7 @@ export function ImportsView() {
       actions={<Button size="sm" onClick={() => void load()} disabled={loading}><RefreshCw size={14} />刷新</Button>} />
     {error && <Failure onRetry={() => void load()}>{error}</Failure>}
     <IdentityReview />
+    <HistoryChanges />
 
     <Section title="来源对账" className={styles.panel}>
       {audit && (audit.sources.length ? <ul className={styles.sources}>

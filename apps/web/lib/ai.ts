@@ -12,13 +12,14 @@ export type AiJobType = "ai.community_names" | "ai.reconnect" | "ai.digest" | "a
 export interface ImageOCRStatus {
   enabled: boolean; include_chat: boolean; model: string; daily_limit: number; target_days: number; baseline_images: number;
   counts: Partial<Record<"pending" | "running" | "complete" | "failed", number>>;
-  attempted_today: number; daily_remaining: number; estimated_days_remaining: number;
+  unlimited: boolean; attempted_today: number; daily_remaining: number | null; estimated_days_remaining: number | null;
 }
 
 export interface AiStatus {
   image_ocr?: ImageOCRStatus;
   enabled: boolean;
   reachable?: boolean;
+  configured?: boolean;
   models?: { batch: string; writer: string; person: string; vision: string };
   jobs?: { job_type: AiJobType; period?: string; status?: string | null; completed_at?: string | null; error?: string | null }[];
 }
@@ -68,10 +69,11 @@ export type SuggestionKind = "birthday" | "residence" | "hometown" | "company" |
 
 /** A line the model cited; chat lines link back to the conversation at that moment. */
 export interface Evidence {
+  citation?: string;
   kind: "direct" | "group" | "post" | "profile";
   id: string;
   conversation_id?: string;
-  at: string;
+  at: string | null;
   text: string;
   speaker?: "我" | "TA";
   group?: string;
@@ -97,6 +99,7 @@ export interface ProfileAi {
 }
 
 export interface WeeklySource {
+  citation?: string;
   kind: "post" | "story" | "direct" | "group" | "profile";
   id: string;
   at: string | null;
