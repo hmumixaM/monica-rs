@@ -1,0 +1,39 @@
+{
+  "reviewed_source_commit": "c2470856342bd2ac3379c8c320673e3c2f3bfd2a",
+  "baseline": "301241bf41e8ba8bb18d981f4e9138fe220e9c18",
+  "initial_commit": "f7c9f01f15b8724d0d1ed0eb2acbafd80d04f70f",
+  "source_report": "bb-20261112-ef56c331",
+  "fixed_findings": [
+    "B1"
+  ],
+  "checks": {
+    "cargo_fmt": "passed",
+    "cargo_clippy_workspace_all_targets_locked_D_warnings": "passed",
+    "scripts_test_sh": {
+      "exit_code": 0,
+      "passed": 170,
+      "failed": 0,
+      "ignored": 3,
+      "http_auth_media_cli_smoke": "passed"
+    },
+    "original_code_regression": {
+      "exit_code": 101,
+      "expected_failure": "state error != disconnected after control.json failure"
+    }
+  },
+  "sha256": {
+    "crates/monica-core/src/scheduler_whatsapp.rs": "e9e0dbd41f1a2960a83e1ba81abaa5ae9de66941b16b61392ce21ac0df66fb0f",
+    "crates/monica-core/tests/scheduler.rs": "8fe55fb737f12dcaf22855497e5e9625c4e38297ffde9c0e87556db8b3126a10",
+    "tmp/reviews/2026-11-12-bugbot-report-ef56c331.md": "b79051a5f5b9416eaaedb475aadcb516307f57c504fde0efa59485d2e9f8790d"
+  },
+  "local_evidence": {
+    ".local-validation/review-2026-11-12-rereview/clippy.log": "ace83e31e778d863fe1c958c3c0eb5c7e95e4472af5c1663a96be4b36dcdc934",
+    ".local-validation/review-2026-11-12-rereview/regression-before-fix.log": "554b1eff7e3ab87c674acc900cb98bcaa0f0cd6f3247ec244a08658ba0a77d0a",
+    ".local-validation/review-2026-11-12-rereview/workspace-and-http.log": "44213c8e872a95c11ea34a11e995a78afbcf312984926c197725b2c7a0c21419"
+  },
+  "limits": [
+    "Real external provider/device/permission/model acceptance not executed.",
+    "Linux/NAS container runtime not executed: local Docker daemon unavailable.",
+    "Full dependency/vendor/data audit and representative-scale benchmark not executed."
+  ]
+}
