@@ -125,6 +125,10 @@ pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
                         continue;
                     }
                 }
+                if disconnected {
+                    sqlx::query("UPDATE crm.source_connections SET error=NULL WHERE id=$1 AND generation=$2 AND NOT enabled AND state='disconnected'")
+                        .bind(id).bind(generation).execute(&shared.control).await?;
+                }
                 controls.insert(id, state);
             }
             if enabled && desired.is_none() {
@@ -218,8 +222,10 @@ async fn mark_error(
     state: &str,
     error: &str,
 ) -> Result<()> {
+    // Disconnected is durable user intent, also used to retry key erasure. Keep
+    // it when storage fails; an error must not turn that operation into a pause.
     sqlx::query(
-        "UPDATE crm.source_connections SET state=$3,error=$4 WHERE id=$1 AND generation=$2",
+        "UPDATE crm.source_connections SET state=CASE WHEN NOT enabled AND state='disconnected' THEN state ELSE $3 END,error=$4 WHERE id=$1 AND generation=$2",
     )
     .bind(id)
     .bind(generation)

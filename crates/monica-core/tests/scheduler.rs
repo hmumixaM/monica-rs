@@ -830,3 +830,112 @@ async fn whatsapp_connection_pause_retains_keys_and_disconnect_erases_them(pool:
     scheduler.shutdown().await.unwrap();
     pools.close().await;
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn whatsapp_disconnect_retries_storage_failure_after_restart(pool: PgPool) {
+    async fn start(pools: &DatabasePools, root: &std::path::Path) -> SchedulerHandle {
+        Scheduler::start_with_source_bridge(
+            pools.background.clone(),
+            pools.control.clone(),
+            ResourceBudget::new(ResourceLimits::nas()).unwrap(),
+            config(),
+            root.to_owned(),
+            monica_core::credentials::CredentialCipher::new(
+                "synthetic-disconnect-recovery-installation-secret",
+            )
+            .unwrap(),
+            Some(root.join("missing-optional-bridge")),
+        )
+        .await
+        .unwrap()
+    }
+    let pools = pools(&pool).await;
+    // Both failure points must preserve the operation across server restart.
+    for obstructed in ["control.json", "device.sqlite"] {
+        let root = tempfile::tempdir().unwrap();
+        let id = uuid::Uuid::new_v4();
+        let device = root.path().join("sources/whatsapp").join(id.to_string());
+        tokio::fs::create_dir_all(device.join(obstructed))
+            .await
+            .unwrap();
+        if obstructed != "device.sqlite" {
+            tokio::fs::write(device.join("device.sqlite"), b"synthetic-device-keys")
+                .await
+                .unwrap();
+        }
+        tokio::fs::write(device.join("device.sqlite-wal"), b"synthetic-device-wal")
+            .await
+            .unwrap();
+        tokio::fs::write(device.join("history.json"), b"synthetic-history")
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO crm.source_connections(id,provider,external_account,display_name,connection_method,enabled,state) VALUES($1,'whatsapp',$2,'Synthetic disconnect recovery','qr',false,'disconnected')")
+            .bind(id).bind(id.to_string()).execute(&pool).await.unwrap();
+        let scheduler = start(&pools, root.path()).await;
+        let state = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let (state, error): (String, Option<String>) =
+                    sqlx::query_as("SELECT state,error FROM crm.source_connections WHERE id=$1")
+                        .bind(id)
+                        .fetch_one(&pool)
+                        .await
+                        .unwrap();
+                if error.is_some() {
+                    break state;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        scheduler.shutdown().await.unwrap();
+        assert_eq!(
+            state, "disconnected",
+            "lost disconnect intent after {obstructed} failure"
+        );
+        assert!(device.join("device.sqlite-wal").exists());
+        tokio::fs::remove_dir(device.join(obstructed))
+            .await
+            .unwrap();
+        let scheduler = start(&pools, root.path()).await;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let status = tokio::fs::read(device.join("status.json"))
+                    .await
+                    .ok()
+                    .and_then(|raw| serde_json::from_slice::<serde_json::Value>(&raw).ok());
+                let error: Option<String> =
+                    sqlx::query_scalar("SELECT error FROM crm.source_connections WHERE id=$1")
+                        .bind(id)
+                        .fetch_one(&pool)
+                        .await
+                        .unwrap();
+                if !device.join("device.sqlite").exists()
+                    && !device.join("device.sqlite-wal").exists()
+                    && status.is_some_and(|v| v["state"] == "disconnected")
+                    && error.is_none()
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let control: serde_json::Value =
+            serde_json::from_slice(&tokio::fs::read(device.join("control.json")).await.unwrap())
+                .unwrap();
+        assert_eq!(control, json!({"enabled":false,"paused":true}));
+        assert_eq!(
+            tokio::fs::read(device.join("history.json")).await.unwrap(),
+            b"synthetic-history"
+        );
+        scheduler.shutdown().await.unwrap();
+        sqlx::query("DELETE FROM crm.source_connections WHERE id=$1")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    pools.close().await;
+}
