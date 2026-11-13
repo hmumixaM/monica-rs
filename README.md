@@ -45,6 +45,8 @@ cargo run -p monica-server -- migrate
 cargo run -p monica-server -- serve
 ```
 
+Explicit schema migration has a separate single-connection budget. Its per-statement deadline defaults to 1,800 seconds; use `migrate --statement-timeout-seconds 3600` or `MONICA_MIGRATION_STATEMENT_TIMEOUT_SECONDS=3600` for slower NAS initialization. Valid values are 1–86,400 seconds. Request/background/control query limits remain separate. Compose forwards this optional setting and waits for the final PostgreSQL TCP listener with a bounded cold-start grace.
+
 The default address is `127.0.0.1:17494`. Set `MONICA_WEB_ROOT` to the built `apps/web/dist` directory to serve the UI. Set `MONICA_ORIGIN` to the browser origin if using a proxy. Health and readiness are `/health` and `/api/v1/ready`. `MONICA_START_PAUSED=true` starts background work paused. The control API additionally requires an explicit bearer token and is intended for the native supervisor.
 
 ## Packaging and acceptance

@@ -67,6 +67,9 @@ def ready(process, url, log):
 
 
 class RustBackend:
+    def __init__(self, migration_timeout_seconds=1800):
+        self.migration_timeout_seconds = migration_timeout_seconds
+
     def __enter__(self):
         self.temp = tempfile.TemporaryDirectory(prefix='monica-benchmark-rust-', dir='/tmp')
         self.root = Path(self.temp.name)
@@ -78,6 +81,7 @@ class RustBackend:
             self.pg_started = True
             self.database_url = f'postgresql:///postgres?host={self.root}'
             self.environment = {'PATH': os.defpath, 'MONICA_DATABASE_URL': self.database_url,
+                'MONICA_MIGRATION_STATEMENT_TIMEOUT_SECONDS': str(self.migration_timeout_seconds),
                 'MONICA_SESSION_SECRET': 'synthetic-reference-session-secret-32bytes',
                 'MONICA_IMPORT_HMAC_SECRET': SECRET, 'MONICA_MEDIA_ROOT': str(self.root/'media'),
                 'RUST_LOG':'info,sqlx::pool::acquire=debug'}
@@ -401,9 +405,11 @@ def main():
     parser.add_argument('--backends',nargs='+',choices=['crm','desktop','multisource','rust'],default=['crm','desktop','rust'])
     parser.add_argument('--output',type=Path,default=ROOT/'.autonomous/complete-monica/benchmark-backends.jsonl')
     parser.add_argument('--skip-build',action='store_true')
+    parser.add_argument('--migration-timeout-seconds',type=int,default=1800,help='Administrative Rust schema deadline; outside measured API phases')
     args=parser.parse_args()
     assert min(args.rounds,args.contacts,args.messages,args.samples,args.concurrency,args.batch_size,*args.scales)>0
     assert args.batch_size<=10000
+    assert 1<=args.migration_timeout_seconds<=86400
     if not args.skip_build:subprocess.run(['cargo','build','--release','--locked','-p','monica-server'],cwd=ROOT,check=True)
     args.output.parent.mkdir(parents=True,exist_ok=True)
     provenance=json.loads((ROOT/'source.json').read_text()) if (ROOT/'source.json').exists() else {'rust_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),'rust_dirty':bool(subprocess.check_output(['git','status','--porcelain'],cwd=ROOT))}
@@ -435,7 +441,7 @@ def main():
                 for kind in order:
                     print(f'Benchmark {kind} round={round_number} scale={scale}',flush=True)
                     try:
-                        with (RustBackend() if kind=='rust' else ReferenceBackend(kind)) as backend:
+                        with (RustBackend(args.migration_timeout_seconds) if kind=='rust' else ReferenceBackend(kind)) as backend:
                             result=case(backend,kind,args,round_number,scale)
                         result['status']='complete'
                     except Exception as error:

@@ -1,0 +1,11 @@
+# Configurable migration deadline follow-up — 2026-11-13
+
+This continues repair B1 from immutable [bb-20261113-50cf1121](2026-11-13-bugbot-report-50cf1121.md). Parent app source 5dfa96a introduced an independent five-minute migration budget; its complete Mac/ARM64 and CI tests passed. Actual NAS disk validation then reached migration30 and canceled its large schema-creation DO block at300.187 seconds. Versions1–29 had completed; active-state probes showed DataFileImmediateSync rather than an unrelated-row lock. The failure and task-owned PG logs remain unchanged in `.local-validation/acceptance-2026-11-12/`.
+
+A fixed five-minute administrative deadline still rejects legitimate initialization on this NAS. Keep the independent one-connection pool and expose a bounded per-statement operator setting through `migrate --statement-timeout-seconds` / `MONICA_MIGRATION_STATEMENT_TIMEOUT_SECONDS`. Default1800 seconds, valid range1–86400. Connection/lock deadlines remain30 seconds; idle-transaction limit remains five minutes. Ordinary request/background/control limits, SQLx migrations/checksums and all serving queries are unchanged.
+
+The existing real CLI regression first requests a one-second deadline and requires PostgreSQL statement-timeout cancellation, then uses the normal default to complete the same eleven-second delayed migration and verify the schema. Thus the administrative override is enforced rather than silently ignored or made unbounded. The benchmark harness records and forwards an explicit administrative timeout, outside its timed API phases. Compose forwards the setting. No migration file/checksum is edited.
+
+Code-review traces CLI/env parsing, numeric range/arithmetic, startup GUC precedence, single-pool cleanup, unchanged request dispatch, Compose propagation and benchmark provenance. Excessive-tests retains one existing regression with two meaningful outcomes: configured cancellation and successful legitimate DDL. It adds no duplicate test function, wall-clock speed assertion or weaker concurrency gate.
+
+Verification and refreshed matched-source platform artifacts/benchmarks remain pending. Prior 5dfa96a measurements are historical application-source evidence; do not relabel them as this newer source.

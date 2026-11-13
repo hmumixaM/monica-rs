@@ -26,12 +26,28 @@ async fn migration_cli_has_a_separate_bounded_ddl_budget(pool: PgPool) {
     .unwrap();
     let url = pool.connect_options().to_url_lossy().to_string();
     let result = tokio::task::spawn_blocking(move || {
-        Command::new(env!("CARGO_BIN_EXE_monica-server"))
-            .env_clear()
-            .env("MONICA_DATABASE_URL", url)
-            .arg("migrate")
-            .output()
-            .unwrap()
+        let invoke = |timeout: Option<&str>| {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_monica-server"));
+            command
+                .env_clear()
+                .env("MONICA_DATABASE_URL", &url)
+                .arg("migrate");
+            if let Some(seconds) = timeout {
+                command.env("MONICA_MIGRATION_STATEMENT_TIMEOUT_SECONDS", seconds);
+            }
+            command.output().unwrap()
+        };
+        let bounded = invoke(Some("1"));
+        assert!(
+            !bounded.status.success(),
+            "explicit DDL deadline was ignored"
+        );
+        assert!(
+            String::from_utf8_lossy(&bounded.stderr).contains("statement timeout"),
+            "wrong failure from explicit deadline: {}",
+            String::from_utf8_lossy(&bounded.stderr)
+        );
+        invoke(None)
     })
     .await
     .unwrap();

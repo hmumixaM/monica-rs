@@ -35,7 +35,16 @@ struct Args {
 }
 #[derive(Subcommand)]
 enum Command {
-    Migrate,
+    Migrate {
+        /// Administrative DDL deadline; ordinary request limits are separate.
+        #[arg(
+            long,
+            env = "MONICA_MIGRATION_STATEMENT_TIMEOUT_SECONDS",
+            default_value_t = 1800,
+            value_parser = clap::value_parser!(u32).range(1..=86_400)
+        )]
+        statement_timeout_seconds: u32,
+    },
     /// Explicitly initialize optional WAL audit (requires wal_level=logical).
     CdcInitialize,
     Serve {
@@ -116,8 +125,12 @@ async fn run() -> Result<()> {
         )
         .init();
     let args = Args::parse();
-    if matches!(&args.command, Command::Migrate) {
-        let pool = DatabasePools::connect_migration(&args.database_url).await?;
+    if let Command::Migrate {
+        statement_timeout_seconds,
+    } = &args.command
+    {
+        let pool = DatabasePools::connect_migration(&args.database_url, *statement_timeout_seconds)
+            .await?;
         let result = monica_core::migrate(&pool).await;
         pool.close().await;
         return result;
@@ -125,7 +138,9 @@ async fn run() -> Result<()> {
     let pools = DatabasePools::connect(&args.database_url, Default::default()).await?;
     let pool = pools.interactive.clone();
     match args.command {
-        Command::Migrate => unreachable!("migration dispatch precedes request pool initialization"),
+        Command::Migrate { .. } => {
+            unreachable!("migration dispatch precedes request pool initialization")
+        }
         Command::CdcInitialize => monica_core::cdc::initialize(&pool).await?,
         Command::Ingest { file } => {
             let records: Vec<monica_core::Record> =

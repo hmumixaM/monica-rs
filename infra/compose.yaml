@@ -24,6 +24,7 @@ services:
     command: [migrate]
     environment: &runtime
       MONICA_DATABASE_URL: postgresql://monica:${MONICA_TEST_DB_PASSWORD}@postgres/monica_rust_test
+      MONICA_MIGRATION_STATEMENT_TIMEOUT_SECONDS: ${MONICA_MIGRATION_STATEMENT_TIMEOUT_SECONDS:-1800}
       MONICA_SESSION_SECRET: ${MONICA_SESSION_SECRET:?Set an isolated random secret of at least 32 bytes}
       MONICA_ORIGIN: ${MONICA_ORIGIN:-http://127.0.0.1:17494}
       MONICA_MEDIA_ROOT: /data/media

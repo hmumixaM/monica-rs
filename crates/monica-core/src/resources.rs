@@ -51,14 +51,20 @@ pub struct DatabasePools {
 impl DatabasePools {
     /// Explicit schema administration has its own bounded connection budget.
     /// Slow DDL must not inherit the deadlines used by ordinary requests.
-    pub async fn connect_migration(url: &str) -> Result<PgPool> {
+    pub async fn connect_migration(url: &str, statement_timeout_seconds: u32) -> Result<PgPool> {
+        if !(1..=86_400).contains(&statement_timeout_seconds) {
+            bail!("migration statement timeout must be between 1 and 86400 seconds");
+        }
         let options = url
             .parse::<PgConnectOptions>()?
             .application_name("monica-migration")
             .options([
-                ("statement_timeout", "300000"),
-                ("lock_timeout", "30000"),
-                ("idle_in_transaction_session_timeout", "300000"),
+                (
+                    "statement_timeout",
+                    (u64::from(statement_timeout_seconds) * 1000).to_string(),
+                ),
+                ("lock_timeout", "30000".to_owned()),
+                ("idle_in_transaction_session_timeout", "300000".to_owned()),
             ]);
         Ok(PgPoolOptions::new()
             .max_connections(1)
