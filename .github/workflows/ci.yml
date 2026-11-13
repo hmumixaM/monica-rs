@@ -1,5 +1,8 @@
 name: Rust validation
 on: [push, pull_request]
+concurrency:
+  group: rust-validation-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -87,18 +90,23 @@ jobs:
   optional-containers:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - name: Build and check the optional WhatsApp image
         run: |
-          docker build -t monica-whatsapp:test -f infra/whatsapp.Dockerfile .
-          docker run --rm --network none --entrypoint /usr/local/bin/monica-whatsapp monica-whatsapp:test --help
+          docker buildx build --load --platform ${{ matrix.platform }} -t monica-whatsapp:test -f infra/whatsapp.Dockerfile .
+          docker run --rm --platform ${{ matrix.platform }} --network none --entrypoint /usr/local/bin/monica-whatsapp monica-whatsapp:test --help
       - name: Build and check the optional browser collector image
         run: |
-          docker build -t monica-collectors:test -f infra/collectors.Dockerfile .
-          docker run --rm --network none monica-collectors:test --help
-          docker run --rm --network none --memory 768m --shm-size 256m --entrypoint /opt/monica/collectors/.venv/bin/python monica-collectors:test -I -c '
+          docker buildx build --load --platform ${{ matrix.platform }} -t monica-collectors:test -f infra/collectors.Dockerfile .
+          docker run --rm --platform ${{ matrix.platform }} --network none monica-collectors:test --help
+          docker run --rm --platform ${{ matrix.platform }} --network none --memory 768m --shm-size 256m --entrypoint /opt/monica/collectors/.venv/bin/python monica-collectors:test -I -c '
           from playwright.sync_api import sync_playwright
           with sync_playwright() as p:
               browser = p.chromium.launch(headless=True, args=["--disable-background-networking"])
