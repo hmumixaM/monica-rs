@@ -48,7 +48,7 @@ env={**os.environ,'PLAYWRIGHT_BROWSERS_PATH':str(output/'browsers'),'PYTHONNOUSE
 run(python,'-m','playwright','install','chromium',env=env)
 for name,entry,extra in [('run-bridge','collector-bridge.py','--collector "$HERE/app/collector.py"'),('run-collector','app/collector.py','')]:
     path=output/name
-    path.write_text('#!/bin/sh\nset -eu\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexport PLAYWRIGHT_BROWSERS_PATH="$HERE/browsers"\nexport MONICA_SNAPSHOT_PUBLISHER="$HERE/infra/snapshot_publish.py"\nexport PYTHONNOUSERSITE=1\nexport PATH="$HERE/python/bin:/usr/bin:/bin"\nexec "$HERE/python/bin/python3.12" "$HERE/'+entry+'" '+extra+' "$@"\n')
+    path.write_text('#!/bin/sh\nset -eu\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexport PLAYWRIGHT_BROWSERS_PATH="$HERE/browsers"\nexport MONICA_SNAPSHOT_PUBLISHER="$HERE/infra/snapshot_publish.py"\nexport PYTHONNOUSERSITE=1\nexport PYTHONDONTWRITEBYTECODE=1\nexport PATH="$HERE/python/bin:/usr/bin:/bin"\nexec "$HERE/python/bin/python3.12" -B "$HERE/'+entry+'" '+extra+' "$@"\n')
     path.chmod(0o755)
 # Preserve all distribution notices and record versions without executing collectors.
 notices=output/'licenses';notices.mkdir()

@@ -1,10 +1,10 @@
 """Official SDK client against an isolated socket-only PostgreSQL/Rust fixture."""
-import importlib.util,json,subprocess,threading,urllib.request
+import importlib.util,json,subprocess,threading,urllib.request,os
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 spec=importlib.util.spec_from_file_location('benchmark',Path(__file__).with_name('benchmark-backends.py'))
 b=importlib.util.module_from_spec(spec);spec.loader.exec_module(b)
-with b.RustBackend() as backend:
+with b.RustBackend(binary=os.environ.get('MONICA_TEST_SERVER')) as backend:
     c=b.Client(backend.url)
     credentials={'email':'mcp-sdk@example.invalid','password':'synthetic-sdk-password'}
     c.request('/api/v1/auth/bootstrap',credentials)
