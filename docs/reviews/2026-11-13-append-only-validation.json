@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-13",
+  "repository": "/Users/maxhu/play/monica-rs-append-only",
+  "branch": "codex/append-only-source-facts",
+  "base_commit": "1dfd446f499b0ca905767aa3f878b29dbf2279b4",
+  "source_state": "uncommitted isolated implementation; no parent worktree edits",
+  "source_report": "bb-20261113-3cd0296a",
+  "fixed_findings": [
+    "B1"
+  ],
+  "protected_fact_tables": 70,
+  "sha256": {
+    "crates/monica-core/src/content.rs": "acfcee6227d0711bedd46a44e43ed7d85df6cb4c754d6e3b90dd1463ab9d55b5",
+    "crates/monica-core/src/imports_notebook.rs": "39ce8e47aad01b66a5400d8e80c09446f43fa5f830488762ac5faf85e0896436",
+    "crates/monica-core/tests/append_only.rs": "c94e3422b65177b02de99df434a9f991fdedae98db67f6281dae0458b1fbb2d8",
+    "migrations/0048_append_only_facts.sql": "88d27bfb1ac201a6e58a867db473e93aae69ae6fb3d0c8b727a6fa26e3a91c3d"
+  },
+  "checks": {
+    "cargo_fmt_all_check": "passed",
+    "cargo_clippy_workspace_all_targets_locked_D_warnings": "passed",
+    "scripts_test_sh": {
+      "passed": 174,
+      "failed": 0,
+      "ignored": 3,
+      "http_auth_media_cli_smoke": "passed"
+    },
+    "new_regressions": 4,
+    "notebook_multisource_differential": {
+      "database_observations": 104,
+      "signed_batches": 13,
+      "http_details": 2,
+      "result": "passed"
+    }
+  },
+  "evidence_sha256": {
+    ".local-validation/append-only-2026-11-13/clippy.log": "7aa36cb0ee80ca10368d37aeba70cdd188f9fecb4ea1a01ae53cfd8e4ebfd963",
+    ".local-validation/append-only-2026-11-13/notebook-multisource-differential.log": "473a4ac5bdbd44374d2f7ed800d7462822584449925eb34918f649e7b134af53",
+    ".local-validation/append-only-2026-11-13/workspace-http.log": "891b95900e8f95c7dd38cfd1a4a3f482de7c972a218c5fb90cb0a9302fce371a"
+  },
+  "limits": [
+    "Facts reject application UPDATE/DELETE; database owner maintenance/TRUNCATE/schema changes are not an access-control boundary.",
+    "Current projections, identities, counters, queues, receipts and cursors remain mutable as required.",
+    "Existing notebook heads without record_hash are sealed by one normal import before the no-op shortcut applies.",
+    "No production database, live collector, package, deployment or NAS state was changed.",
+    "No universal read-only SQL role/pool or global lock-free ingestion claim; a new batch still persists its original request, receipt and cursor."
+  ]
+}

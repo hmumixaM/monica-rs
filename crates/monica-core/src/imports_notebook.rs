@@ -1,5 +1,6 @@
 //! The `monica` import source owns native CRM facts, never a platform schema.
 use super::*;
+use std::collections::BTreeMap;
 fn text(v: &Value) -> String {
     v.as_str()
         .map(str::to_owned)
@@ -23,6 +24,56 @@ fn profile_hint(record: &BatchRecord, key: &str) -> Result<Option<Uuid>> {
                 .map_err(Into::into)
         })
         .transpose()
+}
+fn notebook_object(batch: &Batch, record: &BatchRecord) -> Uuid {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_URL,
+        format!("monica:{}:{}", batch.stream, record.external_id).as_bytes(),
+    )
+}
+fn record_kind<'a>(batch: &'a Batch, record: &'a BatchRecord) -> Option<&'a str> {
+    record
+        .entity_type
+        .as_deref()
+        .or_else(|| record.content.get("entity_type").and_then(Value::as_str))
+        .or(match batch.stream.as_str() {
+            "posts" | "moments" => Some("post"),
+            "stories" => Some("story"),
+            _ => None,
+        })
+}
+fn record_hash(record: &BatchRecord) -> Result<String> {
+    Ok(identity::observation_hash(&serde_json::to_value(record)?))
+}
+async fn changed_records<'a>(
+    tx: &mut Transaction<'_, Postgres>,
+    batch: &Batch,
+    records: Vec<&'a BatchRecord>,
+) -> Result<(Vec<&'a BatchRecord>, i64)> {
+    let ids: Vec<_> = records.iter().map(|r| notebook_object(batch, r)).collect();
+    let rows: Vec<(Uuid, Option<String>)> =
+        sqlx::query_as("SELECT id,record_hash FROM crm.notebook_objects WHERE id=ANY($1)")
+            .bind(ids)
+            .fetch_all(&mut **tx)
+            .await?;
+    let mut heads: BTreeMap<_, _> = rows.into_iter().collect();
+    let mut changed = Vec::new();
+    let mut skipped = 0;
+    for record in records {
+        let id = notebook_object(batch, record);
+        let hash = record_hash(record)?;
+        let unchanged = matches!(record_kind(batch, record), Some("post" | "story"))
+            && heads.get(&id).and_then(Option::as_deref) == Some(hash.as_str());
+        // Advance the simulated head even inside one batch. A -> B -> A must
+        // not mistake the final A for a replay of the pre-batch head.
+        heads.insert(id, Some(hash));
+        if unchanged {
+            skipped += 1;
+        } else {
+            changed.push(record);
+        }
+    }
+    Ok((changed, skipped))
 }
 async fn ensure_profile(
     tx: &mut Transaction<'_, Postgres>,
@@ -84,9 +135,16 @@ pub(super) async fn project(
         batch.connection_id.is_none(),
         "Source connection does not match import provider"
     );
+    // An identical social snapshot can linearize at this committed read. It
+    // does not need to lock its person, reserve content, or rewrite projections.
+    let (records, skipped) =
+        changed_records(tx, batch, batch.records[start..end].iter().collect()).await?;
+    if records.is_empty() {
+        return Ok([0, 0, skipped]);
+    }
     // Native identities and field revisions share one deterministic transaction lock
     // with other imports of the same source record. No platform account is invented.
-    let keys: BTreeSet<String> = batch.records[start..end]
+    let keys: BTreeSet<String> = records
         .iter()
         .map(|r| format!("notebook:{}", r.external_id))
         .collect();
@@ -96,8 +154,13 @@ pub(super) async fn project(
             .execute(&mut **tx)
             .await?;
     }
+    // Another importer may have published the same snapshot while we waited.
+    let (records, skipped_locked) = changed_records(tx, batch, records).await?;
+    if records.is_empty() {
+        return Ok([0, 0, skipped + skipped_locked]);
+    }
     // Lock explicit/existing profile owners in UUID order before mutating any row.
-    let explicit: Vec<Uuid> = batch.records[start..end]
+    let explicit: Vec<Uuid> = records
         .iter()
         .flat_map(|r| {
             [
@@ -109,24 +172,18 @@ pub(super) async fn project(
         .into_iter()
         .flatten()
         .collect();
-    let external: Vec<&str> = batch.records[start..end]
-        .iter()
-        .map(|r| r.external_id.as_str())
-        .collect();
+    let external: Vec<&str> = records.iter().map(|r| r.external_id.as_str()).collect();
     sqlx::query("SELECT id FROM crm.profiles WHERE id=ANY($1) OR id IN (SELECT profile_id FROM crm.identities WHERE provider='monica' AND external_id=ANY($2) AND status NOT IN ('invalid','merged')) OR id IN (SELECT profile_id FROM crm.notebook_objects WHERE external_id=ANY($2)) ORDER BY id FOR UPDATE").bind(explicit).bind(external).fetch_all(&mut **tx).await?;
     let mut prepared = vec![];
-    for record in &batch.records[start..end] {
+    for record in records {
         let profile = ensure_profile(tx, batch, record).await?;
         prepared.push((record, profile));
     }
     let raw_values: Vec<Value> = prepared.iter().map(|(r, _)| r.content.clone()).collect();
     let raw = crate::content::register_many(tx, "raw_json", &raw_values).await?;
-    let mut counts = [0i64; 3];
+    let mut counts = [0, 0, skipped + skipped_locked];
     for ((record, profile), content) in prepared.into_iter().zip(raw) {
-        let object = Uuid::new_v5(
-            &Uuid::NAMESPACE_URL,
-            format!("monica:{}:{}", batch.stream, record.external_id).as_bytes(),
-        );
+        let object = notebook_object(batch, record);
         let hash = identity::observation_hash(&record.content);
         let previous: Option<(i64, String)> =
             sqlx::query_as("SELECT version,content_hash FROM crm.notebook_objects WHERE id=$1")
@@ -144,7 +201,7 @@ pub(super) async fn project(
         } else {
             2
         }] += 1;
-        sqlx::query("INSERT INTO crm.notebook_objects VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET version=excluded.version,content_hash=excluded.content_hash,profile_id=coalesce(excluded.profile_id,crm.notebook_objects.profile_id)").bind(object).bind(&batch.stream).bind(&record.external_id).bind(version).bind(hash).bind(profile).execute(&mut **tx).await?;
+        sqlx::query("INSERT INTO crm.notebook_objects(id,stream,external_id,version,content_hash,profile_id,record_hash) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO UPDATE SET version=excluded.version,content_hash=excluded.content_hash,profile_id=coalesce(excluded.profile_id,crm.notebook_objects.profile_id),record_hash=excluded.record_hash WHERE (crm.notebook_objects.version,crm.notebook_objects.content_hash,crm.notebook_objects.profile_id,crm.notebook_objects.record_hash) IS DISTINCT FROM (excluded.version,excluded.content_hash,coalesce(excluded.profile_id,crm.notebook_objects.profile_id),excluded.record_hash)").bind(object).bind(&batch.stream).bind(&record.external_id).bind(version).bind(hash).bind(profile).bind(record_hash(record)?).execute(&mut **tx).await?;
         if changed {
             sqlx::query(
                 "INSERT INTO crm.notebook_revisions VALUES($1,$2,$3,$4::text::timestamptz)",
@@ -181,15 +238,7 @@ pub(super) async fn project(
                 .await?;
             crate::ai::memory::profile_facts(tx, profile).await?;
         }
-        let kind = record
-            .entity_type
-            .as_deref()
-            .or_else(|| record.content.get("entity_type").and_then(Value::as_str))
-            .or(match batch.stream.as_str() {
-                "posts" | "moments" => Some("post"),
-                "stories" => Some("story"),
-                _ => None,
-            });
+        let kind = record_kind(batch, record);
         if kind == Some("message")
             || ["messages", "chat", "conversations"].contains(&batch.stream.as_str())
         {
