@@ -1,0 +1,15 @@
+# Dedicated migration budget repair — 2026-11-13
+
+Source finding: immutable [bb-20261113-50cf1121](2026-11-13-bugbot-report-50cf1121.md), B1. Reviewed parent `439964f086933160466f142bf0371c5be3f423d5`; actual branch base `301241bf41e8ba8bb18d981f4e9138fe220e9c18`.
+
+The actual isolated NAS app failed its first schema DDL with the request pool's 10-second statement deadline. Authenticated readiness had passed. PostgreSQL logged cancellation while creating `_sqlx_migrations`; the client observed 20.75 seconds including uninterruptible storage work. This is separate from the ready endpoint's two-second HTTP deadline.
+
+The explicit `migrate` CLI now runs before constructing request/background/control pools. It opens one dedicated PostgreSQL connection, with a five-minute per-statement deadline, 30-second lock and acquisition deadlines, and five-minute idle-transaction limit. It closes that pool on either migration success or failure. SQLx migration ordering, checksums, transactions and advisory locking remain unchanged. Ordinary pool limits remain exactly 10/15/5 seconds with their existing connection budgets and one-second lock limit.
+
+One integration regression invokes the real Cargo-built server CLI on a new disposable database. A database event trigger delays only creation of the migration table by 11 seconds. The old executable failed at 10.0008 seconds with the same statement cancellation as the NAS; see `workspace-before-migration-fix-utc.log`. The test checks successful CLI exit, installed migration records and actual CRM schema. It makes no wall-clock speed assertion and does not weaken an existing timeout test. Its delay specifically crosses the observed request deadline.
+
+Code-review traced dispatch, pool construction, startup options, SQLx runner, success/error cleanup and native/container callers. No API, migration, dependency, runtime request budget or serving-query change is included. A single administrative pool does not compete with interactive traffic because this command completes before serving starts.
+
+Excessive-tests assessment: retain this single roughly 11-second regression. Decoder, schema unit and normal request tests do not execute this CLI startup/DDL budget boundary. An exact default-limit failure is the intended observable contract, rather than an incidental source-text or private-call assertion. No existing regression was removed.
+
+Local post-fix verification passed: full workspace **175 passed, 0 failed, 3 default ignored**, real authentication/media/CLI smoke, all-targets Clippy with warnings denied, and explicit generated-video decoding. The migration CLI regression passes in 11.46 seconds; the old executable failed at its 10-second deadline. Remaining artifact/NAS/performance verification is in progress. The final platform acceptance report must record the post-fix full tests, rebuilt artifacts and successful actual NAS migration/runtime. Previous e98 artifacts and completed Mac performance data are retained as historical evidence, not silently relabelled as the repaired source.

@@ -116,10 +116,16 @@ async fn run() -> Result<()> {
         )
         .init();
     let args = Args::parse();
+    if matches!(&args.command, Command::Migrate) {
+        let pool = DatabasePools::connect_migration(&args.database_url).await?;
+        let result = monica_core::migrate(&pool).await;
+        pool.close().await;
+        return result;
+    }
     let pools = DatabasePools::connect(&args.database_url, Default::default()).await?;
     let pool = pools.interactive.clone();
     match args.command {
-        Command::Migrate => monica_core::migrate(&pool).await?,
+        Command::Migrate => unreachable!("migration dispatch precedes request pool initialization"),
         Command::CdcInitialize => monica_core::cdc::initialize(&pool).await?,
         Command::Ingest { file } => {
             let records: Vec<monica_core::Record> =

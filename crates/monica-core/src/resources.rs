@@ -5,7 +5,10 @@
 //! budget. Database ownership and durable job ordering never rely on these locks.
 use anyhow::{Result, bail};
 use serde::Serialize;
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::{
+    PgPool,
+    postgres::{PgConnectOptions, PgPoolOptions},
+};
 use std::{
     sync::{
         Arc,
@@ -46,6 +49,24 @@ pub struct DatabasePools {
 }
 
 impl DatabasePools {
+    /// Explicit schema administration has its own bounded connection budget.
+    /// Slow DDL must not inherit the deadlines used by ordinary requests.
+    pub async fn connect_migration(url: &str) -> Result<PgPool> {
+        let options = url
+            .parse::<PgConnectOptions>()?
+            .application_name("monica-migration")
+            .options([
+                ("statement_timeout", "300000"),
+                ("lock_timeout", "30000"),
+                ("idle_in_transaction_session_timeout", "300000"),
+            ]);
+        Ok(PgPoolOptions::new()
+            .max_connections(1)
+            .acquire_timeout(Duration::from_secs(30))
+            .connect_with(options)
+            .await?)
+    }
+
     pub async fn connect(url: &str, budget: PoolBudget) -> Result<Self> {
         if budget.interactive == 0 || budget.background == 0 || budget.control < 2 {
             bail!(

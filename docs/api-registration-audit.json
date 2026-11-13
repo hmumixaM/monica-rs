@@ -715,7 +715,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/main.rs",
-          "line": 179,
+          "line": 194,
           "path": "/api/v1/health"
         }
       ],
@@ -1575,7 +1575,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/main.rs",
-          "line": 183,
+          "line": 198,
           "path": "/api/v1/ready"
         }
       ],
@@ -1790,7 +1790,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/main.rs",
-          "line": 175,
+          "line": 190,
           "path": "/health"
         }
       ],
