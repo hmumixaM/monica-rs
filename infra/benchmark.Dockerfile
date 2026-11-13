@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 monica
 COPY --from=postgres /usr/lib/postgresql/16 /usr/lib/postgresql/16
-COPY --from=postgres /usr/share/postgresql/16 /usr/share/postgresql/16
+COPY --from=postgres /usr/share/postgresql /usr/share/postgresql
 COPY --from=uv /uv /usr/local/bin/uv
 COPY --from=rust /usr/local/bin/monica-server /benchmark/target/release/monica-server
 WORKDIR /benchmark
