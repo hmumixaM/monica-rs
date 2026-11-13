@@ -197,6 +197,9 @@ def setup(backend, client, contacts, rust):
     prefix = 'crm.' if rust else ''
     actual = sql_json(backend, f"SELECT json_build_object('profiles',(SELECT count(*) FROM {prefix}profiles WHERE archived_at IS NULL),'accounts',(SELECT count(*) FROM {prefix}source_accounts),'links',(SELECT count(*) FROM {prefix}source_account_links))")
     assert actual=={'profiles':contacts,'accounts':contacts,'links':contacts},actual
+    # Linking enqueues attribution recovery. Charge that work to setup rather
+    # than injecting an unrelated linking backlog into the message-import phase.
+    settle(backend,rust,expected_messages=0)
     return profiles
 
 
