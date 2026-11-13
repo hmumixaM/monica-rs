@@ -4,7 +4,7 @@ Current scope is the complete Rust backend and shared Mac/NAS runtime, expanded 
 
 The subsequent [2026-11-12 skill-based review](reviews/2026-11-12-rust-parity-review.md) records repaired lifecycle, concurrency, model configuration, weekly facts/attribution, native capability and Chatlog metadata defects. Its validation manifest supersedes earlier provisional smoke evidence for the affected behavior. The delivery and real-account gates below still apply.
 
-## Implemented and under final integration
+## Implemented shared scope
 
 - Shared core/server, seven source schemas plus CRM, bounded immutable/mutable paths, typed projections, local lock ordering, fenced queues, generation coalescing and local cache invalidation.
 - Auth, manual and source profile fields, structured facts, groups, tags, linking, conversations, timeline, search, maps and page-specific summaries.
@@ -14,14 +14,13 @@ The subsequent [2026-11-12 skill-based review](reviews/2026-11-12-rust-parity-re
 - Vite/React Router same-origin UI, first-class Sources/Mail/Evidence and browser agent UI. Tauri tray/settings, PostgreSQL and child process lifecycle, independent data directories and default-off sources.
 - Optional real pgoutput WAL capture, independent pipeline status and fenced retries. See CDC.md for exact behavior and maintenance prerequisites.
 
-The static frozen-contract audit covers166 registered operations. This is not a substitute for behavior tests. Evidence is held in the differential scripts, Rust tests, UI tests and isolated validation logs. The final coverage ledger and consolidated report will be regenerated from those results after freeze.
+The static frozen-contract audit covers166 registered operations. This is not a substitute for behavior tests. Evidence is held in the differential scripts, Rust tests, UI tests and isolated validation logs. The final report records the current registration audit and selected behavioral evidence separately; the historical148-operation CRM smoke ledger is not a whole-platform implementation certification.
 
-## Outstanding delivery gates
+## Completed account-free execution and remaining external scope
 
-1. Finish integrating the last shared signed-media and Chatlog snapshot paths, then rerun full workspace and HTTP verification on frozen source.
-2. Refresh the complete Mac test bundle and publish/validate Linux amd64/arm64 test images. Native GUI checks for the newest source controls remain limited by the locked desktop; automated native/backend and browser tests have passed.
-3. Run three rounds of fixed Python main, optimized desktop, multi-source and Rust benchmarks on Mac and isolated NAS test containers. Record cold-first-call, warm and concurrent import/read behavior, 10× scaling, SQL/WAL per thousand messages and process/database resources. Do not call the build high performance without measured acceptance.
-4. Commit final evidence, artifact identities and accurate feature/contract coverage. No personal data, production cutover or source-worktree changes.
+The [2026-11-13 final platform acceptance](reviews/2026-11-13-platform-acceptance.md) and [machine validation](reviews/2026-11-13-platform-acceptance-validation.json) supersede the earlier integration/packaging gates. They record exact committed application source, real complete Mac package verification, both Linux architectures, actual NAS migrations/auth/media/crash persistence, and the complete Mac three-round comparison. The user explicitly canceled further NAS testing. The separate NAS logical matrices did not start because reverse Unix-socket forwarding was rejected; the NAS performance run never started. No SSH service configuration was changed. Failures and functional transport continuations retain their original evidence and are not relabeled as original-command passes.
+
+Measured performance limits remain explicit, including the unmet1x Mac throughput target. Live personal providers/model inference, permission grants, public distribution/notarization, legacy personal-data migration, Mac/NAS synchronization and production cutover remain outside this delivery. No personal data, source worktrees or installed production service was changed.
 
 ## Native notebook and multi-source domain completion (2026-11-12)
 

@@ -1,0 +1,1054 @@
+{
+  "status": "Authorized local acceptance completed; further NAS testing stopped at explicit user request",
+  "application_source_commit": "bb69b395803daf1c36f27f226e4ae437585907f3",
+  "base": "301241bf41e8ba8bb18d981f4e9138fe220e9c18",
+  "ci": 43437516559,
+  "ci_conclusion": "success",
+  "evidence_directory": "docs/reviews/evidence/2026-11-13-final",
+  "unchanged_mac_baseline_evidence": "docs/reviews/evidence/2026-11-13-mac/benchmark-mac-5dfa96a-historical.jsonl.gz",
+  "mac_workspace": {
+    "UTC": {
+      "passed": 177,
+      "failed": 0,
+      "default_ignored": 3
+    },
+    "America/Chicago": {
+      "passed": 177,
+      "failed": 0,
+      "default_ignored": 3
+    }
+  },
+  "final_receipt_tests": {
+    "UTC": {
+      "passed": 6,
+      "failed": 0,
+      "default_ignored": 0
+    },
+    "America/Chicago": {
+      "passed": 6,
+      "failed": 0,
+      "default_ignored": 0
+    }
+  },
+  "explicit_video": {
+    "passed": 1,
+    "failed": 0,
+    "default_ignored": 0
+  },
+  "explicit_performance": {
+    "passed": 2,
+    "failed": 0,
+    "default_ignored": 0
+  },
+  "arm64_chicago": {
+    "passed": 178,
+    "failed": 0,
+    "default_ignored": 3
+  },
+  "native_ci": {
+    "ui": 4,
+    "rust_unit": 14,
+    "real_lifecycle": 1
+  },
+  "nas_physical_completed_before_stop": {
+    "commit": "bb69b395803daf1c36f27f226e4ae437585907f3",
+    "image": "monica-rs:app-bb69b39-amd64",
+    "image_id": "sha256:34e68d2e7b8261b231c3891e8f5f4c1ca92cf4c7265a9e759553b7050cc39931",
+    "architecture": "amd64",
+    "revision": "bb69b395803daf1c36f27f226e4ae437585907f3",
+    "migrations_success_count": 43,
+    "max_migration": 48,
+    "retained_synthetic_fixture": true,
+    "prior_unchanged_auth_media_evidence": "nas-auth-continuation-result.json (C2 source, 144 real requests; 62 unchanged tail assertion nodes; original prefix and B lost-response continuation)",
+    "new_source_signed_receipt_replay": {
+      "receipt": {
+        "id": "c8e215c1-581c-4aa2-b6db-4951b1ef5826",
+        "source": "wechat",
+        "status": "received",
+        "stream": "messages",
+        "batch_id": "nas-post-receipt-fix-crash",
+        "observed_at": "2026-11-01T00:00:00+00:00",
+        "received_at": "2026-11-13T14:41:30.146413+00:00",
+        "retry_after": "2026-11-13T14:41:30.146413+00:00",
+        "completed_at": null,
+        "cursor_after": null,
+        "record_count": 1000,
+        "changed_count": 0,
+        "cursor_before": null,
+        "error_summary": null,
+        "failure_count": 0,
+        "inserted_count": 0,
+        "schema_version": 1,
+        "idempotency_key": "nas-post-receipt-fix-crash",
+        "processed_count": 0,
+        "unchanged_count": 0
+      },
+      "original_counts": [
+        1,
+        1,
+        3,
+        2
+      ],
+      "lock_replay_timings": [
+        {
+          "lock_mode": "parent-key-share",
+          "public_signed_replay_seconds": 9.359783977968618,
+          "passed_while_holder_uncommitted": true
+        },
+        {
+          "lock_mode": "progress-update",
+          "public_signed_replay_seconds": 4.06454669800587,
+          "passed_while_holder_uncommitted": true
+        }
+      ],
+      "changed_body_status": 409
+    },
+    "new_source_server_and_postgres_sigkill_exit_codes": [
+      137,
+      137
+    ],
+    "wal_recovery_resume_exactly_once_2000_messages": "passed",
+    "graceful_exit_code": 0,
+    "restart_persisted_counts": [
+      3,
+      2,
+      2000,
+      2,
+      2
+    ],
+    "functional_signed_client_timeout_seconds": 120,
+    "original_auth_10second_failure_preserved": true,
+    "isolation": {
+      "network": "none, own DB/server/client namespace",
+      "host_ports": [],
+      "synthetic_only": true,
+      "volumes": [
+        "monica-rs-final-da352bf0-postgres",
+        "monica-rs-final-38d8f4d6-media"
+      ]
+    }
+  },
+  "nas_cleanup_verified_before_stop": {
+    "containers": {
+      "requested": [
+        "monica-rs-receipt-1050c256-server",
+        "monica-rs-replay-diagnostic-da352bf0-pg",
+        "monica-rs-final-da352bf0-diagnostic-hold"
+      ],
+      "remaining": "",
+      "all_absent": true
+    },
+    "volumes": {
+      "requested": [
+        "monica-rs-final-da352bf0-postgres",
+        "monica-rs-final-38d8f4d6-media"
+      ],
+      "remaining": "",
+      "all_absent": true
+    }
+  },
+  "nas_logical_matrix": {
+    "state": "not executed; private reverse Unix socket forwarding failed before test processes started; then user canceled further NAS testing",
+    "runs_completed": 0,
+    "ssh_service_configuration_changed": false
+  },
+  "nas_performance": {
+    "state": "not started; user canceled further NAS testing",
+    "cases_executed": 0
+  },
+  "nas_stop": {
+    "user_instruction": "\u4f60\u522b\u5728\u6211 NAS \u4e0a\u6d4b\u8bd5\u4e86",
+    "local_controller_inventory_after_stop": "No active NAS validation controllers or watchers",
+    "further_nas_connections_after_instruction": 0
+  },
+  "mac_performance": {
+    "cases": 24,
+    "current_rust_cases": 6,
+    "retained_unchanged_python_cases": 18,
+    "whole_case_failures": 0,
+    "read_failures": 0,
+    "all_initial_targets_demonstrated": false,
+    "metadata": {
+      "type": "metadata",
+      "time": "2026-11-13T13:59:25.151959+00:00",
+      "host": "macOS-26.6.2-arm64-arm-64bit",
+      "machine": "arm64",
+      "cpu_count": 12,
+      "memory_bytes": 25769803776,
+      "baselines": {
+        "multisource": [
+          "/Users/maxhu/play/monica-multisource",
+          "1a6e40e20c6ac12aca434b61244059d067847473"
+        ],
+        "crm": [
+          "/Users/maxhu/play/monica",
+          "6d59cfef4b1a12f678d809a00e37d8332be70b06"
+        ],
+        "desktop": [
+          "/Users/maxhu/play/monica-desktop-public",
+          "e35b49e4ca33406f0fdd7ecf8767931b44fdac87"
+        ]
+      },
+      "rust_commit": "bb69b395803daf1c36f27f226e4ae437585907f3",
+      "rust_dirty": false,
+      "binary_sha256": "42079aac513e98fa5edbb38a06c8b7a385c75831091d57f22834362bbb7586be",
+      "arguments": {
+        "rounds": 3,
+        "scales": [
+          1,
+          10
+        ],
+        "scale_contacts": false,
+        "contacts": 100,
+        "messages": 10000,
+        "batch_size": 1000,
+        "samples": 64,
+        "concurrency": 8,
+        "backends": [
+          "rust"
+        ],
+        "output": "/Users/maxhu/play/monica-rs/.local-validation/acceptance-2026-11-12/benchmark-mac-rust-bb69b39.jsonl",
+        "skip_build": true,
+        "migration_timeout_seconds": 1800
+      },
+      "limitations": [
+        "Ordinary coexisting host services are not stopped. Host CPU/memory pressure is recorded; this is not a dedicated machine.",
+        "Cold means first endpoint call after imports; OS/PostgreSQL caches are not evicted.",
+        "Read failures are counted without retry; latency quantiles cover successful requests only, with failure latency and error rate reported separately.",
+        "History grows 10x with a fixed contact set unless --scale-contacts is explicitly supplied.",
+        "HTTP client uses fresh connections equally for all backends; latency includes local connection and JSON decode.",
+        "Rust accepts durable receipts asynchronously; both acceptance and settled timings are reported.",
+        "Python signed API projects per record; Rust uses bounded bulk transactions. Differences include schema/projection algorithms, not just language.",
+        "SQL/WAL cover all isolated backend databases; mixed-load SQL/WAL also include concurrent reads.",
+        "Transaction count includes monitoring connections and can lag pg_stat_database flush; SQL execution sum is not transaction wall time.",
+        "Lock/transaction/RSS samples run every 200 ms plus SQL probe duration, so brief spikes may be missed. Blocked-query age is sampled query age, not exact duration of the lock wait; do not compare it to a true lock-wait p95.",
+        "SQLx acquisition logs provide exact Rust pool latency; no corresponding Python measurement is inferred. Unavailable process I/O is null.",
+        "Mixed load uses eight readers (or configured concurrency) plus one serial importer; readers run until durable import settlement, with a minimum sample count."
+      ],
+      "composition": {
+        "current_rust_cases": 6,
+        "unchanged_baseline_cases": 18,
+        "baseline_measurement_time": "2026-11-13T09:44:54.056891+00:00",
+        "baseline_raw_sha256": "5901c9dfc17ac20b664e9a2cbb2911138428690144ac49d81f6316ae7039f266",
+        "baseline_source_metadata": {
+          "type": "metadata",
+          "time": "2026-11-13T09:44:54.056891+00:00",
+          "host": "macOS-26.6.2-arm64-arm-64bit",
+          "machine": "arm64",
+          "cpu_count": 12,
+          "memory_bytes": 25769803776,
+          "baselines": {
+            "multisource": [
+              "/Users/maxhu/play/monica-multisource",
+              "1a6e40e20c6ac12aca434b61244059d067847473"
+            ],
+            "crm": [
+              "/Users/maxhu/play/monica",
+              "6d59cfef4b1a12f678d809a00e37d8332be70b06"
+            ],
+            "desktop": [
+              "/Users/maxhu/play/monica-desktop-public",
+              "e35b49e4ca33406f0fdd7ecf8767931b44fdac87"
+            ]
+          },
+          "rust_commit": "5dfa96a7928a2b78532091c3f161c586f527aac2",
+          "rust_dirty": false,
+          "binary_sha256": "132a46ee7122bf220001d7ead86dc82ba17a09e177b83b50d3dd541856580a15",
+          "arguments": {
+            "rounds": 3,
+            "scales": [
+              1,
+              10
+            ],
+            "scale_contacts": false,
+            "contacts": 100,
+            "messages": 10000,
+            "batch_size": 1000,
+            "samples": 64,
+            "concurrency": 8,
+            "backends": [
+              "crm",
+              "desktop",
+              "multisource",
+              "rust"
+            ],
+            "output": "/Users/maxhu/play/monica-rs/.local-validation/acceptance-2026-11-12/benchmark-mac-final.jsonl",
+            "skip_build": true
+          },
+          "limitations": [
+            "Ordinary coexisting host services are not stopped. Host CPU/memory pressure is recorded; this is not a dedicated machine.",
+            "Cold means first endpoint call after imports; OS/PostgreSQL caches are not evicted.",
+            "Read failures are counted without retry; latency quantiles cover successful requests only, with failure latency and error rate reported separately.",
+            "History grows 10x with a fixed contact set unless --scale-contacts is explicitly supplied.",
+            "HTTP client uses fresh connections equally for all backends; latency includes local connection and JSON decode.",
+            "Rust accepts durable receipts asynchronously; both acceptance and settled timings are reported.",
+            "Python signed API projects per record; Rust uses bounded bulk transactions. Differences include schema/projection algorithms, not just language.",
+            "SQL/WAL cover all isolated backend databases; mixed-load SQL/WAL also include concurrent reads.",
+            "Transaction count includes monitoring connections and can lag pg_stat_database flush; SQL execution sum is not transaction wall time.",
+            "Lock/transaction/RSS samples run every 200 ms plus SQL probe duration, so brief spikes may be missed. Blocked-query age is sampled query age, not exact duration of the lock wait; do not compare it to a true lock-wait p95.",
+            "SQLx acquisition logs provide exact Rust pool latency; no corresponding Python measurement is inferred. Unavailable process I/O is null.",
+            "Mixed load uses eight readers (or configured concurrency) plus one serial importer; readers run until durable import settlement, with a minimum sample count."
+          ]
+        },
+        "limitation": "Python baseline rows retain their earlier matched three-round measurement. The six final Rust cases were rerun after a committed-receipt replay locking repair (one extra indexed lookup on first acceptance); final Rust and baseline rows were not interleaved in the same invocation."
+      }
+    }
+  },
+  "source_archive": {
+    "commit": "bb69b395803daf1c36f27f226e4ae437585907f3",
+    "clean": true,
+    "archive_sha256": "19c28e8cc1ae3098646ba3da39ef5915084a01d5d96a981e252db780cd6b5f72"
+  },
+  "mac_artifact": {
+    "commit": "bb69b395803daf1c36f27f226e4ae437585907f3",
+    "bundle_absolute_path": "/Users/maxhu/play/monica-rs/apps/native-desktop/src-tauri/target/release/bundle/macos/Monica Rust.app",
+    "files_bytes": 1318956021,
+    "manifest": {
+      "schema": 1,
+      "platform": "darwin/arm64",
+      "minimum_macos": "26.0",
+      "server_sha256": "42079aac513e98fa5edbb38a06c8b7a385c75831091d57f22834362bbb7586be",
+      "postgres": "postgres (PostgreSQL) 16.15 (Homebrew)",
+      "ffprobe": "ffprobe version 8.1.2 Copyright (c) 2007-2026 the FFmpeg developers",
+      "whatsapp_sha256": "e2fb30a682fbcd19fb1f64a13ef20fb64139b89f2a999f5a0a07fc1f7831b312",
+      "chatlog_sha256": "58037b421a6e8a6b80ac1a08b25b5bde23bf520f689e2fc33d65deae3c0deb21",
+      "collectors": {
+        "schema": 1,
+        "python": "Python 3.12.11",
+        "python_executable_sha256": "1699bf8aa705a8bb71613bef5cdd7d7c8c9d9a188a841f41679aa9b5830b8f60",
+        "collector_lock_sha256": "94cbcd473c30f1076a9ae9dc12b30663ffe0c34fcbfd929d74623c80139129f7",
+        "collector_source_commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+        "publisher_sha256": "df369c6445c505c57fb645b3e4de4cb50576f82e2d600c0464411d170364954c",
+        "packages": [
+          {
+            "name": "termcolor",
+            "version": "3.3.0"
+          },
+          {
+            "name": "linkedin-cli",
+            "version": "0.1.dev27"
+          },
+          {
+            "name": "greenlet",
+            "version": "3.5.6"
+          },
+          {
+            "name": "pydantic_core",
+            "version": "2.46.4"
+          },
+          {
+            "name": "lxml",
+            "version": "6.1.3"
+          },
+          {
+            "name": "playwright-stealth",
+            "version": "2.0.3"
+          },
+          {
+            "name": "requests",
+            "version": "2.34.2"
+          },
+          {
+            "name": "certifi",
+            "version": "2026.10.23"
+          },
+          {
+            "name": "aiofiles",
+            "version": "25.1.0"
+          },
+          {
+            "name": "instaloader",
+            "version": "4.15.3"
+          },
+          {
+            "name": "linkedin_scraper",
+            "version": "3.1.2"
+          },
+          {
+            "name": "urllib3",
+            "version": "2.8.0"
+          },
+          {
+            "name": "python-dotenv",
+            "version": "1.2.4"
+          },
+          {
+            "name": "annotated-types",
+            "version": "0.8.0"
+          },
+          {
+            "name": "typing-inspection",
+            "version": "0.4.4"
+          },
+          {
+            "name": "pydantic",
+            "version": "2.13.4"
+          },
+          {
+            "name": "playwright",
+            "version": "1.62.0"
+          },
+          {
+            "name": "typing_extensions",
+            "version": "4.16.0"
+          },
+          {
+            "name": "pyee",
+            "version": "13.0.1"
+          },
+          {
+            "name": "charset-normalizer",
+            "version": "3.5.2"
+          },
+          {
+            "name": "tenacity",
+            "version": "9.2.1"
+          },
+          {
+            "name": "idna",
+            "version": "3.20"
+          }
+        ],
+        "browsers": {
+          "comment": "Do not edit this file, use utils/roll_browser.js",
+          "browsers": [
+            {
+              "name": "chromium",
+              "revision": "1234",
+              "installByDefault": true,
+              "browserVersion": "151.0.7922.34",
+              "title": "Chrome for Testing"
+            },
+            {
+              "name": "chromium-headless-shell",
+              "revision": "1234",
+              "installByDefault": true,
+              "browserVersion": "151.0.7922.34",
+              "title": "Chrome Headless Shell"
+            },
+            {
+              "name": "chromium-tip-of-tree",
+              "revision": "1433",
+              "installByDefault": false,
+              "browserVersion": "151.0.7893.0",
+              "title": "Chrome Canary for Testing"
+            },
+            {
+              "name": "chromium-tip-of-tree-headless-shell",
+              "revision": "1433",
+              "installByDefault": false,
+              "browserVersion": "151.0.7893.0",
+              "title": "Chrome Canary Headless Shell"
+            },
+            {
+              "name": "firefox",
+              "revision": "1538",
+              "installByDefault": true,
+              "browserVersion": "153.0",
+              "title": "Firefox"
+            },
+            {
+              "name": "firefox-beta",
+              "revision": "1526",
+              "installByDefault": false,
+              "browserVersion": "152.0b1",
+              "title": "Firefox Beta"
+            },
+            {
+              "name": "webkit",
+              "revision": "2336",
+              "installByDefault": true,
+              "revisionOverrides": {
+                "mac14": "2251",
+                "mac14-arm64": "2251",
+                "ubuntu20.04-x64": "2092",
+                "ubuntu20.04-arm64": "2092"
+              },
+              "browserVersion": "26.5",
+              "title": "WebKit"
+            },
+            {
+              "name": "ffmpeg",
+              "revision": "1011",
+              "installByDefault": true
+            },
+            {
+              "name": "winldd",
+              "revision": "1007",
+              "installByDefault": false
+            },
+            {
+              "name": "android",
+              "revision": "1001",
+              "installByDefault": false
+            }
+          ]
+        },
+        "collector_files": {
+          "README.md": "bab9ae4861bde10d12b6c6743f278fa37fae08c198390bd69f9e436855bdac03",
+          "VENDORED_SOURCES.json": "0bb69bc5f7f146ec60965a0406b9700cd0997b45efadbf06a1a857cead4af637",
+          "collector.py": "9b8f09a31046b3b980e9b7c15254834fb6d861251f4cb8ebd006558814a29b4e",
+          "linkedin_messages.py": "f7f0f974e451689d41fcef38ce742d78e02c505513c941da16741fd6162b93e3",
+          "publishing.py": "0aff6405a4e02bbf7a8c449ece9c7826c176435af6074becb24d6bfd16193306",
+          "pyproject.toml": "c6bdf434c8bdf0103fdf0cc1706a74795e4acc66b092a1a506373430b9ede0e2",
+          "run_linkedin.py": "2707570cacf86e7057b453640130af4eac0c41049c7274b16d391f4e55d2bcb9",
+          "uv.lock": "94cbcd473c30f1076a9ae9dc12b30663ffe0c34fcbfd929d74623c80139129f7",
+          "vendor/instagram/archive_followees.py": "13f835f27e23cd2f5a1fd4b20cf757a25b088e420c6b8f426cf254ccca9b5dde",
+          "vendor/instagram/archive_highlights.py": "d3d9c238a0069489b0248d5844d7bafd70b8e80fb2e4cd181fe6439cccf29092",
+          "vendor/instagram/archive_profile.py": "5164fe88bd4cb07c5969713fdc5620eb9034db29c3ee6c2c0d7a3614a8a9b256",
+          "vendor/instagram/archive_stories.py": "feffdc55935dd3eecac5216a86e74c1ede43026fc5e9cc204a4aad4f831d51ac",
+          "vendor/instagram/conservative.py": "046fdac7683e36f4a0f067e0004dcb86612a699e8631ff6d7edf94ad450487f0",
+          "vendor/instagram/followee_refresh.py": "fd127c8698700cface81ad14283ccc031879fe7db1d96acccda18dd67a864e2e",
+          "vendor/instagram/instagram_relationships.py": "9a8d57130eb92188611e0ca9ca1ef6a33bcb7cf5c258a222fd271dac28eeddfc",
+          "vendor/instagram/manual_followees.py": "df4259c3adf62fc5836861b4e3129d0a28eeba6cfb33e2ab79d1db12c0f1da7d",
+          "vendor/instagram/public_accounts.py": "eba0a2981738b237018c3cd81f4f0f93712feabe191ac8c49c266fb00bb615d1",
+          "vendor/instagram/query_audit.py": "15a078bc1de0c31c8480a58033496c1505298cddf8f794bd38a9f53fbecb2ea7",
+          "vendor/instagram/story_schedule.py": "3b5505a0fd2fdacc96e31e91e3154872b0a01b2fea1268576553b43331c41fbf",
+          "vendor/linkedin_cli_package/LICENSE": "7af9e8c35289bb5b1f70cf9ed74e868ec9ce634a6be0d9a0716c4c2ddb026cd0",
+          "vendor/linkedin_cli_package/README.md": "4f907d32da909359c311bbf0327a25d104a6133239345f78a7639a0e9b04a460",
+          "vendor/linkedin_cli_package/SOURCE.json": "fbdf50be43b03fc79b209ff0bc1c559b08f78d1721625cabe014301f3b3e07ac",
+          "vendor/linkedin_cli_package/pyproject.toml": "2a81425eba7ba2ec56b34ef5af7f334b4cf2c58fc5e38d674b14060b932d5254",
+          "vendor/linkedin_cli_package/src/linkedin_cli/__init__.py": "21d38bd57808d60011d569a0b8e4f933035ef4b81022e83d931eb707afe04fe9",
+          "vendor/linkedin_cli_package/src/linkedin_cli/actions/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "vendor/linkedin_cli_package/src/linkedin_cli/actions/connect.py": "9872371804e6a20434a6caa2cb105b136e681996844a7e6b6286ab72ca05b4d1",
+          "vendor/linkedin_cli_package/src/linkedin_cli/actions/conversations.py": "6b57971e049f71e135fb3f30a39f866374290ddd280887844d05e6460386a4a1",
+          "vendor/linkedin_cli_package/src/linkedin_cli/actions/jobs.py": "e8dfc9480d22b83cb55f16645d5f8c07f190158b6ecf6974a04a73f37b4ab0d3",
+          "vendor/linkedin_cli_package/src/linkedin_cli/actions/message.py": "e95d7d68676a78f8e1b8de31225d967786ee3be75a94193fd57ab23b6167d932",
+          "vendor/linkedin_cli_package/src/linkedin_cli/actions/notifications.py": "376c00c2c5fcdff7db94d0ba3751666a9392cb3de712990a5e80eab987c8f697",
+          "vendor/linkedin_cli_package/src/linkedin_cli/actions/page_admin.py": "d7680549c2dd6ca44f7554dbe4a3e16a7237845ed548fce4a73561f6371345ce",
+          "vendor/linkedin_cli_package/src/linkedin_cli/actions/posts.py": "f86dacdaad49f4eef88babe56b92cd3c4c425d304cd0e22a2fc6d0e5dda003a0",
+          "vendor/linkedin_cli_package/src/linkedin_cli/actions/profile.py": "1fecd09389423a166aee721e2a564c8e891b4bf511baeccf862c0b46ba66dd7d",
+          "vendor/linkedin_cli_package/src/linkedin_cli/actions/saved_jobs.py": "34dd20c0f285387ac77e74421b7aff63aa0036265ce9ec6659c711aab1336d90",
+          "vendor/linkedin_cli_package/src/linkedin_cli/actions/search.py": "c6763dc667d3267ff457c165bbf0a4f5430b813cdfd7cd3644f993916074cd12",
+          "vendor/linkedin_cli_package/src/linkedin_cli/actions/status.py": "04dbd20e85abe4c9748199b794cf63351c3b8d81dcde3a830fe97b6af7ceb6b3",
+          "vendor/linkedin_cli_package/src/linkedin_cli/api/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "vendor/linkedin_cli_package/src/linkedin_cli/api/client.py": "bb7d37845339ad8792fe9ee92668f0d8e129e290129eb630eab47b9ce80b28f8",
+          "vendor/linkedin_cli_package/src/linkedin_cli/api/messaging/__init__.py": "a5dba3eadb266b4212e4caac80fa7a624fcd72cf1a3abbc5401be4596e3163d5",
+          "vendor/linkedin_cli_package/src/linkedin_cli/api/messaging/conversations.py": "b30fbde90346af572fd7508dba84f3fa8b210754dc6f3ea787b42aa723d5e537",
+          "vendor/linkedin_cli_package/src/linkedin_cli/api/messaging/send.py": "6294d4863d2914c45d3d98b2353669b34264e0e9e4c2cecc9ce70fc168376fc6",
+          "vendor/linkedin_cli_package/src/linkedin_cli/api/messaging/utils.py": "8264c758fad9389dcc961895b532185d50ab430defa4cdbc6db414d5f696dbe2",
+          "vendor/linkedin_cli_package/src/linkedin_cli/api/voyager.py": "1a42993d8895e6c7fe94e6b2e8e4676606455ec4589a41a812b2617af1197caf",
+          "vendor/linkedin_cli_package/src/linkedin_cli/auth.py": "682eac7d90b95aa6a9038c9466a74843fefc4f1e6b2d32b5bf93c6cd3f641b7b",
+          "vendor/linkedin_cli_package/src/linkedin_cli/browser/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "vendor/linkedin_cli_package/src/linkedin_cli/browser/login.py": "2bb7f00b3075c865b529ae6000af692d8b2c009cf53e1f21347e38857c0d73ec",
+          "vendor/linkedin_cli_package/src/linkedin_cli/browser/nav.py": "415afe8e99f7a88487fc9473c3e84349ee607df583512d1120c39f39a22e9ce8",
+          "vendor/linkedin_cli_package/src/linkedin_cli/cli.py": "4e7b86e23c9a27bd5a9b6331add5f80d2f13eb2f4cc96f513e5923dcbf531148",
+          "vendor/linkedin_cli_package/src/linkedin_cli/conf.py": "09e0b9902a34a40b24e5e5f6bc489ef9e117dd84623d1b83c599b99239aae362",
+          "vendor/linkedin_cli_package/src/linkedin_cli/enums.py": "85136bd2f4a54e6fb0e81785f702cbb716e86f356acd7350b2608fb9a0964f36",
+          "vendor/linkedin_cli_package/src/linkedin_cli/exceptions.py": "408eda9cb08d528dde6cc6fa1901149381d7fa60fea493a451084f6dab6c9b87",
+          "vendor/linkedin_cli_package/src/linkedin_cli/launcher.py": "faaecef00bcc3185153e2d9a0e548d27c22641013ea3cd80d8a01db865f97e2c",
+          "vendor/linkedin_cli_package/src/linkedin_cli/page_state.py": "4b79bd618245fd85ecbf34ddd1e2e9701dfe15045a37a555c50dad704db89038",
+          "vendor/linkedin_cli_package/src/linkedin_cli/profile_locks.py": "b1077fc371a04b5fca9bbff0a8fa004ca81e8740e25cd08505661c80692c111c",
+          "vendor/linkedin_cli_package/src/linkedin_cli/session.py": "38c66f68481b65206952b1c32bf7c4c946f021c47b38ea110f52e1f1702c47df",
+          "vendor/linkedin_cli_package/src/linkedin_cli/setup/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "vendor/linkedin_cli_package/src/linkedin_cli/setup/self_profile.py": "c2a13dfe3833cec71c40ba96a667b86a6280acca3d40e32f40cbf4ab9ce15b6f",
+          "vendor/linkedin_cli_package/src/linkedin_cli/url_utils.py": "ad87f2585a8b7c796e24cbfb05fcd4aa533f544b96cc2f67d50aacc31297229f",
+          "vendor/linkedin_cli_package/src/linkedin_cli/worker.py": "75904b5f05b5cd17e6662bcb92c99f22f8a0fd6e71180daba2e42e3987fca373",
+          "vendor/linkedin_enrichment/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+          "vendor/linkedin_enrichment/NOTICE": "9c0247f8ddcd9e4f1ee4bb91f7eec8f4a5ea0baaafbc2797f62a2e14dc960b93",
+          "vendor/linkedin_enrichment/__init__.py": "571e5f26f44fa05338fb28b69f25bf1d3ff952d2acf717ed9657d46d5f3606cb",
+          "vendor/linkedin_enrichment/activity_posts.py": "0f9aba0fb96c8ecb2f1ebf8037b9b2545c068badc6bd56e347a64c0748878a64",
+          "vendor/linkedin_enrichment/assets.py": "6ba7923c25c873a32b82acd77018865217ede734447d3766699166c5f0ce73df",
+          "vendor/linkedin_enrichment/browser.py": "55d65687cd81a1ef183e70f15b5bec0c751de7f6549d2cb795b80dc1605be83e",
+          "vendor/linkedin_enrichment/cli.py": "e35e4a93316552e9ca04271d6305a8d3190e7b0565ca575242739466944edbe6",
+          "vendor/linkedin_enrichment/collector.py": "486936dc013d3502e550a93d4db6276cf917452196b0c0d9227bc75fcd267f5f",
+          "vendor/linkedin_enrichment/connections.py": "b1ebd4ad650117d9450866fff2f7f1b7b9e1e6d8fd4b812f0a0f5ca252529c25",
+          "vendor/linkedin_enrichment/crm_targets.py": "4653f7204979023c60ee48089b44cab21b74b401419193aa93d96b605b8fc0db",
+          "vendor/linkedin_enrichment/messaging.py": "4b7835db141fe5068181119ae9818bd75221b53d2b47bb19601525f4ef4d3808",
+          "vendor/linkedin_enrichment/models.py": "d5bbd23fb4b23eca27df3c28461792a4882a944d34b615b9f099d90d934f2274",
+          "vendor/linkedin_enrichment/mutuals.py": "36c66997f1d1c1e7f4262102cae7f08ab287957ac523aeb11ee9f10f3b22501c",
+          "vendor/linkedin_enrichment/profile_media.py": "1990169a196539ddea12fa92aaf531e440139475d9936c3bfc8e0dbd7ba89528",
+          "vendor/linkedin_enrichment/scrapers.py": "cb41fb14295452da49deca0ed890e4e8abfa3eadecf5f17d93fa335876ace5d4",
+          "vendor/linkedin_enrichment/storage.py": "eacba1140501bfce6f4fb4c1749deb8b6ebb36dd0bd14503eb01794635a44105",
+          "vendor/linkedin_enrichment/target_sources.py": "2e7a7d94b354db5d6b6b936002c1c16c02d08b40695ed4133c985a6d0182875b",
+          "vendor/linkedin_enrichment/voyager.py": "b79f340af642d2a1124d0c8709933344d8225464d31b1d4dea7f1cacb8e658c2"
+        },
+        "bridge_sha256": "715459f9d243bc11d2306c2affafcb640aeb71433259bbfb095e7d4963e6287f",
+        "bridge_modules": {
+          "collector-bridge.py": "715459f9d243bc11d2306c2affafcb640aeb71433259bbfb095e7d4963e6287f",
+          "collector-chatlog.py": "3d71c04f15a813422578f561cd01ad702470fa12f7a79f1faa379b55df843f23",
+          "chatlog_moments.py": "80a03b95215c4e28221c132e30919e84520ed515b3bdff15aaa1a227351fb4af"
+        }
+      },
+      "native_files": [
+        "monica-server",
+        "tools/bin/monica-whatsapp",
+        "tools/bin/ffprobe",
+        "tools/bin/chatlog-alpha",
+        "collectors/python/bin/python3.12",
+        "collectors/python/lib/libtcl8.6.dylib",
+        "collectors/python/lib/libpython3.12.dylib",
+        "collectors/python/lib/libtk8.6.dylib",
+        "collectors/python/lib/thread2.8.9/libthread2.8.9.dylib",
+        "collectors/python/lib/itcl4.2.4/libitcl4.2.4.dylib",
+        "collectors/python/lib/python3.12/lib-dynload/_tkinter.cpython-312-darwin.so",
+        "collectors/python/lib/python3.12/lib-dynload/_ctypes_test.cpython-312-darwin.so",
+        "collectors/python/lib/python3.12/lib-dynload/_crypt.cpython-312-darwin.so",
+        "collectors/python/lib/python3.12/site-packages/playwright/driver/node",
+        "collectors/python/lib/python3.12/site-packages/charset_normalizer/cd.cpython-312-darwin.so",
+        "collectors/python/lib/python3.12/site-packages/charset_normalizer/md.cpython-312-darwin.so",
+        "collectors/python/lib/python3.12/site-packages/greenlet/_greenlet.cpython-312-darwin.so",
+        "collectors/python/lib/python3.12/site-packages/greenlet/tests/_test_extension_cpp.cpython-312-darwin.so",
+        "collectors/python/lib/python3.12/site-packages/greenlet/tests/_test_extension.cpython-312-darwin.so",
+        "collectors/python/lib/python3.12/site-packages/lxml/builder.cpython-312-darwin.so",
+        "collectors/python/lib/python3.12/site-packages/lxml/sax.cpython-312-darwin.so",
+        "collectors/python/lib/python3.12/site-packages/lxml/_elementpath.cpython-312-darwin.so",
+        "collectors/python/lib/python3.12/site-packages/lxml/etree.cpython-312-darwin.so",
+        "collectors/python/lib/python3.12/site-packages/lxml/objectify.cpython-312-darwin.so",
+        "collectors/python/lib/python3.12/site-packages/lxml/html/diff.cpython-312-darwin.so",
+        "collectors/python/lib/python3.12/site-packages/lxml/html/_difflib.cpython-312-darwin.so",
+        "collectors/python/lib/python3.12/site-packages/pydantic_core/_pydantic_core.cpython-312-darwin.so",
+        "collectors/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+        "collectors/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Google Chrome for Testing Framework",
+        "collectors/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Libraries/libEGL.dylib",
+        "collectors/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Libraries/libvulkan.dylib",
+        "collectors/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Libraries/libvk_swiftshader.dylib",
+        "collectors/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Libraries/libGLESv2.dylib",
+        "collectors/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Libraries/WidevineCdm/_platform_specific/mac_arm64/libwidevinecdm.dylib",
+        "collectors/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/web_app_shortcut_copier",
+        "collectors/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/chrome_crashpad_handler",
+        "collectors/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/app_mode_loader",
+        "collectors/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/Google Chrome for Testing Helper (Alerts).app/Contents/MacOS/Google Chrome for Testing Helper (Alerts)",
+        "collectors/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/Google Chrome for Testing Helper.app/Contents/MacOS/Google Chrome for Testing Helper",
+        "collectors/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/Google Chrome for Testing Helper (GPU).app/Contents/MacOS/Google Chrome for Testing Helper (GPU)",
+        "collectors/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/Google Chrome for Testing Helper (Renderer).app/Contents/MacOS/Google Chrome for Testing Helper (Renderer)",
+        "collectors/browsers/ffmpeg-1011/ffmpeg-mac",
+        "collectors/browsers/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/libEGL.dylib",
+        "collectors/browsers/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+        "collectors/browsers/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/libvulkan.dylib",
+        "collectors/browsers/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/libvk_swiftshader.dylib",
+        "collectors/browsers/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/libGLESv2.dylib",
+        "postgres/bin/pg_restore",
+        "postgres/bin/pg_isready",
+        "postgres/bin/initdb",
+        "postgres/bin/createdb",
+        "postgres/bin/psql",
+        "postgres/bin/postgres",
+        "postgres/bin/pg_ctl",
+        "postgres/bin/pg_dump",
+        "postgres/lib/libavutil.60.26.102.dylib",
+        "postgres/lib/libavfilter.11.14.102.dylib",
+        "postgres/lib/libswresample.6.3.102.dylib",
+        "postgres/lib/libmpg123.0.dylib",
+        "postgres/lib/libvmaf.3.dylib",
+        "postgres/lib/libcom_err.3.0.dylib",
+        "postgres/lib/libavcodec.62.28.102.dylib",
+        "postgres/lib/libecpg.dylib",
+        "postgres/lib/liblz4.1.10.0.dylib",
+        "postgres/lib/libpq.5.dylib",
+        "postgres/lib/libdav1d.7.dylib",
+        "postgres/lib/libicui18n.78.3.dylib",
+        "postgres/lib/libavdevice.62.3.102.dylib",
+        "postgres/lib/libssl.3.dylib",
+        "postgres/lib/libreadline.8.3.dylib",
+        "postgres/lib/libx264.165.dylib",
+        "postgres/lib/libmp3lame.0.dylib",
+        "postgres/lib/libswscale.9.5.102.dylib",
+        "postgres/lib/libcrypto.3.dylib",
+        "postgres/lib/libavformat.62.12.102.dylib",
+        "postgres/lib/libecpg.6.dylib",
+        "postgres/lib/libSvtAv1Enc.4.1.0.dylib",
+        "postgres/lib/libgssapi_krb5.2.2.dylib",
+        "postgres/lib/libpgtypes.3.dylib",
+        "postgres/lib/libpgtypes.dylib",
+        "postgres/lib/libintl.8.dylib",
+        "postgres/lib/libpq.dylib",
+        "postgres/lib/libkrb5.3.3.dylib",
+        "postgres/lib/libkrb5support.1.1.dylib",
+        "postgres/lib/libecpg_compat.3.dylib",
+        "postgres/lib/libk5crypto.3.1.dylib",
+        "postgres/lib/libicudata.78.3.dylib",
+        "postgres/lib/libzstd.1.5.7.dylib",
+        "postgres/lib/libvpx.12.dylib",
+        "postgres/lib/libecpg_compat.dylib",
+        "postgres/lib/libicuuc.78.3.dylib",
+        "postgres/lib/libx265.216.dylib",
+        "postgres/lib/libopus.0.dylib",
+        "postgres/lib/postgresql/basic_archive.dylib",
+        "postgres/lib/postgresql/latin_and_mic.dylib",
+        "postgres/lib/postgresql/pg_stat_statements.dylib",
+        "postgres/lib/postgresql/moddatetime.dylib",
+        "postgres/lib/postgresql/test_decoding.dylib",
+        "postgres/lib/postgresql/utf8_and_gbk.dylib",
+        "postgres/lib/postgresql/euc2004_sjis2004.dylib",
+        "postgres/lib/postgresql/utf8_and_uhc.dylib",
+        "postgres/lib/postgresql/autoinc.dylib",
+        "postgres/lib/postgresql/sslinfo.dylib",
+        "postgres/lib/postgresql/utf8_and_euc2004.dylib",
+        "postgres/lib/postgresql/insert_username.dylib",
+        "postgres/lib/postgresql/pageinspect.dylib",
+        "postgres/lib/postgresql/jsonb_plperl.dylib",
+        "postgres/lib/postgresql/tsm_system_time.dylib",
+        "postgres/lib/postgresql/latin2_and_win1250.dylib",
+        "postgres/lib/postgresql/pg_visibility.dylib",
+        "postgres/lib/postgresql/earthdistance.dylib",
+        "postgres/lib/postgresql/utf8_and_gb18030.dylib",
+        "postgres/lib/postgresql/utf8_and_euc_cn.dylib",
+        "postgres/lib/postgresql/plpgsql.dylib",
+        "postgres/lib/postgresql/citext.dylib",
+        "postgres/lib/postgresql/pltcl.dylib",
+        "postgres/lib/postgresql/utf8_and_win.dylib",
+        "postgres/lib/postgresql/dict_xsyn.dylib",
+        "postgres/lib/postgresql/utf8_and_big5.dylib",
+        "postgres/lib/postgresql/bool_plperl.dylib",
+        "postgres/lib/postgresql/utf8_and_euc_kr.dylib",
+        "postgres/lib/postgresql/utf8_and_sjis2004.dylib",
+        "postgres/lib/postgresql/pgrowlocks.dylib",
+        "postgres/lib/postgresql/plperl.dylib",
+        "postgres/lib/postgresql/tsm_system_rows.dylib",
+        "postgres/lib/postgresql/file_fdw.dylib",
+        "postgres/lib/postgresql/passwordcheck.dylib",
+        "postgres/lib/postgresql/unaccent.dylib",
+        "postgres/lib/postgresql/pgxml.dylib",
+        "postgres/lib/postgresql/pgoutput.dylib",
+        "postgres/lib/postgresql/utf8_and_cyrillic.dylib",
+        "postgres/lib/postgresql/basebackup_to_shell.dylib",
+        "postgres/lib/postgresql/tablefunc.dylib",
+        "postgres/lib/postgresql/utf8_and_johab.dylib",
+        "postgres/lib/postgresql/pg_freespacemap.dylib",
+        "postgres/lib/postgresql/amcheck.dylib",
+        "postgres/lib/postgresql/auth_delay.dylib",
+        "postgres/lib/postgresql/uuid-ossp.dylib",
+        "postgres/lib/postgresql/seg.dylib",
+        "postgres/lib/postgresql/pgstattuple.dylib",
+        "postgres/lib/postgresql/isn.dylib",
+        "postgres/lib/postgresql/pg_buffercache.dylib",
+        "postgres/lib/postgresql/pgcrypto.dylib",
+        "postgres/lib/postgresql/dict_snowball.dylib",
+        "postgres/lib/postgresql/euc_cn_and_mic.dylib",
+        "postgres/lib/postgresql/dblink.dylib",
+        "postgres/lib/postgresql/cyrillic_and_mic.dylib",
+        "postgres/lib/postgresql/dict_int.dylib",
+        "postgres/lib/postgresql/auto_explain.dylib",
+        "postgres/lib/postgresql/ltree.dylib",
+        "postgres/lib/postgresql/old_snapshot.dylib",
+        "postgres/lib/postgresql/btree_gist.dylib",
+        "postgres/lib/postgresql/hstore.dylib",
+        "postgres/lib/postgresql/refint.dylib",
+        "postgres/lib/postgresql/adminpack.dylib",
+        "postgres/lib/postgresql/utf8_and_sjis.dylib",
+        "postgres/lib/postgresql/utf8_and_euc_jp.dylib",
+        "postgres/lib/postgresql/pg_trgm.dylib",
+        "postgres/lib/postgresql/euc_kr_and_mic.dylib",
+        "postgres/lib/postgresql/lo.dylib",
+        "postgres/lib/postgresql/utf8_and_iso8859_1.dylib",
+        "postgres/lib/postgresql/cube.dylib",
+        "postgres/lib/postgresql/euc_jp_and_sjis.dylib",
+        "postgres/lib/postgresql/fuzzystrmatch.dylib",
+        "postgres/lib/postgresql/utf8_and_iso8859.dylib",
+        "postgres/lib/postgresql/hstore_plperl.dylib",
+        "postgres/lib/postgresql/_int.dylib",
+        "postgres/lib/postgresql/euc_tw_and_big5.dylib",
+        "postgres/lib/postgresql/libpqwalreceiver.dylib",
+        "postgres/lib/postgresql/pg_walinspect.dylib",
+        "postgres/lib/postgresql/postgres_fdw.dylib",
+        "postgres/lib/postgresql/bloom.dylib",
+        "postgres/lib/postgresql/utf8_and_euc_tw.dylib",
+        "postgres/lib/postgresql/pg_prewarm.dylib",
+        "postgres/lib/postgresql/pg_surgery.dylib",
+        "postgres/lib/postgresql/tcn.dylib",
+        "postgres/lib/postgresql/btree_gin.dylib",
+        "postgres/lib/postgresql/pgxs/src/test/regress/pg_regress",
+        "postgres/lib/postgresql/pgxs/src/test/isolation/isolationtester",
+        "postgres/lib/postgresql/pgxs/src/test/isolation/pg_isolation_regress"
+      ],
+      "adapters_enabled": false,
+      "ai_enabled": false,
+      "source_commit": "bb69b395803daf1c36f27f226e4ae437585907f3",
+      "source_dirty": false,
+      "license_packages": [
+        "dav1d-1.5.3",
+        "ffmpeg-8.1.2_1",
+        "gettext-1.0",
+        "icu4c@78-78.3",
+        "krb5-1.22.2",
+        "lame-4.0",
+        "libvmaf-3.2.0",
+        "libvpx-1.16.0",
+        "lz4-1.10.0",
+        "mpg123-1.33.6",
+        "openssl@3-3.6.3",
+        "opus-1.6.1",
+        "postgresql@16-16.15",
+        "readline-8.3.3",
+        "svt-av1-4.1.0",
+        "x264-r3222",
+        "x265-4.2",
+        "zstd-1.5.7_1"
+      ],
+      "build_server_sha256": "42079aac513e98fa5edbb38a06c8b7a385c75831091d57f22834362bbb7586be",
+      "build_whatsapp_sha256": "e2fb30a682fbcd19fb1f64a13ef20fb64139b89f2a999f5a0a07fc1f7831b312",
+      "build_chatlog_sha256": "58037b421a6e8a6b80ac1a08b25b5bde23bf520f689e2fc33d65deae3c0deb21",
+      "bundle_signing": "ad-hoc; local testing only; not notarized"
+    },
+    "verification_raw_sha256": "34aec73161c19ee65efd6fca1ae70b74a71c5bab9f9cf347ce866a3add434b39",
+    "verification_result": {
+      "app": "/Users/maxhu/play/monica-rs/apps/native-desktop/src-tauri/target/release/bundle/macos/Monica Rust.app",
+      "bytes": 1318956021,
+      "server_sha256": "42079aac513e98fa5edbb38a06c8b7a385c75831091d57f22834362bbb7586be",
+      "source_commit": "bb69b395803daf1c36f27f226e4ae437585907f3",
+      "source_dirty": false,
+      "verified": "codesign, relocation, ffprobe, fresh PG16, static Web/auth, suspend/resume, pause, crash recovery, ports, clean exit"
+    }
+  },
+  "linux_artifacts": {
+    "amd64": {
+      "commit": "bb69b395803daf1c36f27f226e4ae437585907f3",
+      "server_sha256": "66ae0fede89a98cd9de8ce3d8560e4fbcef407abb89de474fbd294d6de6ee503",
+      "compiled_test_binaries": 22
+    },
+    "arm64": {
+      "commit": "bb69b395803daf1c36f27f226e4ae437585907f3",
+      "server_sha256": "4fc44a3a05d2c0d9b43f8fc4a4bc38fbfd1491ced1e177cb46a5e382f89a62c4",
+      "compiled_test_binaries": 22
+    }
+  },
+  "linux_images": [
+    {
+      "Id": "sha256:da7c32780faf9f463fdf5e1b064d4e53ff42ea7a52796219d8dae3f057884dd9",
+      "Architecture": "amd64",
+      "RepoTags": [
+        "monica-rs:app-bb69b39-amd64"
+      ],
+      "revision": "bb69b395803daf1c36f27f226e4ae437585907f3"
+    },
+    {
+      "Id": "sha256:2ab5a9c87e9d731cb2d7910c09c1e08a36279afb7b5009c227dda4ae1e99427e",
+      "Architecture": "arm64",
+      "RepoTags": [
+        "monica-rs:app-bb69b39-arm64"
+      ],
+      "revision": "bb69b395803daf1c36f27f226e4ae437585907f3"
+    },
+    {
+      "Id": "sha256:794842850fb6dda2b35f2099d7fa6b1142ed3bf44c251313ef5ef3ee39d83b18",
+      "Architecture": "amd64",
+      "RepoTags": [
+        "monica-rs:tests-bb69b39-amd64"
+      ],
+      "revision": "bb69b395803daf1c36f27f226e4ae437585907f3"
+    },
+    {
+      "Id": "sha256:01e33e660668e53b1f13f2a457dc3a5efd48c7ed275c857c9ffae03edb0973dc",
+      "Architecture": "arm64",
+      "RepoTags": [
+        "monica-rs:tests-bb69b39-arm64"
+      ],
+      "revision": "bb69b395803daf1c36f27f226e4ae437585907f3"
+    }
+  ],
+  "nas_images_created_before_stop": [
+    {
+      "Id": "sha256:34e68d2e7b8261b231c3891e8f5f4c1ca92cf4c7265a9e759553b7050cc39931",
+      "Architecture": "amd64",
+      "RepoTags": [
+        "monica-rs:app-bb69b39-amd64"
+      ]
+    },
+    {
+      "Id": "sha256:ec8b11517311e77b58d53d439dcd30e1e9d0788db1f7c688942829a66985ceca",
+      "Architecture": "amd64",
+      "RepoTags": [
+        "monica-rs:tests-bb69b39-amd64"
+      ]
+    },
+    {
+      "Id": "sha256:6f28e4f8264a619b432def10283dd10e2945ffe4bd580fda8fbc9d2a1b386a1a",
+      "Architecture": "amd64",
+      "RepoTags": [
+        "monica-rs:benchmark-bb69b39-amd64"
+      ]
+    }
+  ],
+  "files": [
+    {
+      "file": "benchmark-mac-final.jsonl.gz",
+      "raw_sha256": "994587939f8584de73ffd75bc957b573a578b3365052ebb064cdb0ba3f59860b",
+      "gzip_sha256": "a0a46b2ff710d9e04cf35a29da177e4dfc7648f9206f0698316c95858b125efa",
+      "raw_bytes": 7515549,
+      "gzip_bytes": 962422
+    },
+    {
+      "file": "benchmark-mac-rust-bb69b39.jsonl.gz",
+      "raw_sha256": "79e49d5a4ecf4607c9ddbb08b86506ddabecef4cd1e9bee2802ab32f3457957d",
+      "gzip_sha256": "7baf4fb60d5c42426ad4e9366e14d856b55f3a946e64c6ab7e04b4bce04b0764",
+      "raw_bytes": 1181165,
+      "gzip_bytes": 127732
+    },
+    {
+      "file": "ci-bb69b39.json.gz",
+      "raw_sha256": "9a57c2a8fbded8b00dc93e8e98ca3d1dae68beac426bcc892d10a93fbe7a76a9",
+      "gzip_sha256": "bfa2c01d65a760b99f1d1f5e42572dcb3159c0da343f6e302514dba8cdada161",
+      "raw_bytes": 14299,
+      "gzip_bytes": 1724
+    },
+    {
+      "file": "ci-bb69b39-test.log.gz",
+      "raw_sha256": "335bd378f90d0dca60c71f5f1c97baded18fa21746925fb625ccf04f3d58bbfe",
+      "gzip_sha256": "b271cfd8929230f646e23ba9865b38b002a45815a7f21f9b529e6bb2b9314586",
+      "raw_bytes": 352205,
+      "gzip_bytes": 46577
+    },
+    {
+      "file": "ci-bb69b39-native.log.gz",
+      "raw_sha256": "e842374ab9cc1b71a96a8d59d7e07d15b866b242dbb18ee7cb7f93c64eafd0c0",
+      "gzip_sha256": "6fa7155f8246313e0717f0ec6d724a85df4d6c17c85825f0abef2216ed1e63a0",
+      "raw_bytes": 327544,
+      "gzip_bytes": 38194
+    },
+    {
+      "file": "ci-bb69b39-web.log.gz",
+      "raw_sha256": "78afd5b00719f48cc5e88f02c2c014af2fa57b31939e94698fe3978326ca9a92",
+      "gzip_sha256": "a2bd7d3c2ca768eea4c532e42d8a51baf29499724c1c7e7a995d34bd8b08166f",
+      "raw_bytes": 228572,
+      "gzip_bytes": 30296
+    },
+    {
+      "file": "ci-bb69b39-adapters.log.gz",
+      "raw_sha256": "20ccb12c213bbaa92bf04dc20ac5cfbf4168ed7bc14f482a13209aaebda0af19",
+      "gzip_sha256": "f9113cfda11ac81c8313ca1ac759adb85b6b62f17598db80da193afb3c641096",
+      "raw_bytes": 48294,
+      "gzip_bytes": 8326
+    },
+    {
+      "file": "mac-bb69b39-verify.log.gz",
+      "raw_sha256": "34aec73161c19ee65efd6fca1ae70b74a71c5bab9f9cf347ce866a3add434b39",
+      "gzip_sha256": "b8fccfb74a727558b54c328490ccc475e53d381a5916bb824ebccebe9e7d7660",
+      "raw_bytes": 2498,
+      "gzip_bytes": 940
+    },
+    {
+      "file": "arm64-bb69b39-chicago.log.gz",
+      "raw_sha256": "0bd81fea59e1f68068d7edb4ba63675030765fa589ddd96a15904959ab037ac8",
+      "gzip_sha256": "1d2fe393ff9eb45bea195631bdd23d6e2b316ad5ce49ecd66302576e005b73bd",
+      "raw_bytes": 16416,
+      "gzip_bytes": 5007
+    },
+    {
+      "file": "workspace-receipt-fix-utc.log.gz",
+      "raw_sha256": "a5df88c8f1f9a4ed492313aa6d23dbe513c84379b28aecdefc86144b87b86e46",
+      "gzip_sha256": "31e56a7dc33250b5249268343fecfa3537febe2cf298c30e9f4ca2816f4dfdec",
+      "raw_bytes": 20100,
+      "gzip_bytes": 6109
+    },
+    {
+      "file": "workspace-receipt-fix-chicago.log.gz",
+      "raw_sha256": "4f37ef10d32fe2685373ed0fb77d26e4b764d5bf25f971f66d943aac45ceb2bd",
+      "gzip_sha256": "d8e46506b2ebc2f175d30cb21daf2eb85b5b055931de94dc2e16e3191ff3f847",
+      "raw_bytes": 17261,
+      "gzip_bytes": 5278
+    },
+    {
+      "file": "receipt-lock-old-failure.log.gz",
+      "raw_sha256": "f1d9496e75c195a4236c6aa2e28924dcc934ebae267c24d5c745496481a42c9d",
+      "gzip_sha256": "1612e8f5f8b3ce47838aa7863d05e160444056ca81bdde634e500b0e506d45b2",
+      "raw_bytes": 7545,
+      "gzip_bytes": 2383
+    },
+    {
+      "file": "receipt-lock-final-focused-utc.log.gz",
+      "raw_sha256": "ce530d7ae4d9b7f2034e2132058e03716968b0571ef1b3bac0d4c5a09f3a7e2d",
+      "gzip_sha256": "4e65214872e4df9fa3ca43342fd3eb7cdbefea2e610c4878051e81ed3767f071",
+      "raw_bytes": 779,
+      "gzip_bytes": 453
+    },
+    {
+      "file": "receipt-lock-final-focused-chicago.log.gz",
+      "raw_sha256": "af30dc63af4f330c7f4e0bed7d5a83288d3979ea38400e03dbe80fd51c9008c8",
+      "gzip_sha256": "8846966e9a5dda04977c6cfc7f15e6dfc0cd5a1ab393c02f8f11346683da660b",
+      "raw_bytes": 698,
+      "gzip_bytes": 404
+    },
+    {
+      "file": "clippy-receipt-fix-final.log.gz",
+      "raw_sha256": "2f5b7c5b004f3f4d15ee85fd06377d5017977ae016895798fcc5cf0dfc6591a0",
+      "gzip_sha256": "5a0c2e7672b639ba388cf18a3bab500221feb81640d828067388a866c6450c09",
+      "raw_bytes": 577,
+      "gzip_bytes": 256
+    },
+    {
+      "file": "video-receipt-fix.log.gz",
+      "raw_sha256": "53711e564f363094f38686fa403470e99eb390830ebf0404f00d21f25a134d40",
+      "gzip_sha256": "a3dbccb91e6d07c28607175f2a0de3fb9eb583c5a1104c1b48714789be0d58f1",
+      "raw_bytes": 600,
+      "gzip_bytes": 356
+    },
+    {
+      "file": "performance-receipt-fix.log.gz",
+      "raw_sha256": "e881c36f376a21819e0a53a60edd3820c8857187a379146ee9f2d00c93155b6b",
+      "gzip_sha256": "61d19a34f5dbba526d6fde36299333f17800b95f4b5c663497caae01efa8b45c",
+      "raw_bytes": 2935,
+      "gzip_bytes": 806
+    },
+    {
+      "file": "nas-controller-bb69b39.log.gz",
+      "raw_sha256": "9b7d978df70c4861e11937961b39a39349c84ec3420ef61dc21b3bb65eff70ac",
+      "gzip_sha256": "13357b012d73de9a8fedae8cc4f3fea98eef6a6839387a99a2ecb491af1bb612",
+      "raw_bytes": 2431,
+      "gzip_bytes": 1069
+    },
+    {
+      "file": "nas-runtime-bb69b39-result.json.gz",
+      "raw_sha256": "11e2300f6ac430b033142f1bdf376719cf5fb8c09ea5b203616438da02679e7b",
+      "gzip_sha256": "d555abb43a60b481c2b3d4eac890abc625528bb3e294ee816ec1b92f774d5ac6",
+      "raw_bytes": 2375,
+      "gzip_bytes": 1035
+    },
+    {
+      "file": "nas-physical-cleanup-bb69b39.json.gz",
+      "raw_sha256": "d21dd9055b9dcaf0c6c97f89bb27254bd7c30e81f4f3a5d704c716cecba0ff46",
+      "gzip_sha256": "30d9d72d5b4971b9ccb1469efa6bea90eaeb3d31ba1eaeaf4f90078c9b675b9b",
+      "raw_bytes": 409,
+      "gzip_bytes": 197
+    },
+    {
+      "file": "nas-logical-bb69b39-controller.log.gz",
+      "raw_sha256": "177a8ea00d4369bfcffa7a2430fa00c0e4cc6af3f0dc67f39f3566bbd74f989c",
+      "gzip_sha256": "f31d24d8ef1f95492013e34e8185739de56d824f2330009b86179908aa4057f9",
+      "raw_bytes": 355,
+      "gzip_bytes": 283
+    },
+    {
+      "file": "nas-controller-bb69b39-invalid-cursor-fixture.log.gz",
+      "raw_sha256": "8cb37d490ed67853568cc77e478df7bf1b718a4c2a2a96aa45d3f597417aea1f",
+      "gzip_sha256": "eef82942b27ba9232fd4f9f5d77ec696d315f9fe80ed721cb35b207909dffef9",
+      "raw_bytes": 2482,
+      "gzip_bytes": 1009
+    },
+    {
+      "file": "nas-auth-continuation-result.json.gz",
+      "raw_sha256": "c264de47949f6453da00dcb139f86800bb84c764e2e5f4a64d63cceb87a02bba",
+      "gzip_sha256": "7b1ff7d93f127f7e05b655449d99f35dab863d9b748434bf11fb7709b8e2650b",
+      "raw_bytes": 23909,
+      "gzip_bytes": 3080
+    },
+    {
+      "file": "nas-storage-diagnostic-result.json.gz",
+      "raw_sha256": "4e189e811b7b435f14caa10ee42914279ee48958be2f0cc36ed4ffe118d80fbd",
+      "gzip_sha256": "ccd8d42450aa82457cf65a91655c55872ddd36c04cd85f0804b841d5d8b216fc",
+      "raw_bytes": 473,
+      "gzip_bytes": 298
+    },
+    {
+      "file": "nas-runtime-retained-c2e9e2f.log.gz",
+      "raw_sha256": "8857b73b1eb0ef128c14986675e0c7dc3804188cdcabc71ee005149d56ae04c4",
+      "gzip_sha256": "5a66bca0500836323f250b62b7d165c8ad7e0f46945bf6c7ca53e2a597c04ef8",
+      "raw_bytes": 23506,
+      "gzip_bytes": 4750
+    },
+    {
+      "file": "nas-runtime-c2e9e2f-http-10second-timeout.log.gz",
+      "raw_sha256": "f3b4a40779841d61ee225d7f94713c17741d4b85d2eb26f465e006ecd4389e6f",
+      "gzip_sha256": "15950e3295f9b15830d47e3ca4b79b4cf94057cbf50796b5b5f2740bac9c39d0",
+      "raw_bytes": 188476,
+      "gzip_bytes": 28419
+    },
+    {
+      "file": "retired-bb69b39-test-exports.json.gz",
+      "raw_sha256": "4e599eafebec96f47cf380acec42615ec9407fdec485f94e0ed0187ff93d6627",
+      "gzip_sha256": "0ec2d5ba9fe33195eca4809700398a79b1242717351d5870cb603c06d43fafe9",
+      "raw_bytes": 8754,
+      "gzip_bytes": 3054
+    }
+  ]
+}

@@ -14,7 +14,7 @@ User requested parity with the MacOS chat `01a1cb5f-8a1b-7db3-8bf6-0daf6af7bcfa`
 
 ## Validation boundary
 
-Implementation and synthetic validation are in progress. Prior completed baseline tests do not establish completion of these additions. Instagram remains disconnected. No real mailbox, address book, Messages database, WhatsApp account or cloud model is used by this task. Formal signing, personal-data migration and production cutover remain excluded. Mac-only native sources expose clear unavailable capability on NAS; stored facts, queries, evidence and browser QA share the same core.
+Current committed implementation, synthetic behavior tests and platform execution are recorded in the [2026-11-13 final acceptance](reviews/2026-11-13-platform-acceptance.md). Original checkpoint observations below remain historical evidence; exact current tests, failures and limits are in the linked validation manifest. Instagram remains disconnected. No real mailbox, address book, Messages database, WhatsApp account or cloud model is used by this task. Formal signing, personal-data migration and production cutover remain excluded. Mac-only native sources expose clear unavailable capability on NAS; stored facts, queries, evidence and browser QA share the same core.
 
 
 ## Supplemental ordinary-version fix
@@ -31,4 +31,4 @@ Mail is a first-class source on the Sources landing page, with explicit Gmail, O
 - `parent-ai-freeze-core.log` / `parent-ai-freeze-http.log`: incremental Memory, mail AI, adapter and stateless browser-proxy suites passed with fake providers; no paid or personal-account calls.
 - `connections-http-differential-3.log`: 27 actual pinned multisource HTTP observations matched; source-journal/projection comparison covered 70 observations.
 - `source-transport-differential-3.log`: 45 actual pinned Python/Rust mail and phone-export vectors matched.
-- Runtime packaging and final Mac/NAS performance acceptance remain in progress. These functional results do not establish the high-performance designation.
+- The final acceptance records refreshed runtime packaging, actual NAS persistence/crash checks, the completed Mac benchmark, and the user-canceled NAS matrix/performance gates. The measured results do not demonstrate every requested high-performance target.

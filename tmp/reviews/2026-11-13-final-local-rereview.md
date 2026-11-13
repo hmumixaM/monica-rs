@@ -1,0 +1,13 @@
+# Final local acceptance evidence review
+
+Reviewed application source: `bb69b395803daf1c36f27f226e4ae437585907f3`; actual branch merge-base: `301241bf41e8ba8bb18d981f4e9138fe220e9c18`. The final evidence/documentation delta contains no application, dependency, schema, test-runner or deployment change. It preserves the historical API smoke snapshot and prior immutable reports.
+
+Bugbot's committed receipt-repair review is [bb-20261113-727e65bf](2026-11-13-bugbot-report-727e65bf.md), Pass within its stated frontier. Its source finding [bb-20261113-53370ca3](2026-11-13-bugbot-report-53370ca3.md) remains immutable. Code-review rechecked both receiver callers, nonce/HMAC and hash rejection, READ COMMITTED arbitration, atomic input/media progress and append-only tests. No additional confirmed production bug was identified in that affected frontier.
+
+Excessive-tests: the two new PostgreSQL cases cover distinct real lock/read-only and racing-first-admission boundaries. Existing four append-only cases remain. Full repaired workspace177 tests in each timezone, explicit video1/performance2 and final focused6 in each timezone passed; exact-source CI also passed all six jobs. The final evidence update adds no test duplication or harness change.
+
+Evidence review verified27 deterministic gzip exports against raw and compressed SHA256, decompression round trips, current source/binary/image identities and the absence of the real NAS password. Mac24-case data preserves18 unchanged Python measurements and6 fresh current-source Rust cases with explicit separate invocation provenance. All measured read and whole-case failures are zero. The1x throughput target, cold-first search regressions and unmeasured true lock-wait percentile remain explicit.
+
+The user explicitly stopped further NAS testing. Completed physical results and independently verified removal of its test containers/data volumes are retained. The separate NAS logical matrix did not execute because SSH forwarding was rejected before test processes started; the24-case NAS benchmark never started. No active local NAS validation controller remains, no SSH service configuration was changed and no further NAS connection was made after the instruction. Built images/uploaded build contexts are retained rather than reconnecting for additional cleanup.
+
+Readiness is limited to the completed local/CI and previously completed physical evidence. This does not certify canceled NAS gates, every operation/input, live personal providers/model inference, public notarization or production migration/cutover. Final committed documentation is re-inspected after commit; the reviewed final hash is reported in the delivery message.
