@@ -1,0 +1,111 @@
+{
+  "status": "Mac/ARM/CI checkpoint complete; NAS runtime, logical matrices and all NAS performance cases still pending",
+  "source_commit": "c2e9e2f54e6f0f84188b57b8e8f4d64ebe4b3f23",
+  "base": "301241bf41e8ba8bb18d981f4e9138fe220e9c18",
+  "ci": 43413235968,
+  "files": [
+    {
+      "file": "benchmark-mac-final.jsonl.gz",
+      "raw_sha256": "83dcf4e780d7a64a3796ddc57d9d4ddc4d1b5be65ea0d9fddd459f06ce2403fa",
+      "gzip_sha256": "8c9675325051857d35ced694e935928a926ea1492bed5f11987f4eb6980d7258",
+      "raw_bytes": 7508327,
+      "gzip_bytes": 961802
+    },
+    {
+      "file": "benchmark-mac-rust-c2e9e2f.jsonl.gz",
+      "raw_sha256": "9e20c8d13c37e0055302f3a5b4c44865d517fba3f8886d7b1e2523f949ea191a",
+      "gzip_sha256": "ea6675ec99477b301546a8f16127147858ec4da6d8978bd5839eb18a7f17ba43",
+      "raw_bytes": 1173959,
+      "gzip_bytes": 127201
+    },
+    {
+      "file": "benchmark-mac-5dfa96a-historical.jsonl.gz",
+      "raw_sha256": "5901c9dfc17ac20b664e9a2cbb2911138428690144ac49d81f6316ae7039f266",
+      "gzip_sha256": "5e6634cb069e3e4a39c8f9ffe50b2987fbf46f016c7d0abd7c6a13cf48605637",
+      "raw_bytes": 7512658,
+      "gzip_bytes": 961161
+    },
+    {
+      "file": "workspace-c2e9e2f-utc.log.gz",
+      "raw_sha256": "d53e9934de6998d8bf3bd1e458d0c3d059d420c26dea3bda7309cce5f3938da4",
+      "gzip_sha256": "572c2eb8e3cb56a41df2c55c9dfc858ac88df7eb79e3de7fcd410489525fa2d6",
+      "raw_bytes": 17481,
+      "gzip_bytes": 5370
+    },
+    {
+      "file": "workspace-c2e9e2f-chicago.log.gz",
+      "raw_sha256": "e1220554ea773b936876d4bda50c12a3b7fcb647c9273cb0765360fbd80ac89b",
+      "gzip_sha256": "dcee3edd8fe64c73d1b07c2a72b2dbeee4ecea5494afbc1558b2b998acd1b4dd",
+      "raw_bytes": 17127,
+      "gzip_bytes": 5263
+    },
+    {
+      "file": "video-c2e9e2f-utc.log.gz",
+      "raw_sha256": "adf61f0c3b378834006b5733fa57af256a49c30708b41c4287c5da8d5e389376",
+      "gzip_sha256": "ffcacf52d360c2a2dacc8bf30a1443a500ad09d36fb0d3b12f7ab0a1324d2a31",
+      "raw_bytes": 412,
+      "gzip_bytes": 293
+    },
+    {
+      "file": "performance-c2e9e2f.log.gz",
+      "raw_sha256": "71a43ca9791742f602f8122ade65097bb4716395ab7f728a89b9b3666bb9b3f7",
+      "gzip_sha256": "3ef438cd789f491ba222b631090fe4233f989061641cc86c1702efb05264c46c",
+      "raw_bytes": 2896,
+      "gzip_bytes": 813
+    },
+    {
+      "file": "clippy-c2e9e2f.log.gz",
+      "raw_sha256": "7e1c9901d099d0854319d27d4e2b86775683c8e10c46eeb5c592d743809e584e",
+      "gzip_sha256": "9d546a41cdb85afd769d044271507a53e45f9662468a10bb3bbc0ed8e50d2456",
+      "raw_bytes": 321,
+      "gzip_bytes": 175
+    },
+    {
+      "file": "mac-c2e9e2f-verify.log.gz",
+      "raw_sha256": "fb27437d825c73b689c6ace26521d98d790c8a6c8eba33a579cffe26176fe836",
+      "gzip_sha256": "e93166f430e563c6f826ac95fcee5a4a979a1c0debe313607a8c5331045ca2ab",
+      "raw_bytes": 6135,
+      "gzip_bytes": 2018
+    },
+    {
+      "file": "arm64-c2e9e2f-chicago.log.gz",
+      "raw_sha256": "661f759113c3acddc84b4249b9527aa3c752cc5986a6041c0fed999b9359c312",
+      "gzip_sha256": "674c184572e1ac3eb9bc476d36c30f97817b79b6057c32e450ed322e64816ff9",
+      "raw_bytes": 16280,
+      "gzip_bytes": 4970
+    },
+    {
+      "file": "ci-c2e9e2f.json.gz",
+      "raw_sha256": "edafe3377a2fe64fda7f418ceb9ab5c4f764c8c86abf7ee3d6f69054e45c4989",
+      "gzip_sha256": "9850d4f9536d972c11fdde3afcf3c02d709b437f4418270bbc3d276f28c99e7c",
+      "raw_bytes": 14324,
+      "gzip_bytes": 1746
+    }
+  ],
+  "mac_tests": {
+    "utc_passed": 175,
+    "chicago_passed": 175,
+    "failed": 0,
+    "default_ignored": 3,
+    "explicit_video_passed": 1,
+    "explicit_performance_passed": 2,
+    "clippy": "passed"
+  },
+  "arm64_chicago": {
+    "rust_successes_including_video": 176,
+    "failed": 0,
+    "default_ignored": 3,
+    "media_helper_passed": 1,
+    "collector_supervisor_passed": 4,
+    "real_auth_media_cli": "passed"
+  },
+  "performance": {
+    "current_rust_cases": 6,
+    "unchanged_python_cases_from_previous_measurement": 18,
+    "whole_case_failures": 0,
+    "read_failures": 0,
+    "all_initial_performance_targets_demonstrated": false,
+    "provenance": "Composite raw metadata retains original baseline metadata and SHA; rows carry actual reference pins and invocation provenance. Final Rust and baseline rows were not interleaved."
+  },
+  "nas_status": "All three current images built. First actual-NAS43-file migration reached version48; the private HTTP driver then failed Python parsing before issuing HTTP assertions. Marker replacement fixed; six expanded Python clients syntax-checked; fresh physical rerun underway. No NAS runtime pass is claimed."
+}

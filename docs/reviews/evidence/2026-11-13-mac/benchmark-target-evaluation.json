@@ -1,0 +1,136 @@
+{
+  "criterion_basis": "Each history scale is assessed separately; ratios pair corresponding round numbers. The Mac final Rust rows and unchanged Python rows were measured in separate runs, with provenance retained. No true lock-wait percentile is available.",
+  "platforms": {
+    "mac": [
+      {
+        "scale": 1,
+        "rust_whole_case_failures": 0,
+        "desktop_whole_case_failures": 0,
+        "complete_comparison": true,
+        "true_lock_wait_p95": "unmeasured; sampled blocked-query age is not this metric",
+        "rust_read_failures": {
+          "cold_first_request": 0,
+          "warm": 0,
+          "mixed": 0
+        },
+        "mixed_all_routes_p95_under_500ms": true,
+        "worst_observed_mixed_route_p95_ms": 12.169000000000096,
+        "rss_ratio_to_desktop": {
+          "rounds": [
+            0.2675556151165907,
+            0.2641914080825682,
+            0.26300268096514745
+          ],
+          "median": 0.2641914080825682,
+          "median_reduction_at_least_30_percent": true,
+          "all_rounds_reduction_at_least_30_percent": true
+        },
+        "settled_throughput_ratio_to_desktop": {
+          "rounds": [
+            1.137323374899294,
+            1.1064197372753197,
+            1.120548723874111
+          ],
+          "median": 1.120548723874111,
+          "median_improvement_at_least_30_percent": false,
+          "all_rounds_improvement_at_least_30_percent": false
+        },
+        "per_round_route_quantile_regressions_over_10_percent": [],
+        "all_initial_targets_demonstrated": false
+      },
+      {
+        "scale": 10,
+        "rust_whole_case_failures": 0,
+        "desktop_whole_case_failures": 0,
+        "complete_comparison": true,
+        "true_lock_wait_p95": "unmeasured; sampled blocked-query age is not this metric",
+        "rust_read_failures": {
+          "cold_first_request": 0,
+          "warm": 0,
+          "mixed": 0
+        },
+        "mixed_all_routes_p95_under_500ms": true,
+        "worst_observed_mixed_route_p95_ms": 11.846415999997362,
+        "rss_ratio_to_desktop": {
+          "rounds": [
+            0.2849487574519392,
+            0.2838545161723259,
+            0.2753399879413144
+          ],
+          "median": 0.2838545161723259,
+          "median_reduction_at_least_30_percent": true,
+          "all_rounds_reduction_at_least_30_percent": true
+        },
+        "settled_throughput_ratio_to_desktop": {
+          "rounds": [
+            1.4865036351212289,
+            1.4754636168244204,
+            1.4710717581886426
+          ],
+          "median": 1.4754636168244204,
+          "median_improvement_at_least_30_percent": true,
+          "all_rounds_improvement_at_least_30_percent": true
+        },
+        "per_round_route_quantile_regressions_over_10_percent": [
+          {
+            "round": 1,
+            "phase": "cold_first_request",
+            "route": "search",
+            "metric": "p95_ms",
+            "ratio": 1.4797439499377307
+          },
+          {
+            "round": 1,
+            "phase": "cold_first_request",
+            "route": "search",
+            "metric": "p99_ms",
+            "ratio": 1.4797439499377307
+          },
+          {
+            "round": 2,
+            "phase": "cold_first_request",
+            "route": "search",
+            "metric": "p95_ms",
+            "ratio": 1.356772490412266
+          },
+          {
+            "round": 2,
+            "phase": "cold_first_request",
+            "route": "search",
+            "metric": "p99_ms",
+            "ratio": 1.356772490412266
+          },
+          {
+            "round": 3,
+            "phase": "cold_first_request",
+            "route": "search",
+            "metric": "p95_ms",
+            "ratio": 1.5083474748644825
+          },
+          {
+            "round": 3,
+            "phase": "cold_first_request",
+            "route": "search",
+            "metric": "p99_ms",
+            "ratio": 1.5083474748644825
+          },
+          {
+            "round": 3,
+            "phase": "cold_first_request",
+            "route": "profiles",
+            "metric": "p95_ms",
+            "ratio": 1.1475130628520391
+          },
+          {
+            "round": 3,
+            "phase": "cold_first_request",
+            "route": "profiles",
+            "metric": "p99_ms",
+            "ratio": 1.1475130628520391
+          }
+        ],
+        "all_initial_targets_demonstrated": false
+      }
+    ]
+  }
+}

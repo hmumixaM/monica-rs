@@ -1,0 +1,5118 @@
+{
+  "source_commit": "c2e9e2f54e6f0f84188b57b8e8f4d64ebe4b3f23",
+  "aggregation": "Median over three fresh isolated cases, ranges retained. Per-route quantiles concern successful requests; failures and success throughput are separate.",
+  "platforms": {
+    "mac": {
+      "raw_sha256": "83dcf4e780d7a64a3796ddc57d9d4ddc4d1b5be65ea0d9fddd459f06ce2403fa",
+      "metadata": {
+        "type": "metadata",
+        "time": "2026-11-13T11:09:38.621915+00:00",
+        "host": "macOS-26.6.2-arm64-arm-64bit",
+        "machine": "arm64",
+        "cpu_count": 12,
+        "memory_bytes": 25769803776,
+        "baselines": {
+          "multisource": [
+            "/Users/maxhu/play/monica-multisource",
+            "1a6e40e20c6ac12aca434b61244059d067847473"
+          ],
+          "crm": [
+            "/Users/maxhu/play/monica",
+            "6d59cfef4b1a12f678d809a00e37d8332be70b06"
+          ],
+          "desktop": [
+            "/Users/maxhu/play/monica-desktop-public",
+            "e35b49e4ca33406f0fdd7ecf8767931b44fdac87"
+          ]
+        },
+        "rust_commit": "c2e9e2f54e6f0f84188b57b8e8f4d64ebe4b3f23",
+        "rust_dirty": false,
+        "binary_sha256": "0bb13ad07c51f11f1b03883eb83488d46f6913c22ee1ec74a07e9000cb8ffa1c",
+        "arguments": {
+          "rounds": 3,
+          "scales": [
+            1,
+            10
+          ],
+          "scale_contacts": false,
+          "contacts": 100,
+          "messages": 10000,
+          "batch_size": 1000,
+          "samples": 64,
+          "concurrency": 8,
+          "backends": [
+            "rust"
+          ],
+          "output": "/Users/maxhu/play/monica-rs/.local-validation/acceptance-2026-11-12/benchmark-mac-rust-c2e9e2f.jsonl",
+          "skip_build": true,
+          "migration_timeout_seconds": 1800
+        },
+        "limitations": [
+          "Ordinary coexisting host services are not stopped. Host CPU/memory pressure is recorded; this is not a dedicated machine.",
+          "Cold means first endpoint call after imports; OS/PostgreSQL caches are not evicted.",
+          "Read failures are counted without retry; latency quantiles cover successful requests only, with failure latency and error rate reported separately.",
+          "History grows 10x with a fixed contact set unless --scale-contacts is explicitly supplied.",
+          "HTTP client uses fresh connections equally for all backends; latency includes local connection and JSON decode.",
+          "Rust accepts durable receipts asynchronously; both acceptance and settled timings are reported.",
+          "Python signed API projects per record; Rust uses bounded bulk transactions. Differences include schema/projection algorithms, not just language.",
+          "SQL/WAL cover all isolated backend databases; mixed-load SQL/WAL also include concurrent reads.",
+          "Transaction count includes monitoring connections and can lag pg_stat_database flush; SQL execution sum is not transaction wall time.",
+          "Lock/transaction/RSS samples run every 200 ms plus SQL probe duration, so brief spikes may be missed. Blocked-query age is sampled query age, not exact duration of the lock wait; do not compare it to a true lock-wait p95.",
+          "SQLx acquisition logs provide exact Rust pool latency; no corresponding Python measurement is inferred. Unavailable process I/O is null.",
+          "Mixed load uses eight readers (or configured concurrency) plus one serial importer; readers run until durable import settlement, with a minimum sample count."
+        ],
+        "composition": {
+          "current_rust_cases": 6,
+          "unchanged_baseline_cases": 18,
+          "baseline_measurement_time": "2026-11-13T09:44:54.056891+00:00",
+          "baseline_raw_sha256": "5901c9dfc17ac20b664e9a2cbb2911138428690144ac49d81f6316ae7039f266",
+          "baseline_source_metadata": {
+            "type": "metadata",
+            "time": "2026-11-13T09:44:54.056891+00:00",
+            "host": "macOS-26.6.2-arm64-arm-64bit",
+            "machine": "arm64",
+            "cpu_count": 12,
+            "memory_bytes": 25769803776,
+            "baselines": {
+              "multisource": [
+                "/Users/maxhu/play/monica-multisource",
+                "1a6e40e20c6ac12aca434b61244059d067847473"
+              ],
+              "crm": [
+                "/Users/maxhu/play/monica",
+                "6d59cfef4b1a12f678d809a00e37d8332be70b06"
+              ],
+              "desktop": [
+                "/Users/maxhu/play/monica-desktop-public",
+                "e35b49e4ca33406f0fdd7ecf8767931b44fdac87"
+              ]
+            },
+            "rust_commit": "5dfa96a7928a2b78532091c3f161c586f527aac2",
+            "rust_dirty": false,
+            "binary_sha256": "132a46ee7122bf220001d7ead86dc82ba17a09e177b83b50d3dd541856580a15",
+            "arguments": {
+              "rounds": 3,
+              "scales": [
+                1,
+                10
+              ],
+              "scale_contacts": false,
+              "contacts": 100,
+              "messages": 10000,
+              "batch_size": 1000,
+              "samples": 64,
+              "concurrency": 8,
+              "backends": [
+                "crm",
+                "desktop",
+                "multisource",
+                "rust"
+              ],
+              "output": "/Users/maxhu/play/monica-rs/.local-validation/acceptance-2026-11-12/benchmark-mac-final.jsonl",
+              "skip_build": true
+            },
+            "limitations": [
+              "Ordinary coexisting host services are not stopped. Host CPU/memory pressure is recorded; this is not a dedicated machine.",
+              "Cold means first endpoint call after imports; OS/PostgreSQL caches are not evicted.",
+              "Read failures are counted without retry; latency quantiles cover successful requests only, with failure latency and error rate reported separately.",
+              "History grows 10x with a fixed contact set unless --scale-contacts is explicitly supplied.",
+              "HTTP client uses fresh connections equally for all backends; latency includes local connection and JSON decode.",
+              "Rust accepts durable receipts asynchronously; both acceptance and settled timings are reported.",
+              "Python signed API projects per record; Rust uses bounded bulk transactions. Differences include schema/projection algorithms, not just language.",
+              "SQL/WAL cover all isolated backend databases; mixed-load SQL/WAL also include concurrent reads.",
+              "Transaction count includes monitoring connections and can lag pg_stat_database flush; SQL execution sum is not transaction wall time.",
+              "Lock/transaction/RSS samples run every 200 ms plus SQL probe duration, so brief spikes may be missed. Blocked-query age is sampled query age, not exact duration of the lock wait; do not compare it to a true lock-wait p95.",
+              "SQLx acquisition logs provide exact Rust pool latency; no corresponding Python measurement is inferred. Unavailable process I/O is null.",
+              "Mixed load uses eight readers (or configured concurrency) plus one serial importer; readers run until durable import settlement, with a minimum sample count."
+            ]
+          },
+          "limitation": "Python baseline rows retain their earlier matched three-round measurement. The six final Rust cases were rerun after an administrative migration configuration and test-readiness-only change; final Rust and baseline rows were not interleaved in the same invocation."
+        }
+      },
+      "cases": 24,
+      "failed_cases": [],
+      "groups": [
+        {
+          "backend": "crm",
+          "scale": 1,
+          "successful_cases": 3,
+          "ingest": {
+            "accept_seconds": {
+              "median": 20.33421162500008,
+              "min": 20.250315874999842,
+              "max": 20.581428375,
+              "n": 3
+            },
+            "settled_seconds": {
+              "median": 20.34790345900001,
+              "min": 20.265992832999927,
+              "max": 20.595474791999997,
+              "n": 3
+            },
+            "settled_messages_per_second": {
+              "median": 491.45112272374854,
+              "min": 485.54355269752506,
+              "max": 493.43745862362096,
+              "n": 3
+            },
+            "sql_calls_per_1000": {
+              "median": 19330.5,
+              "min": 19330.5,
+              "max": 19330.5,
+              "n": 3
+            },
+            "wal_bytes_per_1000": {
+              "median": 6383475.2,
+              "min": 6377906.4,
+              "max": 6383480.8,
+              "n": 3
+            },
+            "sql_exec_ms": {
+              "median": 3018.242277999996,
+              "min": 3016.4883059999966,
+              "max": 3095.0086219999957,
+              "n": 3
+            }
+          },
+          "reads": {
+            "cold_first_request": {
+              "requests": 18,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 26.33704099980605,
+                    "min": 26.19416699999988,
+                    "max": 28.708666999818888,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 26.33704099980605,
+                    "min": 26.19416699999988,
+                    "max": 28.708666999818888,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 26.33704099980605,
+                    "min": 26.19416699999988,
+                    "max": 28.708666999818888,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 5.277208000279643,
+                    "min": 5.274707999998185,
+                    "max": 5.84920799997235,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 5.277208000279643,
+                    "min": 5.274707999998185,
+                    "max": 5.84920799997235,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 5.277208000279643,
+                    "min": 5.274707999998185,
+                    "max": 5.84920799997235,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 27.64108400015175,
+                    "min": 27.065249999999708,
+                    "max": 27.9843329999494,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 27.64108400015175,
+                    "min": 27.065249999999708,
+                    "max": 27.9843329999494,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 27.64108400015175,
+                    "min": 27.065249999999708,
+                    "max": 27.9843329999494,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 3.4339170001658204,
+                    "min": 3.372166999998427,
+                    "max": 3.73562499999025,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 3.4339170001658204,
+                    "min": 3.372166999998427,
+                    "max": 3.73562499999025,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 3.4339170001658204,
+                    "min": 3.372166999998427,
+                    "max": 3.73562499999025,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 4.392666000057943,
+                    "min": 4.19704199998705,
+                    "max": 4.510208999999321,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 4.392666000057943,
+                    "min": 4.19704199998705,
+                    "max": 4.510208999999321,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 4.392666000057943,
+                    "min": 4.19704199998705,
+                    "max": 4.510208999999321,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 3.476290999969933,
+                    "min": 3.4276670000004117,
+                    "max": 3.4785000000283617,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 3.476290999969933,
+                    "min": 3.4276670000004117,
+                    "max": 3.4785000000283617,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 3.476290999969933,
+                    "min": 3.4276670000004117,
+                    "max": 3.4785000000283617,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 84.60057951376959,
+                "min": 80.60042805291926,
+                "max": 85.48205904681801,
+                "n": 3
+              }
+            },
+            "warm": {
+              "requests": 1152,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 16.45368750007492,
+                    "min": 16.169687499996144,
+                    "max": 16.69312500000153,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 20.27895800006263,
+                    "min": 20.10999999993146,
+                    "max": 20.36300000000324,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 52.974707999965176,
+                    "min": 49.291666999806694,
+                    "max": 57.52166699999961,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 11.975479000000178,
+                    "min": 11.922541499984618,
+                    "max": 12.464750500157606,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 16.480125000271073,
+                    "min": 15.606083999955445,
+                    "max": 16.511582999999774,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 50.61791700018148,
+                    "min": 43.65758299991285,
+                    "max": 53.42037499999819,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 15.554000000065571,
+                    "min": 15.495958500082452,
+                    "max": 16.108437499999795,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 18.781666999984736,
+                    "min": 18.597082999999515,
+                    "max": 19.244000000071537,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 51.81720799987488,
+                    "min": 48.59866700007842,
+                    "max": 56.070999999999316,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 12.190791499961051,
+                    "min": 11.942249999947308,
+                    "max": 12.280312499999724,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 15.620874999999756,
+                    "min": 15.087416000142184,
+                    "max": 20.71666700021524,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 51.34083400000122,
+                    "min": 47.00770800013743,
+                    "max": 53.10829200016087,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 11.854979500185436,
+                    "min": 11.823687499941116,
+                    "max": 12.010395500000826,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 15.666959000000702,
+                    "min": 14.317500000061045,
+                    "max": 17.43575000000419,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 49.54237500000147,
+                    "min": 45.77349999999569,
+                    "max": 51.67533299982097,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 11.3391039999442,
+                    "min": 11.330749999999057,
+                    "max": 11.341708000031758,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 14.082583000000426,
+                    "min": 13.832458000024417,
+                    "max": 14.767915999982506,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 49.49666699985755,
+                    "min": 44.557292000035886,
+                    "max": 52.26862499999996,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 555.6993982483174,
+                "min": 555.3398640268643,
+                "max": 568.6478108601035,
+                "n": 3
+              }
+            },
+            "mixed": {
+              "requests": 20703,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 19.018541999912486,
+                    "min": 18.966999999975087,
+                    "max": 19.12160400000218,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 23.596459000003733,
+                    "min": 23.207791000004363,
+                    "max": 23.63791599987053,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 29.3591249999281,
+                    "min": 26.541166999777488,
+                    "max": 30.803833999996755,
+                    "n": 3
+                  },
+                  "requests": 3454,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 15.311916999962705,
+                    "min": 15.18191700006355,
+                    "max": 15.688959000002,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 19.585832999837294,
+                    "min": 19.34533299981922,
+                    "max": 20.079542000004835,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 32.2548750000351,
+                    "min": 27.52545800000661,
+                    "max": 36.688625000124375,
+                    "n": 3
+                  },
+                  "requests": 3455,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 18.68064600012076,
+                    "min": 18.483125499869857,
+                    "max": 18.88402100000164,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 22.777082999937193,
+                    "min": 22.636207999767066,
+                    "max": 23.341457999997317,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 27.795541999921625,
+                    "min": 27.70875000000217,
+                    "max": 42.4739159998353,
+                    "n": 3
+                  },
+                  "requests": 3450,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 15.871042000071611,
+                    "min": 15.866291999827808,
+                    "max": 16.081291500000816,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 20.293457999969178,
+                    "min": 20.283624999997585,
+                    "max": 20.502458000009938,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 24.29941700006566,
+                    "min": 24.0430420000024,
+                    "max": 26.41770800028098,
+                    "n": 3
+                  },
+                  "requests": 3447,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 15.54368750000279,
+                    "min": 15.388062500051092,
+                    "max": 15.56712499996138,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 19.693666999998527,
+                    "min": 19.664749999947162,
+                    "max": 19.955540999944787,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 23.007749999997884,
+                    "min": 22.691333999773633,
+                    "max": 23.082250000015847,
+                    "n": 3
+                  },
+                  "requests": 3448,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 14.287417000105052,
+                    "min": 14.26133300000032,
+                    "max": 14.29208300010032,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 18.526000000001375,
+                    "min": 18.520166000143945,
+                    "max": 18.544000000019878,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 23.254541999904177,
+                    "min": 23.19287499994971,
+                    "max": 28.03508400000254,
+                    "n": 3
+                  },
+                  "requests": 3449,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 474.81639320664226,
+                "min": 470.7976082346466,
+                "max": 475.3346108357909,
+                "n": 3
+              }
+            }
+          },
+          "resources": {
+            "server_cpu_seconds": {
+              "median": 33.859567776000006,
+              "min": 33.851524672000004,
+              "max": 34.185070688,
+              "n": 3
+            },
+            "server_peak_rss_bytes": {
+              "median": 244432896,
+              "min": 243744768,
+              "max": 244776960,
+              "n": 3
+            },
+            "host_cpu_busy_fraction": {
+              "median": 0.20823313057050485,
+              "min": 0.20748491704413807,
+              "max": 0.21916150946936153,
+              "n": 3
+            },
+            "host_min_available_memory_bytes": {
+              "median": 11664703488,
+              "min": 10868441088,
+              "max": 12902514688,
+              "n": 3
+            },
+            "max_observed_pending_imports": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "lock_wait_samples": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "max_lock_waiters": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "io_wait_samples": {
+              "median": 3,
+              "min": 0,
+              "max": 4,
+              "n": 3
+            },
+            "longest_observed_transaction_ms": {
+              "median": 14382.56,
+              "min": 14118.043,
+              "max": 14382.807,
+              "n": 3
+            }
+          },
+          "pool_acquire_p95_ms": null
+        },
+        {
+          "backend": "crm",
+          "scale": 10,
+          "successful_cases": 3,
+          "ingest": {
+            "accept_seconds": {
+              "median": 208.63788083400004,
+              "min": 207.94167425000023,
+              "max": 210.14294699999996,
+              "n": 3
+            },
+            "settled_seconds": {
+              "median": 208.66739212499988,
+              "min": 207.96811025000034,
+              "max": 210.16771325,
+              "n": 3
+            },
+            "settled_messages_per_second": {
+              "median": 479.2315607227032,
+              "min": 475.81047751634134,
+              "max": 480.84295173807703,
+              "n": 3
+            },
+            "sql_calls_per_1000": {
+              "median": 19329.15,
+              "min": 19329.15,
+              "max": 19329.15,
+              "n": 3
+            },
+            "wal_bytes_per_1000": {
+              "median": 6930332.4,
+              "min": 6924715.36,
+              "max": 6933672.56,
+              "n": 3
+            },
+            "sql_exec_ms": {
+              "median": 34138.58603499977,
+              "min": 33643.829701999835,
+              "max": 34864.50321999989,
+              "n": 3
+            }
+          },
+          "reads": {
+            "cold_first_request": {
+              "requests": 18,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 259.7690840002542,
+                    "min": 256.4876669999876,
+                    "max": 275.32208299999184,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 259.7690840002542,
+                    "min": 256.4876669999876,
+                    "max": 275.32208299999184,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 259.7690840002542,
+                    "min": 256.4876669999876,
+                    "max": 275.32208299999184,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 7.02295899964156,
+                    "min": 6.077666999999565,
+                    "max": 12.327500000083091,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 7.02295899964156,
+                    "min": 6.077666999999565,
+                    "max": 12.327500000083091,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 7.02295899964156,
+                    "min": 6.077666999999565,
+                    "max": 12.327500000083091,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 102.4043749998782,
+                    "min": 99.20391700001119,
+                    "max": 105.51641699976244,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 102.4043749998782,
+                    "min": 99.20391700001119,
+                    "max": 105.51641699976244,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 102.4043749998782,
+                    "min": 99.20391700001119,
+                    "max": 105.51641699976244,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 3.5816670001622697,
+                    "min": 3.5085000000094624,
+                    "max": 3.718040999956429,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 3.5816670001622697,
+                    "min": 3.5085000000094624,
+                    "max": 3.718040999956429,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 3.5816670001622697,
+                    "min": 3.5085000000094624,
+                    "max": 3.718040999956429,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 5.324040999767021,
+                    "min": 5.109124999989945,
+                    "max": 5.779666999842448,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 5.324040999767021,
+                    "min": 5.109124999989945,
+                    "max": 5.779666999842448,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 5.324040999767021,
+                    "min": 5.109124999989945,
+                    "max": 5.779666999842448,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 3.4517080000000533,
+                    "min": 3.2928749997154227,
+                    "max": 3.7177079998400586,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 3.4517080000000533,
+                    "min": 3.2928749997154227,
+                    "max": 3.7177079998400586,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 3.4517080000000533,
+                    "min": 3.2928749997154227,
+                    "max": 3.7177079998400586,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 15.68727759329241,
+                "min": 14.767840320257378,
+                "max": 16.02760847451341,
+                "n": 3
+              }
+            },
+            "warm": {
+              "requests": 1152,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 282.7748755000812,
+                    "min": 269.8018954999952,
+                    "max": 307.95852100004595,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 374.3329999999787,
+                    "min": 373.72258300001704,
+                    "max": 378.38716700025543,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 398.83366599997316,
+                    "min": 390.5864170001223,
+                    "max": 425.3686249999191,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 18.36864599999899,
+                    "min": 17.278521500003308,
+                    "max": 23.25039599986667,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 105.24645900022733,
+                    "min": 104.45399999980509,
+                    "max": 128.45583300003227,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 160.98525000006703,
+                    "min": 160.96412500019142,
+                    "max": 220.71641599995928,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 47.848603999909756,
+                    "min": 47.6485834999778,
+                    "max": 55.29110399970705,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 135.0699170000098,
+                    "min": 128.7707500000579,
+                    "max": 145.30929200009268,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 189.41304100007983,
+                    "min": 186.3202499999943,
+                    "max": 303.0695420002303,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 38.3378955000353,
+                    "min": 35.739270999982864,
+                    "max": 39.54552100026376,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 113.63945799985231,
+                    "min": 103.03720799998928,
+                    "max": 115.09729099998367,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 158.05237499989744,
+                    "min": 149.37695800000483,
+                    "max": 159.62612500015894,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 33.04252099997029,
+                    "min": 23.531541500005915,
+                    "max": 34.897270999863395,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 83.60662500001581,
+                    "min": 74.41491700001279,
+                    "max": 93.04666599973643,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 105.24050000003626,
+                    "min": 97.40629199995965,
+                    "max": 157.07420899980207,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 15.368042000091009,
+                    "min": 9.370478999983334,
+                    "max": 15.639749999991182,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 51.27179200002274,
+                    "min": 49.16524999998728,
+                    "max": 55.043874999682885,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 102.38237499999059,
+                    "min": 76.79691600014849,
+                    "max": 109.00112500030446,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 98.23592537691641,
+                "min": 88.59279856968001,
+                "max": 104.11542187732893,
+                "n": 3
+              }
+            },
+            "mixed": {
+              "requests": 9913,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 302.18391700009306,
+                    "min": 260.6765830000768,
+                    "max": 325.78541700002006,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 485.00158400020155,
+                    "min": 393.7408339998001,
+                    "max": 832.387084000004,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 553.8151669998115,
+                    "min": 483.4812079998301,
+                    "max": 2724.353624999992,
+                    "n": 3
+                  },
+                  "requests": 1655,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 74.54856300000756,
+                    "min": 60.29262499987453,
+                    "max": 75.68077100000892,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 236.95883399977902,
+                    "min": 206.59824999984266,
+                    "max": 301.6602920000082,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 363.2243750002999,
+                    "min": 305.1186669999879,
+                    "max": 746.7243749999852,
+                    "n": 3
+                  },
+                  "requests": 1649,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 58.39795800011416,
+                    "min": 56.22935349992986,
+                    "max": 61.921541999993224,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 148.7082919999807,
+                    "min": 143.76212499973917,
+                    "max": 156.2714589999814,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 236.74604200004978,
+                    "min": 218.86162500004502,
+                    "max": 310.0478329999987,
+                    "n": 3
+                  },
+                  "requests": 1651,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 15.922166000109428,
+                    "min": 15.534540999851743,
+                    "max": 17.1269579999489,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 185.55187499998738,
+                    "min": 157.57945899986225,
+                    "max": 242.0952499996929,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 353.3242500000142,
+                    "min": 323.819457999889,
+                    "max": 389.5766249997905,
+                    "n": 3
+                  },
+                  "requests": 1653,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 15.263916000094468,
+                    "min": 15.095916499831219,
+                    "max": 15.946499999984098,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 170.47425000004068,
+                    "min": 168.07770800005528,
+                    "max": 217.3612920000778,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 322.7629580001121,
+                    "min": 244.82858300007138,
+                    "max": 356.2968749999982,
+                    "n": 3
+                  },
+                  "requests": 1652,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 13.878750000003492,
+                    "min": 13.738915999965684,
+                    "max": 15.06187500001488,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 152.4654590002683,
+                    "min": 140.91004099964266,
+                    "max": 220.17675000000736,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 321.70879200020863,
+                    "min": 271.7794159998448,
+                    "max": 424.360374999992,
+                    "n": 3
+                  },
+                  "requests": 1653,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 80.5223777599814,
+                "min": 66.11099918717228,
+                "max": 92.96475883213856,
+                "n": 3
+              }
+            }
+          },
+          "resources": {
+            "server_cpu_seconds": {
+              "median": 174.13553535999998,
+              "min": 174.048559424,
+              "max": 174.65816275199998,
+              "n": 3
+            },
+            "server_peak_rss_bytes": {
+              "median": 244318208,
+              "min": 244056064,
+              "max": 244334592,
+              "n": 3
+            },
+            "host_cpu_busy_fraction": {
+              "median": 0.2163194745151078,
+              "min": 0.18401155108053158,
+              "max": 0.2183188651000908,
+              "n": 3
+            },
+            "host_min_available_memory_bytes": {
+              "median": 10635984896,
+              "min": 10404528128,
+              "max": 12014223360,
+              "n": 3
+            },
+            "max_observed_pending_imports": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "lock_wait_samples": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "max_lock_waiters": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "io_wait_samples": {
+              "median": 179,
+              "min": 175,
+              "max": 191,
+              "n": 3
+            },
+            "longest_observed_transaction_ms": {
+              "median": 3941.997,
+              "min": 3842.697,
+              "max": 6065.655,
+              "n": 3
+            }
+          },
+          "pool_acquire_p95_ms": null
+        },
+        {
+          "backend": "desktop",
+          "scale": 1,
+          "successful_cases": 3,
+          "ingest": {
+            "accept_seconds": {
+              "median": 20.345108667000204,
+              "min": 20.115544999999884,
+              "max": 20.626839374999996,
+              "n": 3
+            },
+            "settled_seconds": {
+              "median": 20.360050209000292,
+              "min": 20.12930449999999,
+              "max": 20.640742792000005,
+              "n": 3
+            },
+            "settled_messages_per_second": {
+              "median": 491.1579243345596,
+              "min": 484.4786886194729,
+              "max": 496.7881528147187,
+              "n": 3
+            },
+            "sql_calls_per_1000": {
+              "median": 19330.5,
+              "min": 19330.5,
+              "max": 19330.5,
+              "n": 3
+            },
+            "wal_bytes_per_1000": {
+              "median": 6368181.6,
+              "min": 6361855.2,
+              "max": 6382490.4,
+              "n": 3
+            },
+            "sql_exec_ms": {
+              "median": 3021.5447009999953,
+              "min": 2883.864768999988,
+              "max": 3077.0633559999997,
+              "n": 3
+            }
+          },
+          "reads": {
+            "cold_first_request": {
+              "requests": 18,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 26.475249999748485,
+                    "min": 26.335250000002475,
+                    "max": 26.813875000016196,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 26.475249999748485,
+                    "min": 26.335250000002475,
+                    "max": 26.813875000016196,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 26.475249999748485,
+                    "min": 26.335250000002475,
+                    "max": 26.813875000016196,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 5.215958000007959,
+                    "min": 5.138125000001992,
+                    "max": 5.37004100010563,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 5.215958000007959,
+                    "min": 5.138125000001992,
+                    "max": 5.37004100010563,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 5.215958000007959,
+                    "min": 5.138125000001992,
+                    "max": 5.37004100010563,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 26.688708999998312,
+                    "min": 26.527083000019047,
+                    "max": 27.321084000050178,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 26.688708999998312,
+                    "min": 26.527083000019047,
+                    "max": 27.321084000050178,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 26.688708999998312,
+                    "min": 26.527083000019047,
+                    "max": 27.321084000050178,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 3.281708000031358,
+                    "min": 3.1572500000009995,
+                    "max": 3.4069999999246647,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 3.281708000031358,
+                    "min": 3.1572500000009995,
+                    "max": 3.4069999999246647,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 3.281708000031358,
+                    "min": 3.1572500000009995,
+                    "max": 3.4069999999246647,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 4.372666999998387,
+                    "min": 4.2405419999340666,
+                    "max": 4.505249999965599,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 4.372666999998387,
+                    "min": 4.2405419999340666,
+                    "max": 4.505249999965599,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 4.372666999998387,
+                    "min": 4.2405419999340666,
+                    "max": 4.505249999965599,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 3.4153750000314176,
+                    "min": 3.195458999925904,
+                    "max": 3.430457999996861,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 3.4153750000314176,
+                    "min": 3.195458999925904,
+                    "max": 3.430457999996861,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 3.4153750000314176,
+                    "min": 3.195458999925904,
+                    "max": 3.430457999996861,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 86.33077998060573,
+                "min": 84.28485431924526,
+                "max": 86.53294922355579,
+                "n": 3
+              }
+            },
+            "warm": {
+              "requests": 1152,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 16.55793750000356,
+                    "min": 16.402854000034495,
+                    "max": 17.000249500028985,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 20.841957999891747,
+                    "min": 19.43825000034849,
+                    "max": 20.974249999994754,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 53.80179200005841,
+                    "min": 52.54508400000191,
+                    "max": 53.861042000335146,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 12.16652049999567,
+                    "min": 12.030728999889106,
+                    "max": 12.749770999903376,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 16.0406669999702,
+                    "min": 14.337582999814913,
+                    "max": 17.006667000003972,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 52.68225000008897,
+                    "min": 43.81616699998858,
+                    "max": 55.32287500000166,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 15.970250000002295,
+                    "min": 15.787666000051104,
+                    "max": 16.085229500049536,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 18.414749999919877,
+                    "min": 18.129874999885942,
+                    "max": 18.633207999997126,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 51.97183299992503,
+                    "min": 50.29583299999274,
+                    "max": 53.77062500019747,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 11.858228999926723,
+                    "min": 11.795207999995228,
+                    "max": 11.904208000032668,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 14.767667000000984,
+                    "min": 13.73254200007068,
+                    "max": 14.963666999847192,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 49.62220800000239,
+                    "min": 47.84941700017953,
+                    "max": 52.548124999930224,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 11.85522950000717,
+                    "min": 11.589999499960868,
+                    "max": 12.10102050004025,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 13.95862500000078,
+                    "min": 13.85008299985202,
+                    "max": 13.968166000040583,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 48.08875000000512,
+                    "min": 47.60224999995444,
+                    "max": 50.01895799978229,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 11.718375000100423,
+                    "min": 11.36989600013294,
+                    "max": 11.810666499997069,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 13.801916999995,
+                    "min": 13.42225000007602,
+                    "max": 14.740832999905251,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 46.28516699995089,
+                    "min": 44.56745799998885,
+                    "max": 50.15974999992068,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 564.1527571229557,
+                "min": 558.3032183510948,
+                "max": 564.5055376773079,
+                "n": 3
+              }
+            },
+            "mixed": {
+              "requests": 21013,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 19.08591599999454,
+                    "min": 18.885041999993746,
+                    "max": 19.091957999989972,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 23.506917000005956,
+                    "min": 23.35804199992708,
+                    "max": 23.827375000109896,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 41.43545800025095,
+                    "min": 26.155375000001868,
+                    "max": 59.78483299986692,
+                    "n": 3
+                  },
+                  "requests": 3502,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 15.619415999935882,
+                    "min": 15.418249999996192,
+                    "max": 15.712895999968168,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 19.934292000002074,
+                    "min": 19.862333000219223,
+                    "max": 20.109541000010722,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 38.46616700002414,
+                    "min": 24.027375000059692,
+                    "max": 54.56183299999395,
+                    "n": 3
+                  },
+                  "requests": 3503,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 18.756625000037275,
+                    "min": 18.644333000004565,
+                    "max": 18.84787500011953,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 22.948042000052737,
+                    "min": 22.690459000003216,
+                    "max": 23.080292000031477,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 26.147792000074332,
+                    "min": 25.9665829998994,
+                    "max": 34.293208000008235,
+                    "n": 3
+                  },
+                  "requests": 3503,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 15.861750000112806,
+                    "min": 15.733249999925647,
+                    "max": 16.029708000004916,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 20.376082999973733,
+                    "min": 20.13820900015162,
+                    "max": 20.445042000005742,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 52.76462499978152,
+                    "min": 23.108207999939623,
+                    "max": 54.92758300000844,
+                    "n": 3
+                  },
+                  "requests": 3502,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 15.46606249985416,
+                    "min": 15.459812499997838,
+                    "max": 15.663542000083908,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 19.35079199984102,
+                    "min": 19.195167000006563,
+                    "max": 20.035457999938444,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 21.997374999955355,
+                    "min": 21.11708299999293,
+                    "max": 40.835374999915075,
+                    "n": 3
+                  },
+                  "requests": 3503,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 14.264312000022983,
+                    "min": 14.106874999924912,
+                    "max": 14.410312499997247,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 18.413457999997718,
+                    "min": 18.37429199986218,
+                    "max": 18.680708999909257,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 21.259041000121215,
+                    "min": 21.241165999981604,
+                    "max": 21.36262500000896,
+                    "n": 3
+                  },
+                  "requests": 3500,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 472.6800821949741,
+                "min": 472.2465793417677,
+                "max": 473.2672454960681,
+                "n": 3
+              }
+            }
+          },
+          "resources": {
+            "server_cpu_seconds": {
+              "median": 34.25263468799999,
+              "min": 34.19521264,
+              "max": 34.53909232,
+              "n": 3
+            },
+            "server_peak_rss_bytes": {
+              "median": 244465664,
+              "min": 244449280,
+              "max": 244514816,
+              "n": 3
+            },
+            "host_cpu_busy_fraction": {
+              "median": 0.20969682943643153,
+              "min": 0.20882214922562436,
+              "max": 0.2187499999991831,
+              "n": 3
+            },
+            "host_min_available_memory_bytes": {
+              "median": 11508891648,
+              "min": 10839851008,
+              "max": 12747243520,
+              "n": 3
+            },
+            "max_observed_pending_imports": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "lock_wait_samples": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "max_lock_waiters": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "io_wait_samples": {
+              "median": 1,
+              "min": 1,
+              "max": 3,
+              "n": 3
+            },
+            "longest_observed_transaction_ms": {
+              "median": 14492.177,
+              "min": 14372.531,
+              "max": 14499.446,
+              "n": 3
+            }
+          },
+          "pool_acquire_p95_ms": null
+        },
+        {
+          "backend": "desktop",
+          "scale": 10,
+          "successful_cases": 3,
+          "ingest": {
+            "accept_seconds": {
+              "median": 208.37277537499995,
+              "min": 208.13627900000006,
+              "max": 210.49839262499995,
+              "n": 3
+            },
+            "settled_seconds": {
+              "median": 208.39910295899972,
+              "min": 208.163673667,
+              "max": 210.52654674999997,
+              "n": 3
+            },
+            "settled_messages_per_second": {
+              "median": 479.84851460552557,
+              "min": 474.99947889588424,
+              "max": 480.39121446314533,
+              "n": 3
+            },
+            "sql_calls_per_1000": {
+              "median": 19329.15,
+              "min": 19329.15,
+              "max": 19329.15,
+              "n": 3
+            },
+            "wal_bytes_per_1000": {
+              "median": 6930352.64,
+              "min": 6928716.72,
+              "max": 6932653.28,
+              "n": 3
+            },
+            "sql_exec_ms": {
+              "median": 34048.392302999564,
+              "min": 33798.03740099986,
+              "max": 34191.88895099981,
+              "n": 3
+            }
+          },
+          "reads": {
+            "cold_first_request": {
+              "requests": 18,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 218.0159580000236,
+                    "min": 212.94654200005425,
+                    "max": 230.40137499992852,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 218.0159580000236,
+                    "min": 212.94654200005425,
+                    "max": 230.40137499992852,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 218.0159580000236,
+                    "min": 212.94654200005425,
+                    "max": 230.40137499992852,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 6.477750000158267,
+                    "min": 6.287208000003375,
+                    "max": 6.481540999629942,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 6.477750000158267,
+                    "min": 6.287208000003375,
+                    "max": 6.481540999629942,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 6.477750000158267,
+                    "min": 6.287208000003375,
+                    "max": 6.481540999629942,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 101.33929199992053,
+                    "min": 100.96341600001324,
+                    "max": 103.80366700019295,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 101.33929199992053,
+                    "min": 100.96341600001324,
+                    "max": 103.80366700019295,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 101.33929199992053,
+                    "min": 100.96341600001324,
+                    "max": 103.80366700019295,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 3.673582999908831,
+                    "min": 3.5974170000372396,
+                    "max": 3.7318749999712963,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 3.673582999908831,
+                    "min": 3.5974170000372396,
+                    "max": 3.7318749999712963,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 3.673582999908831,
+                    "min": 3.5974170000372396,
+                    "max": 3.7318749999712963,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 5.3913330000341375,
+                    "min": 5.360208000070088,
+                    "max": 6.421084000066912,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 5.3913330000341375,
+                    "min": 5.360208000070088,
+                    "max": 6.421084000066912,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 5.3913330000341375,
+                    "min": 5.360208000070088,
+                    "max": 6.421084000066912,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 4.0090410000175325,
+                    "min": 3.6522499999591673,
+                    "max": 4.050999999890337,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 4.0090410000175325,
+                    "min": 3.6522499999591673,
+                    "max": 4.050999999890337,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 4.0090410000175325,
+                    "min": 3.6522499999591673,
+                    "max": 4.050999999890337,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 17.68832292361028,
+                "min": 17.027375052768587,
+                "max": 17.838006392525877,
+                "n": 3
+              }
+            },
+            "warm": {
+              "requests": 1152,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 261.02927150009236,
+                    "min": 230.9658120000222,
+                    "max": 268.07160400005614,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 332.6192910000145,
+                    "min": 330.5656669999735,
+                    "max": 362.16212500039546,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 387.0186660000172,
+                    "min": 337.68241699999635,
+                    "max": 397.9572080002072,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 16.95158350003112,
+                    "min": 13.335979500027406,
+                    "max": 24.204312499932712,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 104.39949999999953,
+                    "min": 71.95304200001829,
+                    "max": 120.78841699985787,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 141.10549999986688,
+                    "min": 114.62741599996207,
+                    "max": 172.83837500008303,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 46.179895500017665,
+                    "min": 42.38033300003963,
+                    "max": 54.291124499968646,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 127.53441700010626,
+                    "min": 105.32912500002567,
+                    "max": 134.32008300014786,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 166.87645899992276,
+                    "min": 142.95091600001797,
+                    "max": 191.85824999999568,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 37.86852049984191,
+                    "min": 36.692354000081195,
+                    "max": 37.962958499974775,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 97.44491699984792,
+                    "min": 84.2265830000315,
+                    "max": 102.8131250000115,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 124.6517079998739,
+                    "min": 108.86325000001307,
+                    "max": 140.08004099969185,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 26.45197900005769,
+                    "min": 21.040333500081942,
+                    "max": 28.609645999949862,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 73.7659999999778,
+                    "min": 62.54091700009212,
+                    "max": 86.30933399990681,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 99.53179199987972,
+                    "min": 90.5878329999723,
+                    "max": 116.75679199970546,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 9.246665999853576,
+                    "min": 9.177666500022497,
+                    "max": 11.765916999991077,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 47.28999999997541,
+                    "min": 43.60741699997561,
+                    "max": 52.2700840001562,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 67.24475000009988,
+                    "min": 60.34279200002857,
+                    "max": 75.88874999987638,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 107.21512788701934,
+                "min": 103.02820187777098,
+                "max": 118.65055538336458,
+                "n": 3
+              }
+            },
+            "mixed": {
+              "requests": 10829,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 278.72895899963623,
+                    "min": 261.9360419998884,
+                    "max": 281.39900050007327,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 418.60529199993834,
+                    "min": 387.7224999999953,
+                    "max": 429.72708299998885,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 509.6004580000226,
+                    "min": 463.1457089999458,
+                    "max": 564.2929169998752,
+                    "n": 3
+                  },
+                  "requests": 1812,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 62.971207999908074,
+                    "min": 50.57412500002556,
+                    "max": 70.26795800015861,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 184.42933400001493,
+                    "min": 171.89783399999214,
+                    "max": 209.82791599999473,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 307.19483300026695,
+                    "min": 302.11658400003216,
+                    "max": 311.2512919999517,
+                    "n": 3
+                  },
+                  "requests": 1803,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 57.67866699989099,
+                    "min": 56.357499499995356,
+                    "max": 58.212062500160755,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 142.80637499996374,
+                    "min": 132.81062499993368,
+                    "max": 145.47008299996378,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 242.8951249999045,
+                    "min": 228.76991699990867,
+                    "max": 322.64266699996824,
+                    "n": 3
+                  },
+                  "requests": 1803,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 16.229709000072035,
+                    "min": 15.53845800003728,
+                    "max": 16.253812499940068,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 176.81537499993283,
+                    "min": 131.4435000000458,
+                    "max": 178.53362500000003,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 329.83166600001823,
+                    "min": 248.1354999999894,
+                    "max": 338.03079099971,
+                    "n": 3
+                  },
+                  "requests": 1802,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 15.66302099990935,
+                    "min": 15.569208500039622,
+                    "max": 16.4815829998588,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 171.2183750000804,
+                    "min": 123.70254200004638,
+                    "max": 199.4924999999057,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 339.5344579998891,
+                    "min": 281.08979199998885,
+                    "max": 345.9099580002203,
+                    "n": 3
+                  },
+                  "requests": 1803,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 14.06895899981464,
+                    "min": 14.018290999956662,
+                    "max": 14.317061999918224,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 143.32937500012122,
+                    "min": 123.82341700003963,
+                    "max": 165.55575000006684,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 283.2665000000816,
+                    "min": 258.4935830000177,
+                    "max": 316.69208300002083,
+                    "n": 3
+                  },
+                  "requests": 1806,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 88.6441793351812,
+                "min": 85.88168425844923,
+                "max": 95.4661976468386,
+                "n": 3
+              }
+            }
+          },
+          "resources": {
+            "server_cpu_seconds": {
+              "median": 174.550943104,
+              "min": 174.52524307199997,
+              "max": 177.33007129600003,
+              "n": 3
+            },
+            "server_peak_rss_bytes": {
+              "median": 244563968,
+              "min": 244154368,
+              "max": 244596736,
+              "n": 3
+            },
+            "host_cpu_busy_fraction": {
+              "median": 0.21695630329821225,
+              "min": 0.21575215123648261,
+              "max": 0.22283726919158287,
+              "n": 3
+            },
+            "host_min_available_memory_bytes": {
+              "median": 10644193280,
+              "min": 10478895104,
+              "max": 11605262336,
+              "n": 3
+            },
+            "max_observed_pending_imports": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "lock_wait_samples": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "max_lock_waiters": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "io_wait_samples": {
+              "median": 172,
+              "min": 162,
+              "max": 174,
+              "n": 3
+            },
+            "longest_observed_transaction_ms": {
+              "median": 3994.596,
+              "min": 3817.668,
+              "max": 4187.847,
+              "n": 3
+            }
+          },
+          "pool_acquire_p95_ms": null
+        },
+        {
+          "backend": "multisource",
+          "scale": 1,
+          "successful_cases": 3,
+          "ingest": {
+            "accept_seconds": {
+              "median": 26.619285457999922,
+              "min": 26.468784083999992,
+              "max": 26.628378082999916,
+              "n": 3
+            },
+            "settled_seconds": {
+              "median": 26.634903165999958,
+              "min": 26.48352525,
+              "max": 26.643535207999776,
+              "n": 3
+            },
+            "settled_messages_per_second": {
+              "median": 375.4472069102628,
+              "min": 375.32556854532874,
+              "max": 377.5932360062224,
+              "n": 3
+            },
+            "sql_calls_per_1000": {
+              "median": 23330.5,
+              "min": 23330.5,
+              "max": 23330.5,
+              "n": 3
+            },
+            "wal_bytes_per_1000": {
+              "median": 8271406.4,
+              "min": 8267117.6,
+              "max": 8272624.8,
+              "n": 3
+            },
+            "sql_exec_ms": {
+              "median": 5325.300929999999,
+              "min": 5269.752347999989,
+              "max": 5419.0551150000065,
+              "n": 3
+            }
+          },
+          "reads": {
+            "cold_first_request": {
+              "requests": 18,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 27.47233399986726,
+                    "min": 26.661625000002687,
+                    "max": 27.744167000037123,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 27.47233399986726,
+                    "min": 26.661625000002687,
+                    "max": 27.744167000037123,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 27.47233399986726,
+                    "min": 26.661625000002687,
+                    "max": 27.744167000037123,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 5.4423750000012205,
+                    "min": 5.377500000122382,
+                    "max": 5.45149999993555,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 5.4423750000012205,
+                    "min": 5.377500000122382,
+                    "max": 5.45149999993555,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 5.4423750000012205,
+                    "min": 5.377500000122382,
+                    "max": 5.45149999993555,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 27.35808400007045,
+                    "min": 27.04508300000441,
+                    "max": 27.852208000240353,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 27.35808400007045,
+                    "min": 27.04508300000441,
+                    "max": 27.852208000240353,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 27.35808400007045,
+                    "min": 27.04508300000441,
+                    "max": 27.852208000240353,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 3.696083000022554,
+                    "min": 3.44799999999168,
+                    "max": 3.815208999640163,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 3.696083000022554,
+                    "min": 3.44799999999168,
+                    "max": 3.815208999640163,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 3.696083000022554,
+                    "min": 3.44799999999168,
+                    "max": 3.815208999640163,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 4.884874999788735,
+                    "min": 4.6262080000047945,
+                    "max": 5.900249999967855,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 4.884874999788735,
+                    "min": 4.6262080000047945,
+                    "max": 5.900249999967855,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 4.884874999788735,
+                    "min": 4.6262080000047945,
+                    "max": 5.900249999967855,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 11.177125000358501,
+                    "min": 11.003083000005631,
+                    "max": 11.530083000025115,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 11.177125000358501,
+                    "min": 11.003083000005631,
+                    "max": 11.530083000025115,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 11.177125000358501,
+                    "min": 11.003083000005631,
+                    "max": 11.530083000025115,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 73.92641199857749,
+                "min": 72.98940732715953,
+                "max": 76.34781765107535,
+                "n": 3
+              }
+            },
+            "warm": {
+              "requests": 1152,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 18.76014600009057,
+                    "min": 18.420478999999546,
+                    "max": 18.89860400001453,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 21.828333000030398,
+                    "min": 21.639375000006567,
+                    "max": 23.3890419999625,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 58.65095900000483,
+                    "min": 55.528125000364525,
+                    "max": 61.05758299986519,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 14.255270999910863,
+                    "min": 14.107479000003309,
+                    "max": 14.39352099998814,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 17.643916999986686,
+                    "min": 17.056541999991737,
+                    "max": 19.315584000196395,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 56.13870800000598,
+                    "min": 50.66624999972191,
+                    "max": 58.23941700009527,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 17.485395999997877,
+                    "min": 17.482540999708363,
+                    "max": 18.16531250017306,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 21.640957999807142,
+                    "min": 21.126249999994684,
+                    "max": 22.87037500036604,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 52.253374999992275,
+                    "min": 52.19916700025351,
+                    "max": 55.4937910001172,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 14.816541999834953,
+                    "min": 14.7522710000203,
+                    "max": 14.952104499997176,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 18.605790999998817,
+                    "min": 17.669791999878726,
+                    "max": 18.717542000104004,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 51.38670799999545,
+                    "min": 48.034166999968875,
+                    "max": 52.97729099993376,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 14.038000500001147,
+                    "min": 13.894812999978967,
+                    "max": 14.523729000075036,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 17.357833000005485,
+                    "min": 16.802459000018644,
+                    "max": 18.421833000004995,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 54.998083000000975,
+                    "min": 47.79920900000434,
+                    "max": 55.75441700011652,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 19.63054199995895,
+                    "min": 19.41081250015486,
+                    "max": 19.782166999995354,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 23.355082999998444,
+                    "min": 22.498167000094327,
+                    "max": 23.73524999984511,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 63.88420800021777,
+                    "min": 57.695082999998704,
+                    "max": 67.1807500000341,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 456.4703106331034,
+                "min": 451.8264556750695,
+                "max": 458.48241722933295,
+                "n": 3
+              }
+            },
+            "mixed": {
+              "requests": 24304,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 20.683645999952205,
+                    "min": 20.59320800000819,
+                    "max": 20.699041999932888,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 26.491334000183997,
+                    "min": 26.252999999996973,
+                    "max": 26.501709000001483,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 38.81554100001949,
+                    "min": 30.423916000017925,
+                    "max": 56.42195900009028,
+                    "n": 3
+                  },
+                  "requests": 4050,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 17.833874999723776,
+                    "min": 17.619458500007568,
+                    "max": 17.840520500158163,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 23.10075000013967,
+                    "min": 23.07162500000004,
+                    "max": 23.195542000166824,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 33.06304099987756,
+                    "min": 26.54562500015345,
+                    "max": 34.71195900002044,
+                    "n": 3
+                  },
+                  "requests": 4053,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 20.672187499940264,
+                    "min": 20.58737499999097,
+                    "max": 20.729062999976122,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 26.763667000011537,
+                    "min": 26.46079200007989,
+                    "max": 26.946458000111306,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 32.67333299982056,
+                    "min": 31.668125000123837,
+                    "max": 47.78529099999673,
+                    "n": 3
+                  },
+                  "requests": 4051,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 18.102958500094246,
+                    "min": 17.961999999982936,
+                    "max": 18.284916999846246,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 24.129917000010437,
+                    "min": 24.083207999865408,
+                    "max": 24.24070799997935,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 43.207332999998016,
+                    "min": 32.94445800020185,
+                    "max": 59.01999999991858,
+                    "n": 3
+                  },
+                  "requests": 4050,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 17.625958000010655,
+                    "min": 17.49579100032861,
+                    "max": 17.896375499958594,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 23.36670799991225,
+                    "min": 23.0981250000184,
+                    "max": 23.4320409999782,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 41.617458000018814,
+                    "min": 30.711582999629172,
+                    "max": 59.57179200001406,
+                    "n": 3
+                  },
+                  "requests": 4051,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 23.449042000265763,
+                    "min": 23.363332999991826,
+                    "max": 23.800749999963955,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 29.910749999999098,
+                    "min": 29.588291999999683,
+                    "max": 29.91491600005247,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 63.19933400004629,
+                    "min": 34.73325000001637,
+                    "max": 65.2620000000752,
+                    "n": 3
+                  },
+                  "requests": 4049,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 393.31295490200307,
+                "min": 390.76446160344403,
+                "max": 394.4312950618889,
+                "n": 3
+              }
+            }
+          },
+          "resources": {
+            "server_cpu_seconds": {
+              "median": 44.596809375999996,
+              "min": 44.525089535999996,
+              "max": 44.65233104,
+              "n": 3
+            },
+            "server_peak_rss_bytes": {
+              "median": 245547008,
+              "min": 245366784,
+              "max": 246120448,
+              "n": 3
+            },
+            "host_cpu_busy_fraction": {
+              "median": 0.24546024885814877,
+              "min": 0.20528543804328803,
+              "max": 0.25089630686663766,
+              "n": 3
+            },
+            "host_min_available_memory_bytes": {
+              "median": 11550244864,
+              "min": 10860740608,
+              "max": 12685623296,
+              "n": 3
+            },
+            "max_observed_pending_imports": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "lock_wait_samples": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "max_lock_waiters": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "io_wait_samples": {
+              "median": 2,
+              "min": 2,
+              "max": 4,
+              "n": 3
+            },
+            "longest_observed_transaction_ms": {
+              "median": 20370.112,
+              "min": 20314.766,
+              "max": 20394.657,
+              "n": 3
+            }
+          },
+          "pool_acquire_p95_ms": null
+        },
+        {
+          "backend": "multisource",
+          "scale": 10,
+          "successful_cases": 3,
+          "ingest": {
+            "accept_seconds": {
+              "median": 272.79124387499996,
+              "min": 271.6365329580001,
+              "max": 273.816777041,
+              "n": 3
+            },
+            "settled_seconds": {
+              "median": 272.8170680420003,
+              "min": 271.664652917,
+              "max": 273.844463541,
+              "n": 3
+            },
+            "settled_messages_per_second": {
+              "median": 366.54598159014364,
+              "min": 365.17079332892195,
+              "max": 368.1008880848123,
+              "n": 3
+            },
+            "sql_calls_per_1000": {
+              "median": 23329.15,
+              "min": 23329.15,
+              "max": 23329.15,
+              "n": 3
+            },
+            "wal_bytes_per_1000": {
+              "median": 8909186.88,
+              "min": 8898890.96,
+              "max": 8917159.92,
+              "n": 3
+            },
+            "sql_exec_ms": {
+              "median": 58268.68279599959,
+              "min": 58097.104661999416,
+              "max": 58394.30703599985,
+              "n": 3
+            }
+          },
+          "reads": {
+            "cold_first_request": {
+              "requests": 18,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 258.3457499999895,
+                    "min": 242.97362499999053,
+                    "max": 273.6320000001342,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 258.3457499999895,
+                    "min": 242.97362499999053,
+                    "max": 273.6320000001342,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 258.3457499999895,
+                    "min": 242.97362499999053,
+                    "max": 273.6320000001342,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 6.280667000055473,
+                    "min": 6.124375000126747,
+                    "max": 7.233749999841166,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 6.280667000055473,
+                    "min": 6.124375000126747,
+                    "max": 7.233749999841166,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 6.280667000055473,
+                    "min": 6.124375000126747,
+                    "max": 7.233749999841166,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 102.54345900000317,
+                    "min": 100.56529199982833,
+                    "max": 109.78004100002181,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 102.54345900000317,
+                    "min": 100.56529199982833,
+                    "max": 109.78004100002181,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 102.54345900000317,
+                    "min": 100.56529199982833,
+                    "max": 109.78004100002181,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 3.747791000023426,
+                    "min": 3.5923750001529697,
+                    "max": 3.7775420000798476,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 3.747791000023426,
+                    "min": 3.5923750001529697,
+                    "max": 3.7775420000798476,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 3.747791000023426,
+                    "min": 3.5923750001529697,
+                    "max": 3.7775420000798476,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 5.7920419999391015,
+                    "min": 5.567624999912368,
+                    "max": 5.806417000030706,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 5.7920419999391015,
+                    "min": 5.567624999912368,
+                    "max": 5.806417000030706,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 5.7920419999391015,
+                    "min": 5.567624999912368,
+                    "max": 5.806417000030706,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 7.840875000056258,
+                    "min": 7.742125000049782,
+                    "max": 8.70787499979997,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 7.840875000056258,
+                    "min": 7.742125000049782,
+                    "max": 8.70787499979997,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 7.840875000056258,
+                    "min": 7.742125000049782,
+                    "max": 8.70787499979997,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 15.689573093864169,
+                "min": 14.657525380440278,
+                "max": 16.238271387509464,
+                "n": 3
+              }
+            },
+            "warm": {
+              "requests": 1152,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 202.30243749983856,
+                    "min": 198.9006255000163,
+                    "max": 305.0097079999432,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 346.432625000034,
+                    "min": 309.0299589998722,
+                    "max": 380.6382909999684,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 355.3609589999951,
+                    "min": 354.6079580000878,
+                    "max": 412.8017500001988,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 16.761750000000575,
+                    "min": 11.745041499807485,
+                    "max": 23.704291500052932,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 76.24858300005144,
+                    "min": 69.51345899994976,
+                    "max": 143.69866600009118,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 135.50466600008804,
+                    "min": 102.53579199979868,
+                    "max": 297.7470830001039,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 46.065604000034455,
+                    "min": 42.87902100008978,
+                    "max": 53.5928755000441,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 103.31095800029289,
+                    "min": 101.47433400004502,
+                    "max": 142.01354199985872,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 151.7059169999584,
+                    "min": 133.61270799987324,
+                    "max": 190.1418749998811,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 25.37462500026777,
+                    "min": 22.86608349999142,
+                    "max": 40.10281199998644,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 71.89529200013567,
+                    "min": 65.64562500000193,
+                    "max": 98.6206669999774,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 94.32470799993098,
+                    "min": 93.32083300000704,
+                    "max": 112.61720800007424,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 19.76645849981651,
+                    "min": 18.23295899993127,
+                    "max": 41.51802050000697,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 66.0619170002974,
+                    "min": 64.66075000003002,
+                    "max": 85.03904100007276,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 106.15950000010344,
+                    "min": 95.7159589999037,
+                    "max": 111.90487499993651,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 13.143354000021645,
+                    "min": 12.123416499889572,
+                    "max": 17.927000000099724,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 51.75512499999968,
+                    "min": 51.42395900020347,
+                    "max": 58.72870799998964,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 109.61808299998665,
+                    "min": 89.66304099999434,
+                    "max": 113.20316699993782,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 124.08996651833097,
+                "min": 91.00558953913621,
+                "max": 132.88483934123448,
+                "n": 3
+              }
+            },
+            "mixed": {
+              "requests": 14463,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 253.84483300001648,
+                    "min": 232.20549999996365,
+                    "max": 306.89412500009894,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 389.85887500007266,
+                    "min": 346.22966599999927,
+                    "max": 436.5893750000396,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 495.6090830000903,
+                    "min": 426.61137499999313,
+                    "max": 572.3885000002156,
+                    "n": 3
+                  },
+                  "requests": 2416,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 59.73837500005175,
+                    "min": 56.12620850001804,
+                    "max": 79.43660349997117,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 178.11424999990777,
+                    "min": 158.33104099965567,
+                    "max": 219.80312499999854,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 272.61416699980145,
+                    "min": 236.39979199970185,
+                    "max": 332.2752499998387,
+                    "n": 3
+                  },
+                  "requests": 2407,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 54.97054199986451,
+                    "min": 53.48035450003863,
+                    "max": 62.15741699998034,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 122.69429200023296,
+                    "min": 120.53004099993814,
+                    "max": 159.73191700004463,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 278.2297080000262,
+                    "min": 222.7973750000274,
+                    "max": 343.21466600022177,
+                    "n": 3
+                  },
+                  "requests": 2408,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 17.143125000075088,
+                    "min": 16.883000000007087,
+                    "max": 18.451729000048545,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 133.6107089998677,
+                    "min": 126.18658299970775,
+                    "max": 141.0761670001648,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 269.23633299998073,
+                    "min": 238.04145900021467,
+                    "max": 351.509667000073,
+                    "n": 3
+                  },
+                  "requests": 2408,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 16.92354149986386,
+                    "min": 16.820562499901826,
+                    "max": 17.97641600001043,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 125.4169579997324,
+                    "min": 118.81758300000911,
+                    "max": 211.44662500000777,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 266.1021660001097,
+                    "min": 256.66962500008594,
+                    "max": 352.15699999980643,
+                    "n": 3
+                  },
+                  "requests": 2411,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 21.533000000090396,
+                    "min": 21.049875000244356,
+                    "max": 21.624125000016647,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 143.22566700002426,
+                    "min": 135.09483400002864,
+                    "max": 165.08933299996897,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 255.5803749999086,
+                    "min": 247.49716699989222,
+                    "max": 344.0727499998957,
+                    "n": 3
+                  },
+                  "requests": 2413,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 95.59978893620524,
+                "min": 79.80494727173205,
+                "max": 101.65304524888116,
+                "n": 3
+              }
+            }
+          },
+          "resources": {
+            "server_cpu_seconds": {
+              "median": 220.077584768,
+              "min": 215.554994976,
+              "max": 220.17426214399998,
+              "n": 3
+            },
+            "server_peak_rss_bytes": {
+              "median": 245432320,
+              "min": 245366784,
+              "max": 245825536,
+              "n": 3
+            },
+            "host_cpu_busy_fraction": {
+              "median": 0.21048859552697297,
+              "min": 0.21046727260240528,
+              "max": 0.21435676392578717,
+              "n": 3
+            },
+            "host_min_available_memory_bytes": {
+              "median": 10350854144,
+              "min": 10260807680,
+              "max": 11401936896,
+              "n": 3
+            },
+            "max_observed_pending_imports": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "lock_wait_samples": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "max_lock_waiters": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "io_wait_samples": {
+              "median": 221,
+              "min": 204,
+              "max": 223,
+              "n": 3
+            },
+            "longest_observed_transaction_ms": {
+              "median": 5222.586,
+              "min": 5168.695,
+              "max": 5223.155,
+              "n": 3
+            }
+          },
+          "pool_acquire_p95_ms": null
+        },
+        {
+          "backend": "rust",
+          "scale": 1,
+          "successful_cases": 3,
+          "ingest": {
+            "accept_seconds": {
+              "median": 0.262160917000017,
+              "min": 0.2612180419999959,
+              "max": 0.26354445800000015,
+              "n": 3
+            },
+            "settled_seconds": {
+              "median": 18.169714333,
+              "min": 18.148525958,
+              "max": 18.193190000000016,
+              "n": 3
+            },
+            "settled_messages_per_second": {
+              "median": 550.3663853337479,
+              "min": 549.6562175187524,
+              "max": 551.0089372074831,
+              "n": 3
+            },
+            "sql_calls_per_1000": {
+              "median": 1282.4,
+              "min": 1282.3,
+              "max": 1283.0,
+              "n": 3
+            },
+            "wal_bytes_per_1000": {
+              "median": 3854415.2,
+              "min": 3853206.4,
+              "max": 3860710.4,
+              "n": 3
+            },
+            "sql_exec_ms": {
+              "median": 8485.91778599999,
+              "min": 8422.559217999991,
+              "max": 8502.461508999997,
+              "n": 3
+            }
+          },
+          "reads": {
+            "cold_first_request": {
+              "requests": 18,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 14.407916999971349,
+                    "min": 14.317667000000256,
+                    "max": 14.805582999997569,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 14.407916999971349,
+                    "min": 14.317667000000256,
+                    "max": 14.805582999997569,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 14.407916999971349,
+                    "min": 14.317667000000256,
+                    "max": 14.805582999997569,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 4.198750000000473,
+                    "min": 4.083834000002895,
+                    "max": 4.453417000007676,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 4.198750000000473,
+                    "min": 4.083834000002895,
+                    "max": 4.453417000007676,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 4.198750000000473,
+                    "min": 4.083834000002895,
+                    "max": 4.453417000007676,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 10.214958000005936,
+                    "min": 10.20741600000008,
+                    "max": 10.77424999999721,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 10.214958000005936,
+                    "min": 10.20741600000008,
+                    "max": 10.77424999999721,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 10.214958000005936,
+                    "min": 10.20741600000008,
+                    "max": 10.77424999999721,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 2.0664999999979727,
+                    "min": 2.0275419999506994,
+                    "max": 2.0917919999874357,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 2.0664999999979727,
+                    "min": 2.0275419999506994,
+                    "max": 2.0917919999874357,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 2.0664999999979727,
+                    "min": 2.0275419999506994,
+                    "max": 2.0917919999874357,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 2.7807499999994434,
+                    "min": 2.717583999999107,
+                    "max": 2.987375000003567,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 2.7807499999994434,
+                    "min": 2.717583999999107,
+                    "max": 2.987375000003567,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 2.7807499999994434,
+                    "min": 2.717583999999107,
+                    "max": 2.987375000003567,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 2.696917000037047,
+                    "min": 2.6357499999996037,
+                    "max": 2.898958000002949,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 2.696917000037047,
+                    "min": 2.6357499999996037,
+                    "max": 2.898958000002949,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 2.696917000037047,
+                    "min": 2.6357499999996037,
+                    "max": 2.898958000002949,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 163.78656186944883,
+                "min": 156.55917583278293,
+                "max": 165.1205739326985,
+                "n": 3
+              }
+            },
+            "warm": {
+              "requests": 1152,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 5.34831300001315,
+                    "min": 4.947208000004366,
+                    "max": 5.3721039999992115,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 7.498125000001465,
+                    "min": 7.308332999997447,
+                    "max": 9.121875000005275,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 10.120958000001679,
+                    "min": 9.452165999988438,
+                    "max": 15.661999999963427,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 4.4763329999852886,
+                    "min": 4.419750000000278,
+                    "max": 4.562417000002483,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 7.082709000030718,
+                    "min": 6.703208000004679,
+                    "max": 7.519499999997237,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 8.808291999997664,
+                    "min": 8.073833000025843,
+                    "max": 13.862458000005518,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 4.863958499999654,
+                    "min": 4.4652710000008256,
+                    "max": 4.871749999978192,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 7.074332999991384,
+                    "min": 6.987750000000403,
+                    "max": 8.029500000020562,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 10.119791999997574,
+                    "min": 8.559375000004366,
+                    "max": 15.112874999999804,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 4.682875000000308,
+                    "min": 4.647875499983911,
+                    "max": 4.746187499998555,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 7.254916999983152,
+                    "min": 6.5258329999977605,
+                    "max": 9.351874999993015,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 7.713792000004105,
+                    "min": 7.575416999998197,
+                    "max": 17.401541999959136,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 6.1084585000017455,
+                    "min": 6.070292000003974,
+                    "max": 6.189500499999667,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 9.552791000032812,
+                    "min": 8.58012500000882,
+                    "max": 9.562625000000935,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 10.762416000005715,
+                    "min": 10.214749999999384,
+                    "max": 17.907000000036533,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 5.628020999997929,
+                    "min": 5.57214549999685,
+                    "max": 6.0505625000075725,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 8.310625000007121,
+                    "min": 8.07045799996331,
+                    "max": 8.63975000000039,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 9.360917000002189,
+                    "min": 8.825040999994371,
+                    "max": 16.220665999981065,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 1469.8369984069625,
+                "min": 1397.9350424361708,
+                "max": 1485.9181222818602,
+                "n": 3
+              }
+            },
+            "mixed": {
+              "requests": 8705,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 5.434645999997656,
+                    "min": 5.269666499998493,
+                    "max": 5.5264374999950405,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 10.082541999963723,
+                    "min": 9.618791999997711,
+                    "max": 12.169000000000096,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 13.24841699999979,
+                    "min": 12.8357500000007,
+                    "max": 16.48029200001133,
+                    "n": 3
+                  },
+                  "requests": 1448,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 4.49583300000711,
+                    "min": 4.490270499998061,
+                    "max": 4.502479499990386,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 7.395583000000983,
+                    "min": 7.288708000032784,
+                    "max": 7.445458000006511,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 9.71508299999968,
+                    "min": 9.515499999992016,
+                    "max": 10.30945799999472,
+                    "n": 3
+                  },
+                  "requests": 1452,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 4.7531249999792635,
+                    "min": 4.74979099999473,
+                    "max": 4.905624999999247,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 8.242790999986482,
+                    "min": 7.887291999999491,
+                    "max": 9.037374999991243,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 12.137417000019468,
+                    "min": 12.096875000001006,
+                    "max": 12.811583000001292,
+                    "n": 3
+                  },
+                  "requests": 1451,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 4.6859999999924185,
+                    "min": 4.621083000003523,
+                    "max": 4.725479499999352,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 7.587874999984479,
+                    "min": 7.546874999999176,
+                    "max": 7.7625830000442875,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 10.042083000001867,
+                    "min": 9.787499999998062,
+                    "max": 11.746000000016465,
+                    "n": 3
+                  },
+                  "requests": 1451,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 6.18154199997889,
+                    "min": 6.037125000002419,
+                    "max": 6.325395499999331,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 9.671124999954372,
+                    "min": 9.305459000000127,
+                    "max": 10.295083000016803,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 12.287583999977869,
+                    "min": 11.997374999999977,
+                    "max": 13.580292000000327,
+                    "n": 3
+                  },
+                  "requests": 1452,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 5.449333000001388,
+                    "min": 5.406415999999581,
+                    "max": 5.465624999999363,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 9.091499999982489,
+                    "min": 8.927457999998722,
+                    "max": 9.12433400003465,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 12.155874999997707,
+                    "min": 12.02820899999324,
+                    "max": 12.718832999979668,
+                    "n": 3
+                  },
+                  "requests": 1451,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 1442.861232742621,
+                "min": 1430.2879776206657,
+                "max": 1458.6952492149144,
+                "n": 3
+              }
+            }
+          },
+          "resources": {
+            "server_cpu_seconds": {
+              "median": 1.707792696,
+              "min": 1.699573744,
+              "max": 1.7652595360000003,
+              "n": 3
+            },
+            "server_peak_rss_bytes": {
+              "median": 64585728,
+              "min": 64290816,
+              "max": 65421312,
+              "n": 3
+            },
+            "host_cpu_busy_fraction": {
+              "median": 0.2542027923645752,
+              "min": 0.24441909727835565,
+              "max": 0.2562695606216596,
+              "n": 3
+            },
+            "host_min_available_memory_bytes": {
+              "median": 11539857408,
+              "min": 11531419648,
+              "max": 11812110336,
+              "n": 3
+            },
+            "max_observed_pending_imports": {
+              "median": 10,
+              "min": 10,
+              "max": 10,
+              "n": 3
+            },
+            "lock_wait_samples": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "max_lock_waiters": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "io_wait_samples": {
+              "median": 0,
+              "min": 0,
+              "max": 2,
+              "n": 3
+            },
+            "longest_observed_transaction_ms": {
+              "median": 1081.475,
+              "min": 1080.494,
+              "max": 1189.108,
+              "n": 3
+            }
+          },
+          "pool_acquire_p95_ms": {
+            "median": 0.051791,
+            "min": 0.050791,
+            "max": 0.056542,
+            "n": 3
+          }
+        },
+        {
+          "backend": "rust",
+          "scale": 10,
+          "successful_cases": 3,
+          "ingest": {
+            "accept_seconds": {
+              "median": 2.5409149999999983,
+              "min": 2.53127191599998,
+              "max": 2.5570499170000005,
+              "n": 3
+            },
+            "settled_seconds": {
+              "median": 141.625315792,
+              "min": 141.083569458,
+              "max": 141.66481125,
+              "n": 3
+            },
+            "settled_messages_per_second": {
+              "median": 706.0884520594213,
+              "min": 705.891598044959,
+              "max": 708.7997587824682,
+              "n": 3
+            },
+            "sql_calls_per_1000": {
+              "median": 1261.48,
+              "min": 1261.3,
+              "max": 1261.58,
+              "n": 3
+            },
+            "wal_bytes_per_1000": {
+              "median": 3992202.96,
+              "min": 3988897.12,
+              "max": 3992533.04,
+              "n": 3
+            },
+            "sql_exec_ms": {
+              "median": 42396.44152699992,
+              "min": 41810.63302399997,
+              "max": 43179.53681500003,
+              "n": 3
+            }
+          },
+          "reads": {
+            "cold_first_request": {
+              "requests": 18,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 25.202667000030488,
+                    "min": 24.153999999953157,
+                    "max": 25.293625000017528,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 25.202667000030488,
+                    "min": 24.153999999953157,
+                    "max": 25.293625000017528,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 25.202667000030488,
+                    "min": 24.153999999953157,
+                    "max": 25.293625000017528,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 9.303458000005094,
+                    "min": 8.788832999982787,
+                    "max": 9.776416000022436,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 9.303458000005094,
+                    "min": 8.788832999982787,
+                    "max": 9.776416000022436,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 9.303458000005094,
+                    "min": 8.788832999982787,
+                    "max": 9.776416000022436,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 15.432458000020688,
+                    "min": 13.869207999960054,
+                    "max": 16.227249999985816,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 15.432458000020688,
+                    "min": 13.869207999960054,
+                    "max": 16.227249999985816,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 15.432458000020688,
+                    "min": 13.869207999960054,
+                    "max": 16.227249999985816,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 2.619791999990184,
+                    "min": 2.2767499999645224,
+                    "max": 4.128083000068727,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 2.619791999990184,
+                    "min": 2.2767499999645224,
+                    "max": 4.128083000068727,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 2.619791999990184,
+                    "min": 2.2767499999645224,
+                    "max": 4.128083000068727,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 4.18425000000866,
+                    "min": 3.466083000034814,
+                    "max": 4.379790999905708,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 4.18425000000866,
+                    "min": 3.466083000034814,
+                    "max": 4.379790999905708,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 4.18425000000866,
+                    "min": 3.466083000034814,
+                    "max": 4.379790999905708,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 3.3733329999847683,
+                    "min": 3.3380830000169226,
+                    "max": 3.867791999994097,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 3.3733329999847683,
+                    "min": 3.3380830000169226,
+                    "max": 3.867791999994097,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 3.3733329999847683,
+                    "min": 3.3380830000169226,
+                    "max": 3.867791999994097,
+                    "n": 3
+                  },
+                  "requests": 3,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 99.82447529747388,
+                "min": 97.71880816862335,
+                "max": 100.87926026982625,
+                "n": 3
+              }
+            },
+            "warm": {
+              "requests": 1152,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 5.239875000000893,
+                    "min": 5.16612499995972,
+                    "max": 5.4295415000069625,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 7.567792000031659,
+                    "min": 7.270207999994227,
+                    "max": 8.356957999922088,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 9.037499999976717,
+                    "min": 8.921583000017108,
+                    "max": 9.524791000046662,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 4.616770999987807,
+                    "min": 4.350083000019822,
+                    "max": 4.796833499995046,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 6.763332999980776,
+                    "min": 6.7168749999950705,
+                    "max": 7.143000000041866,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 8.948375000045417,
+                    "min": 8.540750000008757,
+                    "max": 9.196541000022762,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 4.958583499998781,
+                    "min": 4.862124999988282,
+                    "max": 5.0668545000007725,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 7.101624999990008,
+                    "min": 6.323167000005014,
+                    "max": 7.133416999977271,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 9.207582999920305,
+                    "min": 8.302415999992263,
+                    "max": 9.641667000011012,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 4.513228999996954,
+                    "min": 4.333583500027771,
+                    "max": 4.839625499982958,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 7.465625000008913,
+                    "min": 6.9780000000037035,
+                    "max": 7.580167000014626,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 8.738791000041601,
+                    "min": 8.031000000016775,
+                    "max": 9.351208999987648,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 6.161479500008227,
+                    "min": 5.971624999972391,
+                    "max": 6.362291999948866,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 8.779792000012776,
+                    "min": 8.303541999964636,
+                    "max": 9.782332999975552,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 9.971999999976333,
+                    "min": 9.5445830000358,
+                    "max": 11.79558299998007,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 5.512083000041912,
+                    "min": 5.394875500002172,
+                    "max": 5.717833500028746,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 8.394209000016417,
+                    "min": 7.922582999981387,
+                    "max": 8.528166999980158,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 9.503084000016315,
+                    "min": 8.931707999977334,
+                    "max": 10.151707999995097,
+                    "n": 3
+                  },
+                  "requests": 192,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 1478.6510114335922,
+                "min": 1439.4790867060312,
+                "max": 1497.952264146731,
+                "n": 3
+              }
+            },
+            "mixed": {
+              "requests": 48273,
+              "failures": 0,
+              "routes": {
+                "directory": {
+                  "p50_ms": {
+                    "median": 5.600624999999582,
+                    "min": 5.600416999982372,
+                    "max": 5.61770849999732,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 11.68958300002032,
+                    "min": 11.204457999951956,
+                    "max": 11.846415999997362,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 14.038166999966961,
+                    "min": 13.99541699998963,
+                    "max": 15.098499999993464,
+                    "n": 3
+                  },
+                  "requests": 8043,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "search": {
+                  "p50_ms": {
+                    "median": 4.667124999969019,
+                    "min": 4.665750000015123,
+                    "max": 4.734624999969128,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 7.614458999910312,
+                    "min": 7.577208000014934,
+                    "max": 7.823791000021174,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 10.39170799998601,
+                    "min": 9.857624999995096,
+                    "max": 10.409666999976253,
+                    "n": 3
+                  },
+                  "requests": 8047,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "overview": {
+                  "p50_ms": {
+                    "median": 4.7571249999691645,
+                    "min": 4.756375499937349,
+                    "max": 4.764208500006362,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 8.192667000002984,
+                    "min": 8.041790999982368,
+                    "max": 8.206167000025744,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 11.505291999981182,
+                    "min": 11.056000000053245,
+                    "max": 11.942708999981733,
+                    "n": 3
+                  },
+                  "requests": 8047,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "profiles": {
+                  "p50_ms": {
+                    "median": 4.449875000034353,
+                    "min": 4.3214160000104584,
+                    "max": 4.704416999970817,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 7.586374999959844,
+                    "min": 7.442291999979034,
+                    "max": 7.669834000012088,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 9.958540999946308,
+                    "min": 9.616542000003392,
+                    "max": 10.469999999997981,
+                    "n": 3
+                  },
+                  "requests": 8049,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "conversations": {
+                  "p50_ms": {
+                    "median": 5.998896000022569,
+                    "min": 5.988542000068264,
+                    "max": 6.027125000002798,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 9.534833999992998,
+                    "min": 9.406500000068263,
+                    "max": 9.645124999963173,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 12.305125000011685,
+                    "min": 11.932790999992449,
+                    "max": 12.746542000002137,
+                    "n": 3
+                  },
+                  "requests": 8046,
+                  "failures": 0,
+                  "errors_by_status": {}
+                },
+                "messages": {
+                  "p50_ms": {
+                    "median": 5.4761459999923545,
+                    "min": 5.475770499970167,
+                    "max": 5.4912919999878795,
+                    "n": 3
+                  },
+                  "p95_ms": {
+                    "median": 9.101874999998927,
+                    "min": 8.987208999997165,
+                    "max": 9.105792000013935,
+                    "n": 3
+                  },
+                  "p99_ms": {
+                    "median": 11.559207999994214,
+                    "min": 11.34520900006919,
+                    "max": 12.262707999980194,
+                    "n": 3
+                  },
+                  "requests": 8041,
+                  "failures": 0,
+                  "errors_by_status": {}
+                }
+              },
+              "error_rate": 0.0,
+              "successful_requests_per_second": {
+                "median": 1443.3865393675833,
+                "min": 1430.2953210810367,
+                "max": 1446.4491062293766,
+                "n": 3
+              }
+            }
+          },
+          "resources": {
+            "server_cpu_seconds": {
+              "median": 11.762229048,
+              "min": 11.583264655999999,
+              "max": 11.80619344,
+              "n": 3
+            },
+            "server_peak_rss_bytes": {
+              "median": 69304320,
+              "min": 67338240,
+              "max": 69697536,
+              "n": 3
+            },
+            "host_cpu_busy_fraction": {
+              "median": 0.2304685153943835,
+              "min": 0.15606008485241807,
+              "max": 0.28181524459321416,
+              "n": 3
+            },
+            "host_min_available_memory_bytes": {
+              "median": 10496311296,
+              "min": 10278518784,
+              "max": 10535616512,
+              "n": 3
+            },
+            "max_observed_pending_imports": {
+              "median": 98,
+              "min": 98,
+              "max": 98,
+              "n": 3
+            },
+            "lock_wait_samples": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "max_lock_waiters": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "n": 3
+            },
+            "io_wait_samples": {
+              "median": 7,
+              "min": 6,
+              "max": 9,
+              "n": 3
+            },
+            "longest_observed_transaction_ms": {
+              "median": 1954.046,
+              "min": 1632.264,
+              "max": 2056.112,
+              "n": 3
+            }
+          },
+          "pool_acquire_p95_ms": {
+            "median": 0.048625,
+            "min": 0.048124999999999994,
+            "max": 0.049792,
+            "n": 3
+          }
+        }
+      ],
+      "scaling": [
+        {
+          "backend": "crm",
+          "phase": "warm",
+          "route": "directory",
+          "p95_10x_over_1x": {
+            "median": 18.583917603246682,
+            "min": 18.382998575844383,
+            "max": 18.659103046571072,
+            "n": 3
+          }
+        },
+        {
+          "backend": "crm",
+          "phase": "warm",
+          "route": "search",
+          "p95_10x_over_1x": {
+            "median": 6.743937748927137,
+            "min": 6.338180080435493,
+            "max": 7.779740622085359,
+            "n": 3
+          }
+        },
+        {
+          "backend": "crm",
+          "phase": "warm",
+          "route": "overview",
+          "p95_10x_over_1x": {
+            "median": 7.262962530199673,
+            "min": 6.691475264995801,
+            "max": 7.736762237356821,
+            "n": 3
+          }
+        },
+        {
+          "backend": "crm",
+          "phase": "warm",
+          "route": "profiles",
+          "p95_10x_over_1x": {
+            "median": 6.596122688389151,
+            "min": 5.485412204514927,
+            "max": 7.628694734664902,
+            "n": 3
+          }
+        },
+        {
+          "backend": "crm",
+          "phase": "warm",
+          "route": "conversations",
+          "p95_10x_over_1x": {
+            "median": 5.336493508409134,
+            "min": 4.267950446639514,
+            "max": 6.4988067748796725,
+            "n": 3
+          }
+        },
+        {
+          "backend": "crm",
+          "phase": "warm",
+          "route": "messages",
+          "p95_10x_over_1x": {
+            "median": 3.6407945900280647,
+            "min": 3.329193502999714,
+            "max": 3.9793271014873657,
+            "n": 3
+          }
+        },
+        {
+          "backend": "crm",
+          "phase": "mixed",
+          "route": "directory",
+          "p95_10x_over_1x": {
+            "median": 20.517950228897423,
+            "min": 16.965890204704362,
+            "max": 35.27593203708541,
+            "n": 3
+          }
+        },
+        {
+          "backend": "crm",
+          "phase": "mixed",
+          "route": "search",
+          "p95_10x_over_1x": {
+            "median": 12.248888866477168,
+            "min": 10.548351453908493,
+            "max": 15.023265570496358,
+            "n": 3
+          }
+        },
+        {
+          "backend": "crm",
+          "phase": "mixed",
+          "route": "overview",
+          "p95_10x_over_1x": {
+            "median": 6.370994134128116,
+            "min": 6.35098091523185,
+            "max": 6.860907474429992,
+            "n": 3
+          }
+        },
+        {
+          "backend": "crm",
+          "phase": "mixed",
+          "route": "profiles",
+          "p95_10x_over_1x": {
+            "median": 9.147865581226702,
+            "min": 7.685881322121761,
+            "max": 11.92971892715675,
+            "n": 3
+          }
+        },
+        {
+          "backend": "crm",
+          "phase": "mixed",
+          "route": "conversations",
+          "p95_10x_over_1x": {
+            "median": 8.656297986558492,
+            "min": 8.42260843745205,
+            "max": 11.053346317683259,
+            "n": 3
+          }
+        },
+        {
+          "backend": "crm",
+          "phase": "mixed",
+          "route": "messages",
+          "p95_10x_over_1x": {
+            "median": 8.232402398503517,
+            "min": 7.598686421456623,
+            "max": 11.88474306380174,
+            "n": 3
+          }
+        },
+        {
+          "backend": "desktop",
+          "phase": "warm",
+          "route": "directory",
+          "p95_10x_over_1x": {
+            "median": 15.860585987251794,
+            "min": 15.85845934896827,
+            "max": 18.631416150831615,
+            "n": 3
+          }
+        },
+        {
+          "backend": "desktop",
+          "phase": "warm",
+          "route": "search",
+          "p95_10x_over_1x": {
+            "median": 6.508426364077846,
+            "min": 4.230872633656053,
+            "max": 8.424601064308897,
+            "n": 3
+          }
+        },
+        {
+          "backend": "desktop",
+          "phase": "warm",
+          "route": "overview",
+          "p95_10x_over_1x": {
+            "median": 6.925666490213615,
+            "min": 5.652763871902354,
+            "max": 7.408770496266129,
+            "n": 3
+          }
+        },
+        {
+          "backend": "desktop",
+          "phase": "warm",
+          "route": "profiles",
+          "p95_10x_over_1x": {
+            "median": 6.512101412096582,
+            "min": 5.7034454392847485,
+            "max": 7.4868239980247155,
+            "n": 3
+          }
+        },
+        {
+          "backend": "desktop",
+          "phase": "warm",
+          "route": "conversations",
+          "p95_10x_over_1x": {
+            "median": 5.3260330642614875,
+            "min": 4.480449686132311,
+            "max": 6.179002597739464,
+            "n": 3
+          }
+        },
+        {
+          "backend": "desktop",
+          "phase": "warm",
+          "route": "messages",
+          "p95_10x_over_1x": {
+            "median": 3.523254297879087,
+            "min": 3.159518855242457,
+            "max": 3.5459382790980793,
+            "n": 3
+          }
+        },
+        {
+          "backend": "desktop",
+          "phase": "mixed",
+          "route": "directory",
+          "p95_10x_over_1x": {
+            "median": 17.921249221199496,
+            "min": 16.493974943626043,
+            "max": 18.03501573287057,
+            "n": 3
+          }
+        },
+        {
+          "backend": "desktop",
+          "phase": "mixed",
+          "route": "search",
+          "p95_10x_over_1x": {
+            "median": 9.285381228780091,
+            "min": 8.623222434986618,
+            "max": 10.434246907966862,
+            "n": 3
+          }
+        },
+        {
+          "backend": "desktop",
+          "phase": "mixed",
+          "route": "overview",
+          "p95_10x_over_1x": {
+            "median": 6.2230309234938455,
+            "min": 5.85314845327346,
+            "max": 6.302783474306365,
+            "n": 3
+          }
+        },
+        {
+          "backend": "desktop",
+          "phase": "mixed",
+          "route": "profiles",
+          "p95_10x_over_1x": {
+            "median": 8.677593971332016,
+            "min": 6.429113718622289,
+            "max": 8.865417227453339,
+            "n": 3
+          }
+        },
+        {
+          "backend": "desktop",
+          "phase": "mixed",
+          "route": "conversations",
+          "p95_10x_over_1x": {
+            "median": 8.545767958017553,
+            "min": 6.444462921317855,
+            "max": 10.309267961825265,
+            "n": 3
+          }
+        },
+        {
+          "backend": "desktop",
+          "phase": "mixed",
+          "route": "messages",
+          "p95_10x_over_1x": {
+            "median": 7.672587534060803,
+            "min": 6.73894901642841,
+            "max": 8.99101896015878,
+            "n": 3
+          }
+        },
+        {
+          "backend": "multisource",
+          "phase": "warm",
+          "route": "directory",
+          "p95_10x_over_1x": {
+            "median": 16.009363717756585,
+            "min": 13.212595838699492,
+            "max": 17.437808512424578,
+            "n": 3
+          }
+        },
+        {
+          "backend": "multisource",
+          "phase": "warm",
+          "route": "search",
+          "p95_10x_over_1x": {
+            "median": 4.075471980192904,
+            "min": 3.947516316321379,
+            "max": 8.144374403948943,
+            "n": 3
+          }
+        },
+        {
+          "backend": "multisource",
+          "phase": "warm",
+          "route": "overview",
+          "p95_10x_over_1x": {
+            "median": 4.803234554171732,
+            "min": 4.517239354345497,
+            "max": 6.562257641326428,
+            "n": 3
+          }
+        },
+        {
+          "backend": "multisource",
+          "phase": "warm",
+          "route": "profiles",
+          "p95_10x_over_1x": {
+            "median": 3.841064815013434,
+            "min": 3.5282361819503456,
+            "max": 5.581314539563016,
+            "n": 3
+          }
+        },
+        {
+          "backend": "multisource",
+          "phase": "warm",
+          "route": "conversations",
+          "p95_10x_over_1x": {
+            "median": 3.805885043385112,
+            "min": 3.510006306104962,
+            "max": 5.0611068891748765,
+            "n": 3
+          }
+        },
+        {
+          "backend": "multisource",
+          "phase": "warm",
+          "route": "messages",
+          "p95_10x_over_1x": {
+            "median": 2.2160111783804464,
+            "min": 2.1665648771569312,
+            "max": 2.6103774587389013,
+            "n": 3
+          }
+        },
+        {
+          "backend": "multisource",
+          "phase": "mixed",
+          "route": "directory",
+          "p95_10x_over_1x": {
+            "median": 14.710706958560705,
+            "min": 13.0695444026184,
+            "max": 16.630075610409854,
+            "n": 3
+          }
+        },
+        {
+          "backend": "multisource",
+          "phase": "mixed",
+          "route": "search",
+          "p95_10x_over_1x": {
+            "median": 7.720056562981908,
+            "min": 6.853935088631252,
+            "max": 9.476093509624294,
+            "n": 3
+          }
+        },
+        {
+          "backend": "multisource",
+          "phase": "mixed",
+          "route": "overview",
+          "p95_10x_over_1x": {
+            "median": 4.55326232485643,
+            "min": 4.5034950180738,
+            "max": 6.036550871174316,
+            "n": 3
+          }
+        },
+        {
+          "backend": "multisource",
+          "phase": "mixed",
+          "route": "profiles",
+          "p95_10x_over_1x": {
+            "median": 5.511831956392591,
+            "min": 5.239608568775927,
+            "max": 5.846525166253318,
+            "n": 3
+          }
+        },
+        {
+          "backend": "multisource",
+          "phase": "mixed",
+          "route": "conversations",
+          "p95_10x_over_1x": {
+            "median": 5.352370201121152,
+            "min": 5.144035847061805,
+            "max": 9.049054963189587,
+            "n": 3
+          }
+        },
+        {
+          "backend": "multisource",
+          "phase": "mixed",
+          "route": "messages",
+          "p95_10x_over_1x": {
+            "median": 4.840619627521108,
+            "min": 4.515969023606541,
+            "max": 5.519397975643337,
+            "n": 3
+          }
+        },
+        {
+          "backend": "rust",
+          "phase": "warm",
+          "route": "directory",
+          "p95_10x_over_1x": {
+            "median": 0.9696034675325906,
+            "min": 0.9161447618956908,
+            "max": 1.0355018032202834,
+            "n": 3
+          }
+        },
+        {
+          "backend": "rust",
+          "phase": "warm",
+          "route": "search",
+          "p95_10x_over_1x": {
+            "median": 1.0085124208845635,
+            "min": 0.8932608551097199,
+            "max": 1.0089695859021612,
+            "n": 3
+          }
+        },
+        {
+          "backend": "rust",
+          "phase": "warm",
+          "route": "overview",
+          "p95_10x_over_1x": {
+            "median": 0.8938181168475835,
+            "min": 0.8884011457698492,
+            "max": 1.0162963757990195,
+            "n": 3
+          }
+        },
+        {
+          "backend": "rust",
+          "phase": "warm",
+          "route": "profiles",
+          "p95_10x_over_1x": {
+            "median": 0.9618304385866728,
+            "min": 0.8105505045801283,
+            "max": 1.1440110404313864,
+            "n": 3
+          }
+        },
+        {
+          "backend": "rust",
+          "phase": "warm",
+          "route": "conversations",
+          "p95_10x_over_1x": {
+            "median": 0.9677646887377632,
+            "min": 0.9181361812276355,
+            "max": 1.02402878906719,
+            "n": 3
+          }
+        },
+        {
+          "backend": "rust",
+          "phase": "warm",
+          "route": "messages",
+          "p95_10x_over_1x": {
+            "median": 0.9870849272235623,
+            "min": 0.953307723543608,
+            "max": 1.0401155671777957,
+            "n": 3
+          }
+        },
+        {
+          "backend": "rust",
+          "phase": "mixed",
+          "route": "directory",
+          "p95_10x_over_1x": {
+            "median": 1.1593884756505233,
+            "min": 0.9207377763129153,
+            "max": 1.231590827621616,
+            "n": 3
+          }
+        },
+        {
+          "backend": "rust",
+          "phase": "mixed",
+          "route": "search",
+          "p95_10x_over_1x": {
+            "median": 1.0446925572921926,
+            "min": 1.0245585777367285,
+            "max": 1.0508139324692092,
+            "n": 3
+          }
+        },
+        {
+          "backend": "rust",
+          "phase": "mixed",
+          "route": "overview",
+          "p95_10x_over_1x": {
+            "median": 0.9756150556280702,
+            "min": 0.9080255051974379,
+            "max": 1.0387173443056898,
+            "n": 3
+          }
+        },
+        {
+          "backend": "rust",
+          "phase": "mixed",
+          "route": "profiles",
+          "p95_10x_over_1x": {
+            "median": 0.9861422111774538,
+            "min": 0.9773003393221769,
+            "max": 1.0108013113062322,
+            "n": 3
+          }
+        },
+        {
+          "backend": "rust",
+          "phase": "mixed",
+          "route": "conversations",
+          "p95_10x_over_1x": {
+            "median": 0.9726376197301392,
+            "min": 0.9368671432709607,
+            "max": 1.0246495094968306,
+            "n": 3
+          }
+        },
+        {
+          "backend": "rust",
+          "phase": "mixed",
+          "route": "messages",
+          "p95_10x_over_1x": {
+            "median": 1.0011411758253816,
+            "min": 0.9849715058614728,
+            "max": 1.019975899076225,
+            "n": 3
+          }
+        }
+      ]
+    }
+  }
+}

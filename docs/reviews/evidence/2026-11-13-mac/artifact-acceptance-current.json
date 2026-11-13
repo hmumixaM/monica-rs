@@ -1,0 +1,27 @@
+{
+  "source": {
+    "commit": "c2e9e2f54e6f0f84188b57b8e8f4d64ebe4b3f23",
+    "clean": true,
+    "archive_sha256": "f3458fe176d2bcfbc71645678281afcd6a749712aa225d525006c52d43e74cce"
+  },
+  "mac_app": {
+    "app": "/Users/maxhu/play/monica-rs/apps/native-desktop/src-tauri/target/release/bundle/macos/Monica Rust.app",
+    "bytes": 1318939557,
+    "server_sha256": "0bb13ad07c51f11f1b03883eb83488d46f6913c22ee1ec74a07e9000cb8ffa1c",
+    "source_commit": "c2e9e2f54e6f0f84188b57b8e8f4d64ebe4b3f23",
+    "source_dirty": false,
+    "verified": "codesign, relocation, ffprobe, fresh PG16, static Web/auth, suspend/resume, pause, crash recovery, ports, clean exit"
+  },
+  "linux": {
+    "amd64": {
+      "commit": "c2e9e2f54e6f0f84188b57b8e8f4d64ebe4b3f23",
+      "server_sha256": "6af7d914ec3a61634c52b6fd84024b2e445807b21f691e6457bde611bb641fff",
+      "compiled_test_binaries": 22
+    },
+    "arm64": {
+      "commit": "c2e9e2f54e6f0f84188b57b8e8f4d64ebe4b3f23",
+      "server_sha256": "c1401d2b50550de2c89bb99124f8a29e176e813fba4ffa905b34cc25aa3a1a5e",
+      "compiled_test_binaries": 22
+    }
+  }
+}
