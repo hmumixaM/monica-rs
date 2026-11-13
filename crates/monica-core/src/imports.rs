@@ -200,6 +200,10 @@ pub async fn resume_step(pool: &PgPool, id: Uuid) -> Result<bool> {
 }
 
 pub async fn resume_chunk(pool: &PgPool, id: Uuid) -> Result<Option<bool>> {
+    resume_chunk_inner(pool, id, false).await
+}
+
+async fn resume_chunk_inner(pool: &PgPool, id: Uuid, defer_memory: bool) -> Result<Option<bool>> {
     let mut tx = pool.begin().await?;
     sqlx::query("SET LOCAL lock_timeout='2s'")
         .execute(&mut *tx)
@@ -277,7 +281,9 @@ pub async fn resume_chunk(pool: &PgPool, id: Uuid) -> Result<Option<bool>> {
                 })
             })
             .collect::<Result<Vec<_>>>()?;
-        counts[0] = append_messages(&mut tx, batch.source.provider()?, &messages).await? as i64;
+        counts[0] =
+            append_messages_inner(&mut tx, batch.source.provider()?, &messages, defer_memory)
+                .await? as i64;
         counts[2] = messages.len() as i64 - counts[0];
         let types=batch.records[start..end].iter().zip(&messages).filter_map(|(r,m)| {
             r.message_type.as_deref().or_else(||r.content.get("message_type").and_then(Value::as_str)).map(|kind| {
@@ -373,7 +379,7 @@ pub async fn resume_chunk(pool: &PgPool, id: Uuid) -> Result<Option<bool>> {
 pub async fn resume_pending(pool: &PgPool) -> Result<usize> {
     let ids:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM crm.import_batches WHERE status IN ('received','running') AND retry_after<=now() ORDER BY retry_after,received_at LIMIT 10").fetch_all(pool).await?;
     for id in &ids {
-        match resume_chunk(pool, *id).await {
+        match resume_chunk_inner(pool, *id, true).await {
             Ok(None) => continue,
             Ok(Some(_)) => return Ok(1),
             Err(error) => {
@@ -397,6 +403,15 @@ pub async fn append_messages(
     tx: &mut Transaction<'_, Postgres>,
     provider: Provider,
     records: &[crate::messages::Message],
+) -> Result<u64> {
+    append_messages_inner(tx, provider, records, false).await
+}
+
+async fn append_messages_inner(
+    tx: &mut Transaction<'_, Postgres>,
+    provider: Provider,
+    records: &[crate::messages::Message],
+    defer_memory: bool,
 ) -> Result<u64> {
     ensure!(
         records.len() <= crate::messages::MAX_RECORDS,
@@ -460,7 +475,11 @@ pub async fn append_messages(
         !conflict,
         "message identity conflicts with saved fact; use correction path"
     );
-    crate::ai::memory::legacy::sync(tx, "message", &memory_ids).await?;
+    if defer_memory {
+        crate::ai::memory::legacy::queue_records(tx, "message", &memory_ids).await?;
+    } else {
+        crate::ai::memory::legacy::sync(tx, "message", &memory_ids).await?;
+    }
     Ok(count as u64)
 }
 

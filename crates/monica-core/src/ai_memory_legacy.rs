@@ -13,6 +13,32 @@ pub async fn queue_record(tx: &mut Transaction<'_, Postgres>, kind: &str, id: Uu
         .bind(kind).bind(id).execute(&mut **tx).await?;
     Ok(())
 }
+/// Commit bounded references with the facts; heavy Memory materialization can
+/// follow ingestion. Both previous and current owners fence stale publication.
+pub async fn queue_records(
+    tx: &mut Transaction<'_, Postgres>,
+    kind: &str,
+    ids: &[Uuid],
+) -> Result<()> {
+    ensure!(
+        ["message", "social", "activity"].contains(&kind) && ids.len() <= 1000,
+        "invalid legacy Memory batch"
+    );
+    if ids.is_empty() {
+        return Ok(());
+    }
+    // Select the bounded object batch before joining profile eligibility. This
+    // avoids repeating population scans per object under prepared generic plans.
+    sqlx::query(r#"WITH ids AS(SELECT DISTINCT unnest($2::uuid[]) entity_id), owners AS(
+ SELECT entity_id,profile_id FROM crm.memory_legacy_owners WHERE kind=$1 AND entity_id=ANY($2)
+ UNION SELECT entity_id,profile_id FROM crm.memory_legacy_selected($1,$2))
+ INSERT INTO crm.memory_legacy_pending_records(kind,entity_id,profiles)
+ SELECT $1,i.entity_id,coalesce(array_agg(o.profile_id ORDER BY o.profile_id) FILTER(WHERE o.profile_id IS NOT NULL),'{}'::uuid[])
+ FROM ids i LEFT JOIN owners o USING(entity_id) GROUP BY i.entity_id ORDER BY i.entity_id
+ ON CONFLICT(kind,entity_id) DO UPDATE SET profiles=ARRAY(SELECT DISTINCT unnest(crm.memory_legacy_pending_records.profiles||excluded.profiles)),requested_at=clock_timestamp()"#)
+        .bind(kind).bind(ids).execute(&mut **tx).await?;
+    Ok(())
+}
 pub async fn sync(tx: &mut Transaction<'_, Postgres>, kind: &str, ids: &[Uuid]) -> Result<()> {
     ensure!(
         ["message", "social", "activity"].contains(&kind) && ids.len() <= 1000,

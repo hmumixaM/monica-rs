@@ -29,6 +29,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
+    pub(crate) aggregate_pool: PgPool,
     pub native_sources_available: bool,
     pub cdc_enabled: bool,
     pub media_root: std::path::PathBuf,
@@ -60,6 +61,7 @@ impl AppState {
             native_sources_available: cfg!(target_os = "macos")
                 && std::env::var_os("MONICA_NATIVE_ROOT").is_some(),
             cdc_enabled: monica_core::cdc::enabled()?,
+            aggregate_pool: pool.clone(),
             pool,
             media_root,
             import_hmac_secret: None,

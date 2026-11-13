@@ -1,0 +1,150 @@
+{
+  "application_commit": "5feb9f932f3533b684544136ad22566ebc3371a5",
+  "benchmark_commit": "41ac3a963cb401fe90f810e330f4e61ff6d9ee69",
+  "benchmark_binary_sha256": "d39a76a6e41602b84662d13b082de603dba71a59da7142f3cce6819d0bada1fd",
+  "read_http_application_commit": "37b07dc8d548ab373c65d7cd1fc1c32f876f262a",
+  "read_application_files_unchanged_after_probe": true,
+  "import": [
+    {
+      "messages": 10000,
+      "new_accept_seconds": 0.2800179589999985,
+      "new_query_ready_seconds": 1.7569867079999995,
+      "new_all_required_seconds": 2.1706973339999998,
+      "previous_rust_reported_settled_seconds": 18.439589375,
+      "historical_python_desktop_reported_settled_seconds": 20.360050209000292,
+      "speedup_vs_historical_python": 9.37949749607989,
+      "speedup_vs_previous_rust": 8.494776810280085,
+      "memory_pending_final": [
+        0,
+        0,
+        0
+      ],
+      "warm_failures": 0,
+      "mixed_failures": 0,
+      "peak_rss_mib": 68.09375,
+      "sql_exec_ms": 1709.2455780000023
+    },
+    {
+      "messages": 100000,
+      "new_accept_seconds": 2.731602292000005,
+      "new_query_ready_seconds": 12.406817875,
+      "new_all_required_seconds": 21.310109917,
+      "previous_rust_reported_settled_seconds": 142.517860166,
+      "historical_python_desktop_reported_settled_seconds": 208.39910295899972,
+      "speedup_vs_historical_python": 9.779353732603262,
+      "speedup_vs_previous_rust": 6.687805024051393,
+      "memory_pending_final": [
+        0,
+        0,
+        0
+      ],
+      "warm_failures": 0,
+      "mixed_failures": 0,
+      "peak_rss_mib": 77.359375,
+      "sql_exec_ms": 19288.957873999985
+    }
+  ],
+  "read": [
+    {
+      "name": "home",
+      "before_ms": 76.35887499999983,
+      "after_ms": 2.417853999999997,
+      "speedup": 31.581259662494062,
+      "before_success": 64,
+      "before_failures": 0,
+      "after_success": 64,
+      "after_failures": 0,
+      "body_equal": true
+    },
+    {
+      "name": "insights",
+      "before_ms": 146.6048545000005,
+      "after_ms": 61.55108349999993,
+      "speedup": 2.381840353793295,
+      "before_success": 64,
+      "before_failures": 0,
+      "after_success": 64,
+      "after_failures": 0,
+      "body_equal": true
+    },
+    {
+      "name": "profile",
+      "before_ms": 10.151583000000741,
+      "after_ms": 1.0812289999999614,
+      "speedup": 9.388929634703754,
+      "before_success": 64,
+      "before_failures": 0,
+      "after_success": 64,
+      "after_failures": 0,
+      "body_equal": true
+    },
+    {
+      "name": "profile-summary",
+      "before_ms": 9.96485399999969,
+      "after_ms": 1.793416500000422,
+      "speedup": 5.556352358750655,
+      "before_success": 64,
+      "before_failures": 0,
+      "after_success": 64,
+      "after_failures": 0,
+      "body_equal": true
+    },
+    {
+      "name": "overview",
+      "before_ms": 42.739771000000815,
+      "after_ms": 1.8396669999996007,
+      "speedup": 23.232340961712143,
+      "before_success": 64,
+      "before_failures": 0,
+      "after_success": 64,
+      "after_failures": 0,
+      "body_equal": true
+    },
+    {
+      "name": "timeline-profile",
+      "before_ms": 4.824187500000576,
+      "after_ms": 0.7958334999997874,
+      "speedup": 6.061805013236896,
+      "before_success": 64,
+      "before_failures": 0,
+      "after_success": 64,
+      "after_failures": 0,
+      "body_equal": true
+    },
+    {
+      "name": "timeline-global",
+      "before_ms": 95.76599999999758,
+      "after_ms": 4.01833299999943,
+      "speedup": 23.832270745110264,
+      "before_success": 11,
+      "before_failures": 3,
+      "after_success": 64,
+      "after_failures": 0,
+      "body_equal": true
+    },
+    {
+      "name": "directory",
+      "before_ms": null,
+      "after_ms": 607.1478340000001,
+      "speedup": null,
+      "before_success": 0,
+      "before_failures": 3,
+      "after_success": 3,
+      "after_failures": 0,
+      "body_equal": null
+    }
+  ],
+  "scope": "local generated data; NAS not accessed; historical Python/Rust baselines reused with original provenance; no claim of NAS timings",
+  "large_population_memory_plan": {
+    "profiles": 10000,
+    "messages": 100000,
+    "batch_size": 1000,
+    "force_generic_plan": true,
+    "entire_payload_sets_equal": true,
+    "results": {
+      "per-object": 7.717,
+      "previous-view": 5.966,
+      "batch-selected": 10.878
+    }
+  }
+}

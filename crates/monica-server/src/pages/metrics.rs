@@ -31,14 +31,22 @@ async fn summary_value(tx: &mut Transaction<'_, Postgres>) -> Result<Value> {
  'unchanged_observations',(SELECT coalesce(sum(CASE WHEN metric LIKE '%.observations' THEN value ELSE -value END),0) FROM crm.page_entity_counts WHERE metric LIKE '%.observations' OR metric LIKE '%.source_revisions'),
  'revisions',(SELECT coalesce(sum(value),0) FROM crm.page_entity_counts WHERE metric='revisions'))"#).fetch_one(&mut **tx).await?)
 }
-async fn summary(State(s): State<AppState>, h: HeaderMap) -> Result<Response> {
-    let mut tx = snapshot(&s, &h).await?;
+async fn summary(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    read_pool: Option<axum::Extension<BackgroundReadPool>>,
+) -> Result<Response> {
+    let mut tx = snapshot_on(&s, &h, read_pool.map(|p| p.0.0)).await?;
     let value = summary_value(&mut tx).await?;
     tx.commit().await?;
     cached(&s, &h, "metrics-summary".into(), value).await
 }
-async fn people(State(s): State<AppState>, h: HeaderMap) -> Result<Response> {
-    let mut tx = snapshot(&s, &h).await?;
+async fn people(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    read_pool: Option<axum::Extension<BackgroundReadPool>>,
+) -> Result<Response> {
+    let mut tx = snapshot_on(&s, &h, read_pool.map(|p| p.0.0)).await?;
     let mut result:Value=sqlx::query_scalar("SELECT jsonb_build_object('people',count(*) FILTER(WHERE profile_type='person'),'groups',count(*) FILTER(WHERE profile_type='group')) FROM crm.profiles WHERE archived_at IS NULL").fetch_one(&mut *tx).await?;
     for (key, column) in [("companies", "company_name"), ("schools", "school_name")] {
         let rows:Vec<Value>=sqlx::query_scalar(&format!("SELECT jsonb_build_object('name',f.{column},'count',count(DISTINCT f.profile_id)) FROM crm.profile_structured_current f JOIN crm.profiles p ON p.id=f.profile_id AND p.archived_at IS NULL WHERE f.{column} IS NOT NULL GROUP BY f.{column} ORDER BY count(DISTINCT f.profile_id) DESC,f.{column} LIMIT 8")).fetch_all(&mut *tx).await?;

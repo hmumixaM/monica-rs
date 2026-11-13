@@ -157,15 +157,15 @@ def batch(stream, records, key):
             'observed_at':'2026-11-01T00:00:00Z','records':records}
 
 
-def settle(backend, rust, expected_messages=None, timeout=240):
+def settle(backend, rust, expected_messages=None, timeout=240, include_memory=True):
     deadline = time.monotonic()+timeout
     while True:
         if rust:
-            state = sql_json(backend, "SELECT json_build_object('messages',(SELECT count(*) FROM crm.message_search),'pending',(SELECT count(*) FROM crm.import_batches WHERE status<>'complete')+(SELECT count(*) FROM crm.jobs)+(SELECT count(*) FROM crm.conversation_work),'failures',(SELECT count(*) FROM crm.scheduler_failures WHERE quarantined))")
+            state = sql_json(backend, "SELECT json_build_object('messages',(SELECT count(*) FROM crm.message_search),'pending',(SELECT count(*) FROM crm.import_batches WHERE status<>'complete')+(SELECT count(*) FROM crm.jobs)+(SELECT count(*) FROM crm.conversation_work),'failures',(SELECT count(*) FROM crm.scheduler_failures WHERE quarantined),'memory_pending',(SELECT count(*) FROM crm.memory_legacy_pending_records)+(SELECT count(*) FROM crm.memory_legacy_scopes))")
         else:
             state = sql_json(backend, "SELECT json_build_object('messages',(SELECT count(*) FROM message_events),'pending',(SELECT count(*) FROM import_batches WHERE status NOT IN ('complete','completed')),'failures',0)")
         if state['failures']: raise RuntimeError(f'import quarantined: {state}')
-        if not state['pending'] and (expected_messages is None or state['messages']==expected_messages): return state
+        if not state['pending'] and (not include_memory or not state.get('memory_pending',0)) and (expected_messages is None or state['messages']==expected_messages): return state
         if time.monotonic()>deadline: raise TimeoutError(f'import did not settle: {state}')
         time.sleep(.05)
 
@@ -197,6 +197,9 @@ def setup(backend, client, contacts, rust):
     prefix = 'crm.' if rust else ''
     actual = sql_json(backend, f"SELECT json_build_object('profiles',(SELECT count(*) FROM {prefix}profiles WHERE archived_at IS NULL),'accounts',(SELECT count(*) FROM {prefix}source_accounts),'links',(SELECT count(*) FROM {prefix}source_account_links))")
     assert actual=={'profiles':contacts,'accounts':contacts,'links':contacts},actual
+    # Linking enqueues attribution recovery. Charge that work to setup rather
+    # than injecting an unrelated linking backlog into the message-import phase.
+    settle(backend,rust,expected_messages=0)
     return profiles
 
 
@@ -346,10 +349,12 @@ def ingest(backend,client,profiles,count,rust,offset=0,batch_size=1000):
         client.request('/api/v1/imports/batches',batch('messages',messages(profiles,start,min(batch_size,offset+count-start)),f'messages-{start}'),signed=True)
         accept.append((time.perf_counter()-begin)*1000)
     accepted=time.perf_counter()-started
-    settle(backend,rust,offset+count)
+    query_ready_state=settle(backend,rust,offset+count,include_memory=False)
+    query_ready_seconds=time.perf_counter()-started
+    settled_state=settle(backend,rust,offset+count)
     elapsed=time.perf_counter()-started;after=database_metrics(backend)
     wal=int(sql(backend,f"SELECT pg_wal_lsn_diff('{after['wal']}'::pg_lsn,'{before['wal']}'::pg_lsn)::bigint"))
-    return {'messages':count,'accept_seconds':accepted,'settled_seconds':elapsed,'settled_messages_per_second':count/elapsed,
+    return {'messages':count,'accept_seconds':accepted,'query_ready_seconds':query_ready_seconds,'query_ready_state':query_ready_state,'settled_state':settled_state,'settled_seconds':elapsed,'settled_messages_per_second':count/elapsed,
         'batch_http':quantiles(accept),'sql_calls_per_1000':(after['calls']-before['calls'])*1000/count,
         'wal_bytes_per_1000':wal*1000/count,'sql_exec_ms':after['sql_exec_ms']-before['sql_exec_ms'],
         'transaction_count_delta':after['transactions']-before['transactions'],
