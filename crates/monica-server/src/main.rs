@@ -96,11 +96,20 @@ async fn ready(State(state): State<Readiness>) -> axum::response::Response {
             .into_response(),
     }
 }
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    // Decoders have their own process limits and do not need runtime workers.
+    // Starting those workers first races Linux's address-space limit with their
+    // stack allocation and can reject an otherwise valid upload.
     if monica_core::media::probe_entry()? {
         return Ok(());
     }
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(run())
+}
+
+async fn run() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),

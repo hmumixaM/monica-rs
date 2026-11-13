@@ -34,6 +34,7 @@ jobs:
           psql "$DATABASE_URL" -c 'CREATE DATABASE monica_http_test'
           target/debug/monica-server migrate
           python3 scripts/smoke-http.py
+          python3 scripts/test-media-helper.py
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 30
