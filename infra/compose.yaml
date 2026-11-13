@@ -12,6 +12,9 @@ services:
     healthcheck:
       test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U monica -d monica_rust_test']
       interval: 5s
+      # Cold initialization on NAS storage can exceed one minute.
+      # A successful final TCP probe still releases dependents immediately.
+      start_period: 10m
       retries: 12
   migrate:
     build:
