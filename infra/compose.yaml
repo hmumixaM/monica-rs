@@ -10,7 +10,7 @@ services:
     volumes:
       - test-postgres:/var/lib/postgresql/data
     healthcheck:
-      test: [CMD-SHELL, 'pg_isready -U monica -d monica_rust_test']
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U monica -d monica_rust_test']
       interval: 5s
       retries: 12
   migrate:
