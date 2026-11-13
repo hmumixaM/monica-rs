@@ -21,6 +21,118 @@ async fn notebook_stream(pool: &PgPool, stream: &str, records: Vec<Value>) {
     assert_eq!(result["status"], "complete", "{result}");
 }
 
+fn receipt_batch(key: &str) -> imports::Batch {
+    serde_json::from_value(json!({
+        "source":"wechat", "stream":"messages", "batch_id":key,
+        "idempotency_key":key, "observed_at":"2026-01-01T00:00:00Z", "records":[],
+    }))
+    .unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn committed_receipt_replay_is_read_only_during_progress_updates(pool: PgPool) {
+    let batch = receipt_batch("receipt-progress-lock");
+    let mut initial = pool.begin().await.unwrap();
+    let id = imports::receive(&mut initial, &batch, "same-body")
+        .await
+        .unwrap();
+    initial.commit().await.unwrap();
+    let original: (String, String) = sqlx::query_as("SELECT b.xmin::text,i.xmin::text FROM crm.import_batches b JOIN crm.import_batch_inputs i ON i.batch_id=b.id WHERE b.id=$1")
+        .bind(id).fetch_one(&pool).await.unwrap();
+
+    let mut progress = pool.begin().await.unwrap();
+    sqlx::query("UPDATE crm.import_batches SET status='processing' WHERE id=$1")
+        .bind(id)
+        .execute(&mut *progress)
+        .await
+        .unwrap();
+    let mut replay = pool.begin().await.unwrap();
+    let repeated = tokio::time::timeout(
+        Duration::from_secs(1),
+        imports::receive(&mut replay, &batch, "same-body"),
+    )
+    .await;
+    progress.rollback().await.unwrap();
+    // Commit a successful replay so xmin also detects an unnecessary rewrite.
+    // Always release the old-code timeout/error path before reporting failure.
+    if matches!(&repeated, Ok(Ok(_))) {
+        replay.commit().await.unwrap();
+    } else {
+        replay.rollback().await.unwrap();
+    }
+    assert_eq!(
+        repeated
+            .expect("committed receipt replay waited for a mutable progress writer")
+            .unwrap(),
+        id
+    );
+
+    let mut readonly = pool.begin().await.unwrap();
+    sqlx::query("SET TRANSACTION READ ONLY")
+        .execute(&mut *readonly)
+        .await
+        .unwrap();
+    assert_eq!(
+        imports::receive(&mut readonly, &batch, "same-body")
+            .await
+            .unwrap(),
+        id
+    );
+    let conflict = imports::receive(&mut readonly, &batch, "different-body")
+        .await
+        .unwrap_err();
+    assert!(conflict.to_string().contains("different batch"));
+    readonly.commit().await.unwrap();
+    let after: (String, String) = sqlx::query_as("SELECT b.xmin::text,i.xmin::text FROM crm.import_batches b JOIN crm.import_batch_inputs i ON i.batch_id=b.id WHERE b.id=$1")
+        .bind(id).fetch_one(&pool).await.unwrap();
+    assert_eq!(after, original, "receipt/input replay changed stored facts");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn concurrent_first_receipt_reads_the_committed_winner(pool: PgPool) {
+    let mut winner = pool.begin().await.unwrap();
+    let first = imports::receive(&mut winner, &receipt_batch("same-first-key"), "same-body")
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    let loser = tokio::spawn(async move {
+        let id = imports::receive(&mut tx, &receipt_batch("same-first-key"), "same-body")
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        id
+    });
+    // Observe real unique-key arbitration before committing the winning input.
+    // A simultaneous launch alone could only exercise the committed fast path.
+    let waiting = tokio::time::timeout(Duration::from_secs(4), async {
+        loop {
+            let blocked: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=$1 AND NOT granted)",
+            )
+            .bind(pid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if blocked {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
+    winner.commit().await.unwrap();
+    let repeated = loser.await.unwrap();
+    waiting.expect("the competing first receipt never reached unique-key arbitration");
+    assert_eq!(repeated, first);
+    let counts: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM crm.import_batches),(SELECT count(*) FROM crm.import_batch_inputs)")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(counts, (1, 1));
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 async fn source_facts_reject_rewrites_but_accept_new_revisions(pool: PgPool) {
     let tables: Vec<(String, String, String)> = sqlx::query_as(

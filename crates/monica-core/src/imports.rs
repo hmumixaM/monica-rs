@@ -115,6 +115,26 @@ impl Batch {
         Ok(())
     }
 }
+async fn received_batch_id(
+    tx: &mut Transaction<'_, Postgres>,
+    key: &str,
+    hash: &str,
+) -> Result<Option<Uuid>> {
+    let saved: Option<(Uuid, String)> =
+        sqlx::query_as("SELECT id,body_hash FROM crm.import_batches WHERE idempotency_key=$1")
+            .bind(key)
+            .fetch_optional(&mut **tx)
+            .await?;
+    let Some((id, saved_hash)) = saved else {
+        return Ok(None);
+    };
+    ensure!(
+        saved_hash == hash,
+        "idempotency key reused with different batch"
+    );
+    Ok(Some(id))
+}
+
 pub async fn receive(
     tx: &mut Transaction<'_, Postgres>,
     batch: &Batch,
@@ -131,14 +151,21 @@ pub async fn receive(
         .await?;
         ensure!(valid, "Source connection does not match import provider");
     }
+    // A committed receipt already owns its atomically saved input/progress.
+    // Reusing its immutable identity must not lock mutable processing state.
+    if let Some(id) = received_batch_id(tx, &batch.idempotency_key, hash).await? {
+        return Ok(id);
+    }
     let id = Uuid::new_v4();
-    let row=sqlx::query("INSERT INTO crm.import_batches(id,source,stream,schema_version,batch_id,idempotency_key,body_hash,cursor_before,cursor_after,observed_at,record_count,connection_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,$11,$12) ON CONFLICT(idempotency_key) DO UPDATE SET idempotency_key=excluded.idempotency_key RETURNING id,body_hash")
-        .bind(id).bind(batch.source.schema()).bind(&batch.stream).bind(batch.schema_version).bind(&batch.batch_id).bind(&batch.idempotency_key).bind(hash).bind(&batch.cursor_before).bind(&batch.cursor_after).bind(&batch.observed_at).bind(batch.records.len() as i64).bind(batch.connection_id).fetch_one(&mut **tx).await?;
-    ensure!(
-        row.get::<String, _>("body_hash") == hash,
-        "idempotency key reused with different batch"
-    );
-    let id: Uuid = row.get("id");
+    let inserted: Option<Uuid> = sqlx::query_scalar("INSERT INTO crm.import_batches(id,source,stream,schema_version,batch_id,idempotency_key,body_hash,cursor_before,cursor_after,observed_at,record_count,connection_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,$11,$12) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id")
+        .bind(id).bind(batch.source.schema()).bind(&batch.stream).bind(batch.schema_version).bind(&batch.batch_id).bind(&batch.idempotency_key).bind(hash).bind(&batch.cursor_before).bind(&batch.cursor_after).bind(&batch.observed_at).bind(batch.records.len() as i64).bind(batch.connection_id).fetch_optional(&mut **tx).await?;
+    let Some(id) = inserted else {
+        // Another first acceptance won. A fresh READ COMMITTED statement sees
+        // its committed identity and validates the original request hash.
+        return received_batch_id(tx, &batch.idempotency_key, hash)
+            .await?
+            .context("concurrent batch receipt is not visible; retry the request");
+    };
     sqlx::query("INSERT INTO crm.import_batch_inputs(batch_id,payload) VALUES($1,$2) ON CONFLICT DO NOTHING")
         .bind(id).bind(serde_json::to_value(batch)?).execute(&mut **tx).await?;
     if batch.records.iter().any(|record| {
