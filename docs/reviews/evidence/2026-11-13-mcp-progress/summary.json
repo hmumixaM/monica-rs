@@ -1,0 +1,330 @@
+{
+  "base": "58e271921eb03771913493359be1cb22c0afd2f5",
+  "application_commit": "df55292d6ff0f2e072bf731547c92e84029a025b",
+  "packaging_commit": "d82c28650103dc0cc1f3a2655d1e4ebe97e9ae37",
+  "no_nas": true,
+  "instagram_enabled": false,
+  "legacy_migration": false,
+  "workspace": {
+    "passed": 186,
+    "failed": 0,
+    "optional_ignored": 3
+  },
+  "native_unit": 14,
+  "native_ui": 5,
+  "browser_populated_and_mcp": 2,
+  "browser_router_agent": 5,
+  "differentials": {
+    "connections_http": 27,
+    "labels_projection": 48,
+    "labels_http": 6,
+    "source_transport": 45
+  },
+  "benchmarks": {
+    "main": {
+      "metadata": {
+        "type": "metadata",
+        "time": "2026-11-13T19:07:21.818508+00:00",
+        "host": "macOS-26.6.2-arm64-arm-64bit",
+        "machine": "arm64",
+        "cpu_count": 12,
+        "memory_bytes": 25769803776,
+        "baselines": {
+          "multisource": [
+            "/Users/maxhu/play/monica-multisource",
+            "1a6e40e20c6ac12aca434b61244059d067847473"
+          ],
+          "crm": [
+            "/Users/maxhu/play/monica",
+            "6d59cfef4b1a12f678d809a00e37d8332be70b06"
+          ],
+          "desktop": [
+            "/Users/maxhu/play/monica-desktop-public",
+            "e35b49e4ca33406f0fdd7ecf8767931b44fdac87"
+          ]
+        },
+        "rust_commit": "58e271921eb03771913493359be1cb22c0afd2f5",
+        "rust_dirty": true,
+        "binary_sha256": "d39a76a6e41602b84662d13b082de603dba71a59da7142f3cce6819d0bada1fd",
+        "arguments": {
+          "rounds": 3,
+          "scales": [
+            1,
+            10
+          ],
+          "scale_contacts": false,
+          "contacts": 100,
+          "messages": 10000,
+          "batch_size": 1000,
+          "samples": 64,
+          "concurrency": 8,
+          "backends": [
+            "rust"
+          ],
+          "output": ".local-validation/mcp-benchmark-main.jsonl",
+          "skip_build": true,
+          "rust_server": "/Users/maxhu/play/monica-rs/.local-validation/mcp-read/main-server",
+          "migration_timeout_seconds": 1800
+        },
+        "limitations": [
+          "Ordinary coexisting host services are not stopped. Host CPU/memory pressure is recorded; this is not a dedicated machine.",
+          "Cold means first endpoint call after imports; OS/PostgreSQL caches are not evicted.",
+          "Read failures are counted without retry; latency quantiles cover successful requests only, with failure latency and error rate reported separately.",
+          "History grows 10x with a fixed contact set unless --scale-contacts is explicitly supplied.",
+          "HTTP client uses fresh connections equally for all backends; latency includes local connection and JSON decode.",
+          "Rust accepts durable receipts asynchronously; both acceptance and settled timings are reported.",
+          "Python signed API projects per record; Rust uses bounded bulk transactions. Differences include schema/projection algorithms, not just language.",
+          "SQL/WAL cover all isolated backend databases; mixed-load SQL/WAL also include concurrent reads.",
+          "Transaction count includes monitoring connections and can lag pg_stat_database flush; SQL execution sum is not transaction wall time.",
+          "Lock/transaction/RSS samples run every 200 ms plus SQL probe duration, so brief spikes may be missed. Blocked-query age is sampled query age, not exact duration of the lock wait; do not compare it to a true lock-wait p95.",
+          "SQLx acquisition logs provide exact Rust pool latency; no corresponding Python measurement is inferred. Unavailable process I/O is null.",
+          "Mixed load uses eight readers (or configured concurrency) plus one serial importer; readers run until durable import settlement, with a minimum sample count."
+        ]
+      },
+      "scales": {
+        "1": {
+          "cases": 3,
+          "all_complete": true,
+          "median": {
+            "accept_seconds": 0.3216404580000045,
+            "query_ready_seconds": 1.9956108330000006,
+            "settled_seconds": 2.4057724170000014
+          },
+          "mixed_failures": 0,
+          "memory_pending": [
+            0,
+            0,
+            0
+          ]
+        },
+        "10": {
+          "cases": 3,
+          "all_complete": true,
+          "median": {
+            "accept_seconds": 2.934187041999998,
+            "query_ready_seconds": 12.742472750000005,
+            "settled_seconds": 20.580633833
+          },
+          "mixed_failures": 0,
+          "memory_pending": [
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    "final": {
+      "metadata": {
+        "type": "metadata",
+        "time": "2026-11-13T19:09:31.575734+00:00",
+        "host": "macOS-26.6.2-arm64-arm-64bit",
+        "machine": "arm64",
+        "cpu_count": 12,
+        "memory_bytes": 25769803776,
+        "baselines": {
+          "multisource": [
+            "/Users/maxhu/play/monica-multisource",
+            "1a6e40e20c6ac12aca434b61244059d067847473"
+          ],
+          "crm": [
+            "/Users/maxhu/play/monica",
+            "6d59cfef4b1a12f678d809a00e37d8332be70b06"
+          ],
+          "desktop": [
+            "/Users/maxhu/play/monica-desktop-public",
+            "e35b49e4ca33406f0fdd7ecf8767931b44fdac87"
+          ]
+        },
+        "rust_commit": "df55292d6ff0f2e072bf731547c92e84029a025b",
+        "rust_dirty": false,
+        "binary_sha256": "bff26777bf103d5a65c3762617c5cc48138b03ed86e340cbd45c8effebfdc30b",
+        "arguments": {
+          "rounds": 3,
+          "scales": [
+            1,
+            10
+          ],
+          "scale_contacts": false,
+          "contacts": 100,
+          "messages": 10000,
+          "batch_size": 1000,
+          "samples": 64,
+          "concurrency": 8,
+          "backends": [
+            "rust"
+          ],
+          "output": ".local-validation/mcp-benchmark-final.jsonl",
+          "skip_build": true,
+          "rust_server": "/Users/maxhu/play/monica-rs/target/release/monica-server",
+          "migration_timeout_seconds": 1800
+        },
+        "limitations": [
+          "Ordinary coexisting host services are not stopped. Host CPU/memory pressure is recorded; this is not a dedicated machine.",
+          "Cold means first endpoint call after imports; OS/PostgreSQL caches are not evicted.",
+          "Read failures are counted without retry; latency quantiles cover successful requests only, with failure latency and error rate reported separately.",
+          "History grows 10x with a fixed contact set unless --scale-contacts is explicitly supplied.",
+          "HTTP client uses fresh connections equally for all backends; latency includes local connection and JSON decode.",
+          "Rust accepts durable receipts asynchronously; both acceptance and settled timings are reported.",
+          "Python signed API projects per record; Rust uses bounded bulk transactions. Differences include schema/projection algorithms, not just language.",
+          "SQL/WAL cover all isolated backend databases; mixed-load SQL/WAL also include concurrent reads.",
+          "Transaction count includes monitoring connections and can lag pg_stat_database flush; SQL execution sum is not transaction wall time.",
+          "Lock/transaction/RSS samples run every 200 ms plus SQL probe duration, so brief spikes may be missed. Blocked-query age is sampled query age, not exact duration of the lock wait; do not compare it to a true lock-wait p95.",
+          "SQLx acquisition logs provide exact Rust pool latency; no corresponding Python measurement is inferred. Unavailable process I/O is null.",
+          "Mixed load uses eight readers (or configured concurrency) plus one serial importer; readers run until durable import settlement, with a minimum sample count."
+        ]
+      },
+      "scales": {
+        "1": {
+          "cases": 3,
+          "all_complete": true,
+          "median": {
+            "accept_seconds": 0.3061688340000046,
+            "query_ready_seconds": 1.7713208750000007,
+            "settled_seconds": 2.141176250000001
+          },
+          "mixed_failures": 0,
+          "memory_pending": [
+            0,
+            0,
+            0
+          ]
+        },
+        "10": {
+          "cases": 3,
+          "all_complete": true,
+          "median": {
+            "accept_seconds": 2.9255008749999973,
+            "query_ready_seconds": 12.051830624999994,
+            "settled_seconds": 20.236510209000002
+          },
+          "mixed_failures": 0,
+          "memory_pending": [
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    }
+  },
+  "reads": {
+    "main": {
+      "home": {
+        "median_ms": 3.0934995000000134,
+        "p95_ms": 4.000791999999976,
+        "failures": [],
+        "body_sha256": "e78b8b31ad658028a9c36e0a861837c43cca3f74dfee9e18c408baae0c794d41"
+      },
+      "insights": {
+        "median_ms": 62.980625500000166,
+        "p95_ms": 68.5935419999999,
+        "failures": [],
+        "body_sha256": "2ef493a37fa734e1fde387d8a57f1c6072fe36ac89db33a60855814d4e963321"
+      },
+      "profile": {
+        "median_ms": 1.1336454999999468,
+        "p95_ms": 3.8469169999997277,
+        "failures": [],
+        "body_sha256": "dcdd38193d11d6208f5777dd3f413313d84fa99922181e578cf4f07c03e3d3bb"
+      },
+      "profile-summary": {
+        "median_ms": 1.1087084999998886,
+        "p95_ms": 1.5095830000007027,
+        "failures": [],
+        "body_sha256": "1f9b96e20287ce4fb4fa8ec8f449a3c9e6f689464e6067092ec63bcf4b465be9"
+      },
+      "overview": {
+        "median_ms": 1.9257709999997985,
+        "p95_ms": 3.7964169999993302,
+        "failures": [],
+        "body_sha256": "8c165b2763895d1772de6e46c7658772902b05602e850dad4c05a5bca0815392"
+      },
+      "timeline-profile": {
+        "median_ms": 1.1239375000005047,
+        "p95_ms": 1.8787909999993246,
+        "failures": [],
+        "body_sha256": "10b34e77590674cb3ffd74d09155b86afb6f14a66e167d17961f4b925f6dff9d"
+      },
+      "timeline-global": {
+        "median_ms": 5.353062999999825,
+        "p95_ms": 6.891291000000521,
+        "failures": [],
+        "body_sha256": "1a86ddd1dd51d078039aa5cd9d824269434d89ac0ae4ef2da809c8c7c14a295a"
+      },
+      "directory": {
+        "median_ms": 1372.8047500000002,
+        "p95_ms": 1461.5015000000008,
+        "failures": [],
+        "body_sha256": "2b5352849af872745a575f08963b1d4a584b489302a0660472f32f0656fa43e2"
+      }
+    },
+    "candidate": {
+      "home": {
+        "median_ms": 2.8262289999999854,
+        "p95_ms": 3.3404169999999844,
+        "failures": [],
+        "body_sha256": "e78b8b31ad658028a9c36e0a861837c43cca3f74dfee9e18c408baae0c794d41"
+      },
+      "insights": {
+        "median_ms": 62.99547949999995,
+        "p95_ms": 65.21429099999976,
+        "failures": [],
+        "body_sha256": "2ef493a37fa734e1fde387d8a57f1c6072fe36ac89db33a60855814d4e963321"
+      },
+      "profile": {
+        "median_ms": 1.279791500000016,
+        "p95_ms": 2.816708000000112,
+        "failures": [],
+        "body_sha256": "dcdd38193d11d6208f5777dd3f413313d84fa99922181e578cf4f07c03e3d3bb"
+      },
+      "profile-summary": {
+        "median_ms": 1.1751249999996105,
+        "p95_ms": 1.6634999999993738,
+        "failures": [],
+        "body_sha256": "1f9b96e20287ce4fb4fa8ec8f449a3c9e6f689464e6067092ec63bcf4b465be9"
+      },
+      "overview": {
+        "median_ms": 2.443020499999893,
+        "p95_ms": 4.4386250000005845,
+        "failures": [],
+        "body_sha256": "8c165b2763895d1772de6e46c7658772902b05602e850dad4c05a5bca0815392"
+      },
+      "timeline-profile": {
+        "median_ms": 1.0569584999999826,
+        "p95_ms": 2.0693329999996735,
+        "failures": [],
+        "body_sha256": "10b34e77590674cb3ffd74d09155b86afb6f14a66e167d17961f4b925f6dff9d"
+      },
+      "timeline-global": {
+        "median_ms": 5.007312500000083,
+        "p95_ms": 5.682375000000128,
+        "failures": [],
+        "body_sha256": "1a86ddd1dd51d078039aa5cd9d824269434d89ac0ae4ef2da809c8c7c14a295a"
+      },
+      "directory": {
+        "median_ms": 612.8558340000003,
+        "p95_ms": 637.9431249999996,
+        "failures": [],
+        "body_sha256": "2b5352849af872745a575f08963b1d4a584b489302a0660472f32f0656fa43e2"
+      }
+    }
+  },
+  "limits": [
+    "Synthetic local data; no NAS timing claims.",
+    "No paid model inference, real social login, permission grant or legacy credential migration.",
+    "Public HTTPS endpoint not published; forwarded-host local reverse proxy fixture passed.",
+    "Local ad-hoc signing, not notarized.",
+    "The initial provisional benchmark coincided with host compilation and is retained separately, not used as the paired final comparison."
+  ],
+  "baseline_binary_provenance": "Retained clean 41ac3a9 Mac backend is application-source-identical to main 58e2719 (git diff --quiet on crates/apps/migrations returned 0). Harness checkout fields in raw metadata describe the harness; binary SHA and explicit --rust-server identify the baseline executable.",
+  "package": {
+    "source_commit": "d82c28650103dc0cc1f3a2655d1e4ebe97e9ae37",
+    "source_dirty": false,
+    "server_sha256": "bff26777bf103d5a65c3762617c5cc48138b03ed86e340cbd45c8effebfdc30b",
+    "bytes": 1312088362,
+    "post_execution_signature": "passed",
+    "packaged_supervisor_recovery_lifecycle": "passed",
+    "installed_native_ui": "running"
+  }
+}

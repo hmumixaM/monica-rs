@@ -1,4 +1,8 @@
 "use client";
+import {Page, PageHeader} from "../ui/primitives";
+import {Button} from "../ui/button";
+import {Input,Select,Textarea} from "../ui/field";
+
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useSearchParams } from '../../src/router/navigation';
 import { apiFetch } from '../../lib/api';
@@ -55,19 +59,19 @@ export function AskView() {
     }).catch(e => { if (active) setFileError(String(e)); });
     return () => { active = false; };
   }, [selectedProfile, ready, id]);
-  return <main className={styles.page}>
-    <header><p>MONICA</p><h1>问 Monica</h1><p>选择人物，查询聊天、资料与时间线。回答可以继续追问，并查看原始依据。</p></header>
+  return <Page width="wide" className={styles.page}>
+    <PageHeader title="问 Monica" description="选择人物，查询聊天、资料与时间线。回答可以继续追问，并查看原始依据。" />
     <div className={styles.actions}>
-      <label>会话 <select aria-label="选择会话" value={id} disabled={!ready || state.running} onChange={event => {
+      <label>会话 <Select aria-label="选择会话" value={id} disabled={!ready || state.running} onChange={event => {
         const selected = sessions.find(c => c.id === event.target.value);
         if (selected) void activate(selected).catch(e => setFileError(String(e)));
-      }}>{sessions.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</select></label>
-      <button disabled={!ready || state.running} onClick={async () => {
+      }}>{sessions.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</Select></label>
+      <Button disabled={!ready || state.running} onClick={async () => {
         try { const session = await createConversation(); setSessions(await listConversations()); await activate(session); }
         catch (e) { setFileError(String(e)); }
-      }}>新会话</button>
-      <button disabled={!ready} onClick={() => void exportConversation(id).catch(e => setFileError(String(e)))}>导出会话</button>
-      <label>导入会话 <input type="file" accept="application/json" disabled={state.running} onChange={async event => {
+      }}>新会话</Button>
+      <Button disabled={!ready} onClick={() => void exportConversation(id).catch(e => setFileError(String(e)))}>导出会话</Button>
+      <label>导入会话 <Input type="file" accept="application/json" disabled={state.running} onChange={async event => {
         const file = event.target.files?.[0]; if (!file) return;
         try {
           const session = await createConversation(); await importConversation(session.id, file);
@@ -76,7 +80,7 @@ export function AskView() {
         event.target.value = '';
       }} /></label></div>{fileError && <p role="alert">{fileError}</p>}
     <section aria-label="选择人物"><PersonPicker placeholder="@ 搜索并选择人物" onPick={person => { if (ready && !state.running) void choosePeople(people.some(p => p.id === person.id) ? people : [...people, person]).catch(e => setFileError(String(e))); }} />
-      <div className={styles.people}>{people.map(p => <button key={p.id} disabled={!ready || state.running} onClick={() => void choosePeople(people.filter(x => x.id !== p.id)).catch(e => setFileError(String(e)))}>@{p.display_name} ×</button>)}</div>
+      <div className={styles.people}>{people.map(p => <Button key={p.id} disabled={!ready || state.running} onClick={() => void choosePeople(people.filter(x => x.id !== p.id)).catch(e => setFileError(String(e)))}>@{p.display_name} ×</Button>)}</div>
     </section>
     <section aria-label="聊天记录" className={styles.transcript}>{state.messages.map((message, i) => {
       if (message.role !== 'user' && message.role !== 'assistant') return null;
@@ -86,8 +90,8 @@ export function AskView() {
     })}</section>
     <p role="status">{state.status}</p>{state.error && <p role="alert">{state.error}</p>}
     <form onSubmit={event => { event.preventDefault(); if (!question.trim() || state.running) return; const value = question; setQuestion(''); void run(id, value, people.map(p => p.id)); }}>
-      <textarea aria-label="问题" rows={3} value={question} onChange={event => setQuestion(event.target.value)} placeholder="我上次答应 @某人 什么？" />
-      <div className={styles.actions}><span>会话保存在当前浏览器和本地地址中。</span>{state.running ? <button type="button" onClick={() => stop(id)}>停止</button> : <button disabled={!ready || !question.trim()}>提问</button>}</div>
+      <Textarea aria-label="问题" rows={3} value={question} onChange={event => setQuestion(event.target.value)} placeholder="我上次答应 @某人 什么？" />
+      <div className={styles.actions}><span>会话保存在当前浏览器和本地地址中。</span>{state.running ? <Button type="button" onClick={() => stop(id)}>停止</Button> : <Button type="submit" disabled={!ready || !question.trim()}>提问</Button>}</div>
     </form>
-  </main>;
+  </Page>;
 }

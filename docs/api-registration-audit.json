@@ -282,7 +282,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/auth.rs",
-          "line": 189,
+          "line": 199,
           "path": "/api/v1/audit/events"
         }
       ],
@@ -299,7 +299,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/auth.rs",
-          "line": 180,
+          "line": 190,
           "path": "/api/v1/auth/csrf"
         }
       ],
@@ -316,7 +316,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/auth.rs",
-          "line": 187,
+          "line": 197,
           "path": "/api/v1/auth/sessions"
         }
       ],
@@ -333,7 +333,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/auth.rs",
-          "line": 186,
+          "line": 196,
           "path": "/api/v1/auth/totp/status"
         }
       ],
@@ -715,7 +715,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/main.rs",
-          "line": 209,
+          "line": 212,
           "path": "/api/v1/health"
         }
       ],
@@ -1085,7 +1085,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/auth.rs",
-          "line": 183,
+          "line": 193,
           "path": "/api/v1/me"
         }
       ],
@@ -1575,7 +1575,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/main.rs",
-          "line": 213,
+          "line": 216,
           "path": "/api/v1/ready"
         }
       ],
@@ -1790,7 +1790,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/main.rs",
-          "line": 205,
+          "line": 208,
           "path": "/health"
         }
       ],
@@ -1941,7 +1941,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/auth.rs",
-          "line": 179,
+          "line": 189,
           "path": "/api/v1/auth/bootstrap"
         }
       ],
@@ -1958,7 +1958,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/auth.rs",
-          "line": 181,
+          "line": 191,
           "path": "/api/v1/auth/login"
         }
       ],
@@ -1975,7 +1975,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/auth.rs",
-          "line": 182,
+          "line": 192,
           "path": "/api/v1/auth/logout"
         }
       ],
@@ -1992,7 +1992,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/auth.rs",
-          "line": 188,
+          "line": 198,
           "path": "/api/v1/auth/sessions/{id}/revoke"
         }
       ],
@@ -2009,7 +2009,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/auth.rs",
-          "line": 184,
+          "line": 194,
           "path": "/api/v1/auth/totp/setup"
         }
       ],
@@ -2026,7 +2026,7 @@
       "registration": [
         {
           "file": "crates/monica-server/src/auth.rs",
-          "line": 185,
+          "line": 195,
           "path": "/api/v1/auth/totp/verify"
         }
       ],

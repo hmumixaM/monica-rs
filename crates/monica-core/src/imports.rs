@@ -743,7 +743,7 @@ async fn commit_connection_chunk(
     } else {
         before
     };
-    let changed = crate::connections::commit_page(
+    let changed = crate::connections::commit_import_page(
         tx,
         batch.source.provider()?,
         cid,

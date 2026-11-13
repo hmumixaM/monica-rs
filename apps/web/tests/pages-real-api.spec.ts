@@ -29,3 +29,19 @@ test('real Rust populated directory, calendar, orbit, map and profile overview',
  await page.screenshot({path:'../../.local-validation/frontend-real-digest-mobile.png',fullPage:true});
  expect(errors).toEqual([]);expect(failures).toEqual([]);
 });
+test('MCP settings and operational views use real Rust APIs across themes and sizes',async({page})=>{
+ await page.goto('/login');await page.getByLabel('邮箱').fill('pages@example.invalid');await page.getByLabel('密码',{exact:true}).fill('synthetic-pages-password');await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(/\/dashboard$/);
+ await page.goto('/settings');await page.getByLabel('启用 MCP',{exact:true}).check();await page.getByRole('button',{name:'保存 MCP 设置'}).click();await expect(page.getByRole('status').filter({hasText:'MCP 设置已保存'})).toBeVisible();
+ await page.getByLabel('客户端名称',{exact:true}).fill('Synthetic AI');await page.getByRole('button',{name:'创建 access key'}).click();await expect(page.getByText('请保存新密钥，仅本次显示。')).toBeVisible();
+ const key=await page.locator('code').filter({hasText:/^monica_/}).textContent();expect(key?.length).toBeGreaterThan(32);
+ const mcp=await page.request.post('/mcp',{headers:{Authorization:`Bearer ${key}`,Accept:'application/json, text/event-stream','MCP-Protocol-Version':'2025-06-18'},data:{jsonrpc:'2.0',id:1,method:'tools/list',params:{}}});expect(mcp.ok()).toBeTruthy();expect((await mcp.json()).result.tools.length).toBeGreaterThan(10);
+ await page.screenshot({path:'../../.local-validation/mcp-settings-desktop.png',fullPage:true});
+ await page.getByRole('button',{name:'已保存，隐藏密钥'}).click();await page.getByRole('button',{name:'替换',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'旧密钥立即失效'})).toBeVisible();
+ const old=await page.request.post('/mcp',{headers:{Authorization:`Bearer ${key}`},data:{}});expect(old.status()).toBe(401);
+ await page.getByRole('button',{name:'撤销',exact:true}).click();await expect(page.getByText('已撤销',{exact:true})).toBeVisible();
+ await page.goto('/imports');await expect(page.getByRole('heading',{name:'同步与导入进度',exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'每日进度',exact:true})).toBeVisible();
+ await page.getByRole('combobox',{name:'来源',exact:true}).selectOption('apple_messages');await expect(page.locator('section').filter({has:page.getByRole('heading',{name:'每日进度',exact:true})}).getByText(/已保存/).first()).toBeVisible();
+ await page.getByRole('button',{name:'查看诊断'}).first().click();await expect(page.getByRole('dialog',{name:'运行详情'})).toBeVisible();await page.keyboard.press('Escape');
+ for(const width of [1440,390]){await page.setViewportSize({width,height:1000});for(const theme of ['light','dark']){await page.evaluate(t=>{document.documentElement.dataset.theme=t;window.scrollTo(0,0);(document.activeElement as HTMLElement)?.blur();},theme);await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:`../../.local-validation/mcp-imports-${width}-${theme}.png`,fullPage:true});}}
+ await page.goto('/ask');await expect(page.getByRole('heading',{name:'问 Monica',exact:true})).toBeVisible();await page.screenshot({path:'../../.local-validation/mcp-ask-mobile.png',fullPage:true});
+});

@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -75,7 +76,11 @@ def run_child(root, args, *, env=None):
     with (root / "logs/collector.log").open("ab") as log:
         process = subprocess.Popen([sys.executable, *map(str, args)], cwd=root,
                                    env=env, stdout=log, stderr=log, start_new_session=os.environ.get("MONICA_COLLECTOR_OWNED_GROUP") != "1")
+        heartbeat = time.monotonic()
         while process.poll() is None:
+            if time.monotonic() - heartbeat >= 15:
+                status(root)
+                heartbeat = time.monotonic()
             if STOP.wait(0.2):
                 process.terminate() if os.environ.get("MONICA_COLLECTOR_OWNED_GROUP") == "1" else os.killpg(process.pid, signal.SIGTERM)
                 try:
@@ -291,6 +296,7 @@ def main():
         observed = wake_signature(root)
         try:
             with exclusive(root):
+                status(root, run_id=str(uuid.uuid4()), started_at=time.time(), state="collecting", phase="starting", next_run_at=None)
                 result = run_action(args, root)
                 completed = time.time()
                 value = status(root, state="ready", phase="idle", last_success_at=completed,

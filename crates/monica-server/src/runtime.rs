@@ -37,6 +37,9 @@ pub fn routes(
     };
     Ok(Router::new()
         .route("/internal/runtime/status", get(status))
+        .route("/internal/account", get(account))
+        .route("/internal/source-run", post(native_run))
+        .route("/internal/account/reset-password", post(reset_account))
         .route("/internal/source-page", post(source_page))
         .route(
             "/internal/source-state",
@@ -403,4 +406,48 @@ async fn source_status(State(state): State<Control>) -> Response {
     match sqlx::query_scalar::<_,serde_json::Value>("SELECT jsonb_build_object('provider',provider,'enabled',enabled,'state',state) FROM crm.source_connections WHERE provider IN ('apple_contacts','apple_messages') AND external_account='local' ORDER BY provider").fetch_all(&state.app.pool).await{
   Ok(rows)=>Json(rows).into_response(),Err(error)=>failed(error.into())
  }
+}
+
+async fn account(
+    State(s): State<Control>,
+) -> Result<Json<serde_json::Value>, crate::auth::ApiError> {
+    let value: Option<String> = sqlx::query_scalar("SELECT email FROM crm.app_users LIMIT 1")
+        .fetch_optional(&s.app.pool)
+        .await?;
+    Ok(Json(json!({"email":value})))
+}
+async fn reset_account(
+    State(s): State<Control>,
+    Json(body): Json<crate::auth::ResetPassword>,
+) -> Result<Json<serde_json::Value>, crate::auth::ApiError> {
+    crate::auth::reset_password(&s.app, body, None).await
+}
+
+#[derive(serde::Deserialize)]
+struct NativeRun {
+    provider: String,
+    run_id: uuid::Uuid,
+    state: String,
+}
+async fn native_run(
+    State(s): State<Control>,
+    Json(body): Json<NativeRun>,
+) -> Result<Json<serde_json::Value>, crate::auth::ApiError> {
+    if !["apple_contacts", "apple_messages"].contains(&body.provider.as_str())
+        || !["collecting", "ready", "failed"].contains(&body.state.as_str())
+    {
+        return Err(crate::auth::ApiError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Invalid native source run",
+        ));
+    }
+    let provider = monica_core::Provider::parse(&body.provider).expect("validated provider");
+    let cid = monica_core::connections::connection_id(provider, "local");
+    let id = format!("native:{}:{}", body.provider, body.run_id);
+    let mut tx = s.app.pool.begin().await?;
+    sqlx::query("INSERT INTO crm.import_activity(id,provider,connection_id,stream,kind,state,phase,received_at,heartbeat_at,completed_at,failures) VALUES($1,$2,$3,'native','collection',$4,'native_read',now(),now(),CASE WHEN $4<>'collecting' THEN now() END,CASE WHEN $4='failed' THEN 1 ELSE 0 END) ON CONFLICT(id) DO UPDATE SET state=excluded.state,heartbeat_at=now(),updated_at=now(),completed_at=excluded.completed_at,failures=greatest(crm.import_activity.failures,excluded.failures)")
+        .bind(&id).bind(&body.provider).bind(cid).bind(&body.state).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO crm.import_run_events(run_id,provider,connection_id,state,phase) VALUES($1,$2,$3,$4,'native_read')").bind(id).bind(body.provider).bind(cid).bind(body.state).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(Json(json!({"recorded":true})))
 }

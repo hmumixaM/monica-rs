@@ -1,0 +1,20 @@
+{
+  "installed": "/Users/maxhu/Applications/Monica Rust.app",
+  "launcher": "/Users/maxhu/Documents/ChatGPT/monica/\u6253\u5f00 Monica Rust.command",
+  "source_commit": "d82c28650103dc0cc1f3a2655d1e4ebe97e9ae37",
+  "server_sha256": "bff26777bf103d5a65c3762617c5cc48138b03ed86e340cbd45c8effebfdc30b",
+  "signature_after_launch": "passed",
+  "ready": "passed",
+  "observed_native_ui": "Running; password recovery button present; all local/social sources disabled/unconfigured; Instagram and LinkedIn not logged in",
+  "retired": [
+    {
+      "old": "/Users/maxhu/Applications/Monica.app",
+      "trash": "/Users/maxhu/.Trash/Monica-retired-2026-11-13-5858c269.app"
+    },
+    {
+      "old": "/Users/maxhu/Documents/ChatGPT/monica/\u6253\u5f00 Monica \u5019\u9009\u7248.command",
+      "trash": "/Users/maxhu/.Trash/\u6253\u5f00 Monica \u5019\u9009\u7248-retired-2026-11-13-ed73e731.command"
+    }
+  ],
+  "legacy_data_directories_migrated": []
+}

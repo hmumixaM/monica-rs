@@ -6,6 +6,7 @@ import {apiFetch} from "../../lib/api";
 import {Button} from "../ui/button";
 import {Dialog} from "../ui/dialog";
 import {Failure, formatDateTime, formatNumber, Loading, Page, PageHeader, providerLabel, Section} from "../ui/primitives";
+import {ImportProgress} from "./import-progress";
 import {CollectorTokens} from "./collector-tokens";
 import {IdentityReview} from "./identity-review";
 import {RawData} from "./raw-data";
@@ -25,7 +26,7 @@ type Audit = {
 
 const STATES: Record<string, string> = {
   ready: "本地可用", pending: "等待下载", downloading: "下载中", expired: "来源已过期", unavailable: "来源不可用",
-  failed: "处理失败", projected: "对象已投影", reconciled: "已对账",
+  failed: "处理失败", durable: "已核对", receiving: "待处理", projected: "对象已投影", reconciled: "已对账",
 };
 const label = (state: string) => STATES[state] ?? state;
 
@@ -56,6 +57,7 @@ export function ImportsView() {
     <PageHeader title="导入中心"
       actions={<Button size="sm" onClick={() => void load()} disabled={loading}><RefreshCw size={14} />刷新</Button>} />
     {error && <Failure onRetry={() => void load()}>{error}</Failure>}
+    <ImportProgress />
     <IdentityReview />
     <HistoryChanges />
 
@@ -67,8 +69,8 @@ export function ImportsView() {
             <span className={styles.stage} data-stage={source.stage}>{label(source.stage)}</span>
           </div>
           <dl className={styles.counts}>
-            <div><dt>源对象</dt><dd>{formatNumber(source.source_count)}</dd></div>
-            <div><dt>已投影</dt><dd>{formatNumber(source.projected_count)}</dd></div>
+            <div><dt>接收记录</dt><dd>{formatNumber(source.source_count)}</dd></div>
+            <div><dt>已处理记录</dt><dd>{formatNumber(source.projected_count)}</dd></div>
             <div><dt>排除</dt><dd>{formatNumber(source.excluded_count)}</dd></div>
             <div><dt>核对时间</dt><dd>{formatDateTime(source.checked_at)}</dd></div>
           </dl>
@@ -76,7 +78,7 @@ export function ImportsView() {
         </li>)}
       </ul> : <p className={styles.none}>尚无完整的来源对账记录。</p>)}
       {audit && <p className={styles.note}>
-        消息已核对 {audit.messages.processed_tables} 个源表，游标处理 {formatNumber(audit.messages.processed_rows)} / {formatNumber(audit.messages.source_rows)} 行。此分母只含已扫描的源表。
+        搜索已收录 {formatNumber(audit.messages.processed_rows)} 条消息。各来源的保存与处理进度见上方。
       </p>}
       {!audit && loading && <Loading />}
     </Section>

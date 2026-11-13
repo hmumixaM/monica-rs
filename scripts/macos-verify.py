@@ -46,5 +46,7 @@ subprocess.run([str(runtime/'postgres/bin/postgres'),'--version'],check=True)
 subprocess.run([str(runtime/'tools/bin/ffprobe'),'-version'],check=True,stdout=subprocess.DEVNULL)
 env={**os.environ,'MONICA_NATIVE_SERVER':str(server),'MONICA_NATIVE_PG_BIN':str(runtime/'postgres/bin'),'MONICA_NATIVE_WEB':str(runtime/'web')}
 subprocess.run(['cargo','test','--manifest-path',str(ROOT/'apps/native-desktop/src-tauri/Cargo.toml'),'--no-default-features','--test','native_runtime','--','--ignored','--nocapture'],env=env,check=True,cwd=ROOT)
+# A smoke test must not modify a sealed package while exercising it.
+subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)
 size=sum(path.stat().st_size for path in app.rglob('*') if path.is_file() and not path.is_symlink())
 print(json.dumps({'app':str(app),'bytes':size,'server_sha256':manifest['server_sha256'],'source_commit':manifest['source_commit'],'source_dirty':manifest.get('source_dirty'),'verified':'codesign, relocation, ffprobe, fresh PG16, static Web/auth, suspend/resume, pause, crash recovery, ports, clean exit'},indent=2))

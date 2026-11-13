@@ -5,8 +5,10 @@ mod cdc;
 mod collector;
 mod connections;
 mod faces;
+mod import_status;
 mod imports;
 mod linking;
+mod mcp;
 mod media;
 mod messages;
 mod pages;
@@ -216,7 +218,8 @@ async fn run() -> Result<()> {
                     pool: pool.clone(),
                     runtime: runtime.clone(),
                 })
-                .merge(auth::routes(state.clone()));
+                .merge(auth::routes(state.clone()))
+                .merge(mcp::routes(state.clone()));
             if let Some(token) = control_token.filter(|token| !token.is_empty()) {
                 app = app.merge(runtime::routes(runtime.clone(), &token, state.clone())?);
             }

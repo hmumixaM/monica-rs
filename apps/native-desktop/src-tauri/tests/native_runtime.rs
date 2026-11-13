@@ -95,7 +95,7 @@ fn native_postgres_server_lifecycle() {
     );
     let login = client.post(format!("{url}/api/v1/auth/login")).json(&json!({"email":"native-fixture@example.invalid","password":"synthetic-native-password-42"})).send().unwrap();
     assert!(login.status().is_success());
-    let cookies: Vec<_> = login
+    let mut cookies: Vec<_> = login
         .headers()
         .get_all("set-cookie")
         .iter()
@@ -118,6 +118,51 @@ fn native_postgres_server_lifecycle() {
             .status(),
         401
     );
+    // Actual private supervisor recovery against the packaged server. No real
+    // account or previous application configuration is read.
+    assert_eq!(
+        supervisor.account().unwrap()["email"],
+        "native-fixture@example.invalid"
+    );
+    let before: serde_json::Value = client
+        .get(format!("{url}/api/v1/me"))
+        .header("Cookie", cookies.join("; "))
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    supervisor
+        .reset_account(
+            "native-fixture@example.invalid",
+            "replacement-native-password-42",
+            false,
+        )
+        .unwrap();
+    assert_eq!(
+        client
+            .get(format!("{url}/api/v1/me"))
+            .header("Cookie", cookies.join("; "))
+            .send()
+            .unwrap()
+            .status(),
+        401
+    );
+    let login=client.post(format!("{url}/api/v1/auth/login")).json(&json!({"email":"native-fixture@example.invalid","password":"replacement-native-password-42"})).send().unwrap();
+    assert!(login.status().is_success());
+    cookies = login
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .map(|h| h.to_str().unwrap().split(';').next().unwrap().to_string())
+        .collect();
+    let after: serde_json::Value = client
+        .get(format!("{url}/api/v1/me"))
+        .header("Cookie", cookies.join("; "))
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(before["id"], after["id"]);
     // Synthetic native spool -> token-only HTTP -> immutable journal -> evidence.
     // No Contacts/Messages reader or personal directory is involved.
     let transport = supervisor.native_transport().unwrap();

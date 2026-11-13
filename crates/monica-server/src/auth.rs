@@ -42,6 +42,7 @@ pub struct AppState {
     dummy: String,
     pub origin: String,
     secure: bool,
+    delegated_actor: Option<(Uuid, String)>,
 }
 impl AppState {
     pub async fn new(
@@ -73,6 +74,7 @@ impl AppState {
             dummy,
             origin,
             secure,
+            delegated_actor: None,
         })
     }
 }
@@ -141,11 +143,17 @@ fn cookie_response(
     response
 }
 pub async fn user(s: &AppState, h: &HeaderMap) -> ApiResult<(Uuid, String)> {
+    if let Some(actor) = &s.delegated_actor {
+        return Ok(actor.clone());
+    }
     let t = cookie(h, "crm_session").ok_or(bad(StatusCode::UNAUTHORIZED, "login required"))?;
     sqlx::query_as("SELECT u.id,u.email FROM crm.sessions s JOIN crm.app_users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>now()")
   .bind(digest(t)).fetch_optional(&s.pool).await?.ok_or(bad(StatusCode::UNAUTHORIZED,"invalid session"))
 }
 async fn boundary(State(s): State<AppState>, request: Request, next: Next) -> Response {
+    if s.delegated_actor.is_some() {
+        return next.run(request).await;
+    }
     let expected = s.origin.split_once("://").map(|x| x.1).unwrap_or("");
     if request.headers().get("host").and_then(|x| x.to_str().ok()) != Some(expected) {
         return bad(StatusCode::FORBIDDEN, "invalid Host").into_response();
@@ -189,6 +197,9 @@ pub fn routes(state: AppState) -> Router {
         .route("/api/v1/auth/sessions", get(sessions))
         .route("/api/v1/auth/sessions/{id}/revoke", post(revoke))
         .route("/api/v1/audit/events", get(audit))
+        .route("/api/v1/auth/password", post(change_password))
+        .merge(crate::mcp::settings_routes())
+        .merge(crate::import_status::routes())
         .merge(crate::profiles::routes())
         .merge(crate::media::routes())
         .merge(crate::imports::routes())
@@ -638,4 +649,119 @@ mod tests {
             assert_eq!(actual, case["response"]["json"], "request: {request}");
         }
     }
+}
+
+// Only the MCP dispatcher constructs this scoped in-process router. No request
+// header can select an actor. The dispatcher exposes an explicit tool allowlist.
+pub(crate) fn delegated_routes(mut state: AppState, actor: (Uuid, String)) -> Router {
+    state.delegated_actor = Some(actor);
+    routes(state)
+}
+#[derive(Deserialize)]
+pub(crate) struct ResetPassword {
+    pub email: String,
+    pub password: String,
+    #[serde(default)]
+    pub reset_totp: bool,
+}
+pub(crate) async fn reset_password(
+    s: &AppState,
+    body: ResetPassword,
+    expected_hash: Option<String>,
+) -> ApiResult<Json<Value>> {
+    if !(12..=512).contains(&body.password.chars().count()) {
+        return Err(bad(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Password must contain 12–512 characters",
+        ));
+    }
+    let _permit = s
+        .passwords
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| bad(StatusCode::SERVICE_UNAVAILABLE, "password capacity busy"))?;
+    let encoded = tokio::task::spawn_blocking(move || hash_password(&body.password))
+        .await
+        .map_err(|_| bad(StatusCode::INTERNAL_SERVER_ERROR, "password worker failed"))?
+        .map_err(|_| bad(StatusCode::INTERNAL_SERVER_ERROR, "password hashing failed"))?;
+    let mut tx = s.pool.begin().await?;
+    let row: Option<(Uuid, String)> =
+        sqlx::query_as("SELECT id,password_hash FROM crm.app_users WHERE email=$1 FOR UPDATE")
+            .bind(body.email.trim().to_lowercase())
+            .fetch_optional(&mut *tx)
+            .await?;
+    let (id, current) = row.ok_or(bad(
+        StatusCode::NOT_FOUND,
+        "Account not found; create a first-use account",
+    ))?;
+    if expected_hash.is_some_and(|old| old != current) {
+        return Err(bad(StatusCode::CONFLICT, "Password changed; retry"));
+    }
+    sqlx::query("UPDATE crm.app_users SET password_hash=$2,totp_secret=CASE WHEN $3 THEN NULL ELSE totp_secret END,pending_totp_secret=CASE WHEN $3 THEN NULL ELSE pending_totp_secret END WHERE id=$1")
+        .bind(id).bind(encoded).bind(body.reset_totp).execute(&mut *tx).await?;
+    if body.reset_totp {
+        sqlx::query("DELETE FROM crm.auth_recovery_codes WHERE user_id=$1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    sqlx::query("UPDATE crm.sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM crm.auth_login_attempts")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("INSERT INTO crm.audit_events(user_id,action,metadata) VALUES($1,'auth.password_reset',jsonb_build_object('reset_totp',$2::boolean))")
+        .bind(id).bind(body.reset_totp).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(Json(json!({"status":"password_reset"})))
+}
+#[derive(Deserialize)]
+struct PasswordChange {
+    current_password: String,
+    password: String,
+}
+async fn change_password(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(body): Json<PasswordChange>,
+) -> ApiResult<Json<Value>> {
+    let (id, email) = user(&s, &h).await?;
+    let encoded: String = sqlx::query_scalar("SELECT password_hash FROM crm.app_users WHERE id=$1")
+        .bind(id)
+        .fetch_one(&s.pool)
+        .await?;
+    let check = encoded.clone();
+    let _permit = s
+        .passwords
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| bad(StatusCode::SERVICE_UNAVAILABLE, "password capacity busy"))?;
+    let valid = tokio::task::spawn_blocking(move || {
+        PasswordHash::new(&check).ok().is_some_and(|hash| {
+            Argon2::default()
+                .verify_password(body.current_password.as_bytes(), &hash)
+                .is_ok()
+        })
+    })
+    .await
+    .map_err(|_| bad(StatusCode::INTERNAL_SERVER_ERROR, "password worker failed"))?;
+    drop(_permit);
+    if !valid {
+        return Err(bad(
+            StatusCode::UNAUTHORIZED,
+            "Current password is incorrect",
+        ));
+    }
+    reset_password(
+        &s,
+        ResetPassword {
+            email,
+            password: body.password,
+            reset_totp: false,
+        },
+        Some(encoded),
+    )
+    .await
 }

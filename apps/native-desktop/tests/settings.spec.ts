@@ -33,3 +33,12 @@ test('sources expose explicit login and refuse collection before authentication'
  for(const provider of ['Instagram','LinkedIn']){const card=page.locator('article').filter({has:page.getByRole('heading',{name:provider,exact:true})});await expect(card.getByRole('button',{name:`连接 / 登录 ${provider}`})).toBeVisible();await expect(card.getByRole('button',{name:'启用采集'})).toBeDisabled();await expect(card.getByRole('button',{name:'查看状态'})).toBeEnabled();}
  await expect(page.getByLabel('登录 Mac 后自动启动')).not.toBeChecked();
 });
+test('password recovery retains account and allows optional TOTP reset',async({page})=>{
+ await fixture(page);
+ await page.evaluate(()=>{const bridge=(window as unknown as {__TAURI_INTERNALS__:{invoke:(name:string,args?:unknown)=>Promise<unknown>}}).__TAURI_INTERNALS__;const original=bridge.invoke;bridge.invoke=async(name,args)=>name==='local_account'?{email:'fixture@example.invalid'}:name==='reset_account'?null:original(name,args);});
+ await page.getByRole('button',{name:'忘记密码 / 重置登录密码'}).click();
+ await expect(page.getByText(/fixture@example.invalid/)).toBeVisible();await expect(page.getByLabel('同时重置两步验证')).not.toBeChecked();
+ await page.getByLabel('新密码',{exact:true}).fill('new-synthetic-password');await page.getByLabel('确认新密码',{exact:true}).fill('new-synthetic-password');
+ await page.getByRole('button',{name:'重置密码',exact:true}).click();await expect(page.getByRole('status')).toContainText('密码已重置');
+ await expect(page.getByRole('textbox',{name:'新密码',exact:true})).toHaveCount(0);
+});

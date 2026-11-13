@@ -24,3 +24,12 @@ manifest['bridge_sha256']=sha(root/'collector-bridge.py')
 manifest['bridge_modules']={name:sha(root/name) for name in ['collector-bridge.py','collector-chatlog.py','chatlog_moments.py']}
 (root/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 print(json.dumps({'runtime':str(root),'refreshed_explicit_files':len(files),'bridge_sha256':manifest['bridge_sha256']}))
+
+# Keep an already locked dependency runtime usable after a source refresh.
+for name in ['run-bridge','run-collector']:
+ wrapper=root/name
+ text=wrapper.read_text().replace('export PYTHONNOUSERSITE=1\n','export PYTHONNOUSERSITE=1\nexport PYTHONDONTWRITEBYTECODE=1\n')
+ text=text.replace('exec "$HERE/python/bin/python3.12" "$HERE/','exec "$HERE/python/bin/python3.12" -B "$HERE/')
+ # Refresh can be repeated without accumulating environment lines.
+ text=text.replace('export PYTHONDONTWRITEBYTECODE=1\nexport PYTHONDONTWRITEBYTECODE=1\n','export PYTHONDONTWRITEBYTECODE=1\n')
+ wrapper.write_text(text)

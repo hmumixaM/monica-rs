@@ -102,7 +102,7 @@ def main():
         subprocess.run(['codesign','--force','--sign','-',str(f)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
     shutil.copy2(a.server,a.output/'monica-server')
     shutil.copytree(a.web,a.output/'web')
-    shutil.copytree(a.collectors,a.output/'collectors',symlinks=True)
+    shutil.copytree(a.collectors,a.output/'collectors',symlinks=True,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
     notices=a.output/'licenses';notices.mkdir()
     geo=ROOT/'crates/monica-server/src/pages/geonames'
     shutil.copy2(geo/'README.md',notices/'GeoNames.md')

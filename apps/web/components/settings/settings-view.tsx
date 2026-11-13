@@ -1,5 +1,6 @@
 "use client";
 
+import {McpSettings,PasswordSettings} from "./mcp-settings";
 import {Page, PageHeader} from "../ui/primitives";
 import {AiStatus} from "./ai-status";
 import {ModelSettings} from "./model-settings";
@@ -14,6 +15,8 @@ export function SettingsView() {
     <PageHeader title="设置" />
     <Appearance />
     <ArchivedProfiles />
+    <PasswordSettings />
+    <McpSettings />
     <DeviceSessions />
     <TotpSettings />
     <ModelSettings />

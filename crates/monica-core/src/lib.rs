@@ -8,6 +8,7 @@ pub mod credentials;
 pub mod domain;
 pub mod faces;
 pub mod identity;
+pub mod import_monitor;
 pub mod imports;
 pub mod link_matching;
 pub mod linking;
