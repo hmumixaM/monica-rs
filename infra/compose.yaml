@@ -87,7 +87,8 @@ services:
     init: true
     restart: unless-stopped
     stop_grace_period: 15s
-    cpus: 1
+    # Synology supports cpusets even when CFS CPU quotas are unavailable.
+    cpuset: ${MONICA_COLLECTOR_CPUSET:-0}
     mem_limit: 768m
     entrypoint: [/opt/monica/collectors/.venv/bin/python, /opt/monica/collector-supervisor.py]
     command: [--provider, wechat]
@@ -115,7 +116,7 @@ services:
     init: true
     restart: unless-stopped
     stop_grace_period: 15s
-    cpus: 1
+    cpuset: ${MONICA_COLLECTOR_CPUSET:-0}
     mem_limit: 768m
     entrypoint: [/opt/monica/collectors/.venv/bin/python, /opt/monica/collector-supervisor.py]
     command: [--provider, instagram]
@@ -135,7 +136,7 @@ services:
     init: true
     restart: unless-stopped
     stop_grace_period: 15s
-    cpus: 1
+    cpuset: ${MONICA_COLLECTOR_CPUSET:-0}
     mem_limit: 768m
     entrypoint: [/opt/monica/collectors/.venv/bin/python, /opt/monica/collector-supervisor.py]
     command: [--provider, linkedin]
@@ -153,7 +154,7 @@ services:
     init: true
     restart: unless-stopped
     stop_grace_period: 15s
-    cpus: 1
+    cpuset: ${MONICA_COLLECTOR_CPUSET:-0}
     mem_limit: 768m
     entrypoint: [/opt/monica/collectors/.venv/bin/python, /opt/monica/collector-supervisor.py]
     command: [--provider, linkedin, --lane, messages]

@@ -26,6 +26,8 @@ Sources reports whether the native Mac reader is present. Linux/NAS disables App
 
 The optional `wechat` Compose profile reads only explicitly published standalone Chatlog SQLite snapshots. Set `MONICA_CHATLOG_SNAPSHOT_ROOT` to an existing absolute export directory, `MONICA_CHATLOG_ACCOUNT` to its independent source anchor and, when known, `MONICA_CHATLOG_SELF_ID` to the owning account identity. The mount is read-only and does not create a missing source directory. Configure the same independent `MONICA_CONTROL_TOKEN` for the server and collector, then explicitly enable the WeChat adapter through the authenticated import controls. Media references, locations, shared links, interactions and exact original XML are retained; the presence of a remote URL does not prove that its original bytes have been archived locally.
 
+Optional collector containers use CPU 0 by default. Set `MONICA_COLLECTOR_CPUSET` to another valid CPU set when needed. This preserves a CPU bound on Synology kernels that support cpusets but cannot apply CFS CPU quotas; the existing 768 MiB memory limit remains in place.
+
 ## Local isolated validation
 
 ```sh
