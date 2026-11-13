@@ -25,6 +25,7 @@ import statistics
 import subprocess
 import tempfile
 import threading
+import traceback
 import time
 import urllib.error
 import urllib.parse
@@ -103,6 +104,12 @@ class RustBackend:
         self.temp.cleanup()
 
 
+class RequestFailure(RuntimeError):
+    def __init__(self, path, status, body):
+        self.status = status
+        super().__init__(f'{path} returned {status}: {body[:800]!r}')
+
+
 class Client:
     def __init__(self, base):
         self.base = base
@@ -126,7 +133,9 @@ class Client:
         try:
             response = opener.open(request, timeout=120)
         except urllib.error.HTTPError as error:
-            raise RuntimeError(f'{path} returned {error.code}: {error.read()[:800]!r}') from error
+            with error:
+                body = error.read(801)
+            raise RequestFailure(path, error.code, body) from error
         with response:
             data = response.read()
             return json.loads(data) if data else None
@@ -264,22 +273,52 @@ class Monitor:
 
 def quantiles(samples):
     values=sorted(samples)
+    if not values:
+        return {'samples':0,'p50_ms':None,'p95_ms':None,'p99_ms':None}
     return {'samples':len(values),'p50_ms':statistics.median(values),'p95_ms':values[max(0,math.ceil(len(values)*.95)-1)],'p99_ms':values[max(0,math.ceil(len(values)*.99)-1)]}
 
 
+def measured_read(client, name, path):
+    start=time.perf_counter();error=None
+    try:
+        if client.request(path) is None:
+            raise ValueError('empty JSON response')
+    except RequestFailure as failure:
+        error={'status':str(failure.status),'detail':str(failure)}
+    except (OSError, ValueError) as failure:
+        error={'status':type(failure).__name__,'detail':str(failure)}
+    return name,(time.perf_counter()-start)*1000,error
+
+
+def read_summary(rows, paths):
+    by_route={}
+    for name in paths:
+        selected=[row for row in rows if row[0]==name]
+        failed=[row for row in selected if row[2] is not None]
+        counts={}
+        for _,_,error in failed:
+            counts[error['status']]=counts.get(error['status'],0)+1
+        by_route[name]={**quantiles([ms for _,ms,error in selected if error is None]),
+            'requests':len(selected),'failures':len(failed),
+            'error_rate':len(failed)/len(selected) if selected else None,
+            'errors_by_status':counts,
+            'failure_latency':quantiles([ms for _,ms,_ in failed]),
+            'first_error':failed[0][2] if failed else None}
+    failures=sum(row[2] is not None for row in rows)
+    return {'requests':len(rows),'failures':failures,
+        'error_rate':failures/len(rows) if rows else None,'by_route':by_route}
+
+
 def page_load(client,paths,samples,concurrency):
-    def fetch(item):
-        name,path=item;start=time.perf_counter();body=client.request(path)
-        assert body is not None
-        return name,(time.perf_counter()-start)*1000
     tasks=[item for _ in range(samples) for item in paths.items()]
     begin=time.perf_counter()
-    with futures.ThreadPoolExecutor(max_workers=concurrency) as executor: results=list(executor.map(fetch,tasks))
-    return {'elapsed_seconds':time.perf_counter()-begin,'by_route':{name:quantiles([ms for route,ms in results if route==name]) for name in paths}}
+    with futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+        rows=list(executor.map(lambda item:measured_read(client,*item),tasks))
+    return {'elapsed_seconds':time.perf_counter()-begin,**read_summary(rows,paths)}
 
 
 def mixed_pages(client,paths,samples,concurrency,import_done):
-    """Keep eight readers active for the actual background import interval."""
+    """Keep readers active through import; measure failures without retrying them."""
     routes=list(paths.items());minimum=math.ceil(samples*len(routes)/concurrency)
     begin=time.perf_counter()
     def reader(worker):
@@ -287,14 +326,13 @@ def mixed_pages(client,paths,samples,concurrency,import_done):
         while index<minimum or not import_done.is_set():
             if time.perf_counter()-begin>900:raise TimeoutError('mixed import/read phase exceeded 15 minutes')
             name,path=routes[(worker+index)%len(routes)]
-            started=time.perf_counter();client.request(path)
-            rows.append((name,(time.perf_counter()-started)*1000));index+=1
+            rows.append(measured_read(client,name,path));index+=1
         return rows
     with futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
         rows=[row for group in executor.map(reader,range(concurrency)) for row in group]
     elapsed=time.perf_counter()-begin
     return {'elapsed_seconds':elapsed,'requests_per_second':len(rows)/elapsed,
-            'by_route':{name:quantiles([ms for route,ms in rows if route==name]) for name in paths}}
+            **read_summary(rows,paths)}
 
 
 def ingest(backend,client,profiles,count,rust,offset=0,batch_size=1000):
@@ -377,6 +415,7 @@ def main():
         'arguments':{k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()},
         'limitations':['Ordinary coexisting host services are not stopped. Host CPU/memory pressure is recorded; this is not a dedicated machine.',
         'Cold means first endpoint call after imports; OS/PostgreSQL caches are not evicted.',
+        'Read failures are counted without retry; latency quantiles cover successful requests only, with failure latency and error rate reported separately.',
         'History grows 10x with a fixed contact set unless --scale-contacts is explicitly supplied.',
         'HTTP client uses fresh connections equally for all backends; latency includes local connection and JSON decode.',
         'Rust accepts durable receipts asynchronously; both acceptance and settled timings are reported.',
@@ -386,6 +425,7 @@ def main():
         'Lock/transaction/RSS samples run every 200 ms plus SQL probe duration, so brief spikes may be missed. Blocked-query age is sampled query age, not exact duration of the lock wait; do not compare it to a true lock-wait p95.',
         'SQLx acquisition logs provide exact Rust pool latency; no corresponding Python measurement is inferred. Unavailable process I/O is null.',
         'Mixed load uses eight readers (or configured concurrency) plus one serial importer; readers run until durable import settlement, with a minimum sample count.']}
+    failures=0
     with args.output.open('w') as output:
         output.write(json.dumps(metadata)+'\n');output.flush()
         for round_number in range(1,args.rounds+1):
@@ -394,9 +434,19 @@ def main():
                 order=args.backends[(round_number-1)%len(args.backends):]+args.backends[:(round_number-1)%len(args.backends)]
                 for kind in order:
                     print(f'Benchmark {kind} round={round_number} scale={scale}',flush=True)
-                    with (RustBackend() if kind=='rust' else ReferenceBackend(kind)) as backend:
-                        result=case(backend,kind,args,round_number,scale)
+                    try:
+                        with (RustBackend() if kind=='rust' else ReferenceBackend(kind)) as backend:
+                            result=case(backend,kind,args,round_number,scale)
+                        result['status']='complete'
+                    except Exception as error:
+                        failures+=1
+                        log=args.output.with_name(f'{args.output.stem}-{kind}-{round_number}-{scale}-failure.log')
+                        log.write_text(traceback.format_exc())
+                        result={'status':'failed','backend':kind,'round':round_number,'scale':scale,
+                            'initial_messages':args.messages*scale,'error_type':type(error).__name__,
+                            'error':str(error),'failure_log':str(log)}
                     output.write(json.dumps(result)+'\n');output.flush()
-                    print(json.dumps({k:result[k] for k in ('backend','round','scale','initial_messages','verified_linked_conversations')}),flush=True)
+                    print(json.dumps({k:result.get(k) for k in ('status','backend','round','scale','initial_messages','verified_linked_conversations','error')}),flush=True)
+    if failures:raise SystemExit(1)
 
 if __name__=='__main__':main()
