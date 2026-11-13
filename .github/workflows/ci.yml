@@ -72,6 +72,7 @@ jobs:
           go-version-file: services/whatsapp/go.mod
           cache-dependency-path: services/whatsapp/go.sum
       - run: python3 scripts/test-collector-bridge.py && python3 scripts/test-collector-chatlog.py
+      - run: python3 scripts/test-collector-supervisor.py
       - run: python3 -m pip install uv==0.9.17
       - name: LinkedIn messages against the locked collector dependencies
         env:
