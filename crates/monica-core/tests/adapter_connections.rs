@@ -284,7 +284,7 @@ async fn independent_message_spool_parent_pause_keeps_page_replayable(pool: PgPo
         .execute(&mut *blocker)
         .await
         .unwrap();
-    let consume = {
+    let mut consume = {
         let pool = pool.clone();
         let root = root.path().to_path_buf();
         let resources = resources.clone();
@@ -302,15 +302,21 @@ async fn independent_message_spool_parent_pause_keeps_page_replayable(pool: PgPo
     // The writer holds the same control share-lock while waiting on the import
     // table. Parent pause must wait for that committed receipt, then gate the
     // final checkpoint; no source is acknowledged before its receipt.
-    let mut leased = false;
-    for _ in 0..100 {
-        leased=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.adapter_runs WHERE provider='linkedin_messages' AND status='running')").fetch_one(&pool).await.unwrap();
-        if leased {
-            break;
+    tokio::time::timeout(std::time::Duration::from_secs(4), async {
+        loop {
+            let leased: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.adapter_runs WHERE provider='linkedin_messages' AND status='running')").fetch_one(&pool).await.unwrap();
+            if leased {
+                break;
+            }
+            if consume.is_finished() {
+                let result = (&mut consume).await;
+                panic!("consumer exited before claiming its independent child lane: {result:?}");
+            }
+            tokio::task::yield_now().await;
         }
-        tokio::task::yield_now().await;
-    }
-    assert!(leased, "consumer must claim its independent child lane");
+    })
+    .await
+    .expect("consumer must claim its independent child lane");
     blocker.rollback().await.unwrap();
     assert!(consume.await.unwrap().unwrap());
     // A new immutable page must remain untouched while the parent is paused.
