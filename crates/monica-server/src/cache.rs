@@ -9,14 +9,14 @@ use axum::{
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     future::Future,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
 };
-use tokio::sync::{Mutex, OnceCell, Semaphore};
+use tokio::sync::{Mutex, OnceCell, OwnedSemaphorePermit, Semaphore};
 
 #[derive(Clone)]
 pub struct ReadCache(Arc<Cache>);
@@ -25,6 +25,8 @@ struct Cache {
     max_entries: usize,
     max_bytes: usize,
     computations: Semaphore,
+    refreshing: std::sync::Mutex<HashSet<String>>,
+    refresh_slots: Arc<Semaphore>,
 }
 #[derive(Default)]
 struct Entries {
@@ -50,8 +52,12 @@ impl Drop for Reader {
 pub struct CachedJson {
     body: Bytes,
     etag: HeaderValue,
+    created_at: std::time::Instant,
 }
 impl CachedJson {
+    pub fn refresh_due(&self) -> bool {
+        self.created_at.elapsed() >= std::time::Duration::from_secs(5)
+    }
     pub fn response(&self, headers: &HeaderMap) -> Response {
         let etag = self.etag.to_str().expect("ASCII digest");
         let matched = headers
@@ -101,7 +107,60 @@ impl ReadCache {
             max_entries: max_entries.max(1),
             max_bytes: max_bytes.max(1),
             computations: Semaphore::new(4),
+            refreshing: std::sync::Mutex::new(HashSet::new()),
+            refresh_slots: Arc::new(Semaphore::new(2)),
         }))
+    }
+
+    /// Only aggregate endpoints opt in. Identity/privacy token changes may
+    /// never reuse stale data; soft count changes have a strict age bound.
+    pub async fn stale_aggregate(
+        &self,
+        scope: &str,
+        version: &str,
+        max_age: std::time::Duration,
+    ) -> Option<Arc<CachedJson>> {
+        let mut state = self.0.entries.lock().await;
+        if state
+            .entries
+            .get(&(scope.to_owned(), version.to_owned()))
+            .and_then(|e| e.slot.value.get())
+            .is_some()
+        {
+            return None;
+        }
+        let hard = version.split(':').next();
+        let candidate = state
+            .entries
+            .iter()
+            .filter_map(|((key, v), e)| {
+                if key != scope || v.split(':').next() != hard {
+                    return None;
+                }
+                let value = e.slot.value.get()?;
+                (value.created_at.elapsed() <= max_age)
+                    .then(|| ((key.clone(), v.clone()), value.clone()))
+            })
+            .max_by_key(|(_, value)| value.created_at);
+        let (key, value) = candidate?;
+        state.clock = state.clock.wrapping_add(1);
+        let clock = state.clock;
+        state.entries.get_mut(&key)?.used = clock;
+        Some(value)
+    }
+
+    pub fn begin_refresh(&self, scope: String) -> Option<RefreshGuard> {
+        let mut active = self.0.refreshing.lock().expect("refresh admission");
+        if active.contains(&scope) {
+            return None;
+        }
+        let permit = self.0.refresh_slots.clone().try_acquire_owned().ok()?;
+        active.insert(scope.clone());
+        Some(RefreshGuard {
+            cache: self.clone(),
+            scope,
+            _permit: permit,
+        })
     }
 
     /// Authenticate before calling. A scope includes resource, query and any
@@ -169,6 +228,7 @@ impl ReadCache {
                     Ok(Arc::new(CachedJson {
                         body: Bytes::from(bytes),
                         etag,
+                        created_at: std::time::Instant::now(),
                     }))
                 })
                 .await
@@ -193,6 +253,22 @@ impl ReadCache {
                 .sum();
         }
         value
+    }
+}
+
+pub struct RefreshGuard {
+    cache: ReadCache,
+    scope: String,
+    _permit: OwnedSemaphorePermit,
+}
+impl Drop for RefreshGuard {
+    fn drop(&mut self) {
+        self.cache
+            .0
+            .refreshing
+            .lock()
+            .expect("refresh admission")
+            .remove(&self.scope);
     }
 }
 
@@ -296,5 +372,57 @@ mod tests {
                 .sum::<usize>()
                 <= 128
         );
+    }
+    #[tokio::test]
+    async fn aggregate_staleness_is_bounded_and_hard_changes_bypass_it() {
+        let cache = ReadCache::default();
+        let first = cache
+            .get_or_try_init("home".into(), "hard-a:counts-a".into(), || async {
+                Ok(json!({"count":1}))
+            })
+            .await
+            .unwrap();
+        let stale = cache
+            .stale_aggregate(
+                "home",
+                "hard-a:counts-b",
+                std::time::Duration::from_secs(30),
+            )
+            .await
+            .unwrap();
+        assert!(Arc::ptr_eq(&first, &stale));
+        assert!(
+            cache
+                .stale_aggregate(
+                    "home",
+                    "hard-b:counts-b",
+                    std::time::Duration::from_secs(30)
+                )
+                .await
+                .is_none()
+        );
+        assert!(
+            cache
+                .stale_aggregate(
+                    "home",
+                    "hard-a:counts-a",
+                    std::time::Duration::from_secs(30)
+                )
+                .await
+                .is_none()
+        );
+        assert!(
+            cache
+                .stale_aggregate("home", "hard-a:counts-b", std::time::Duration::ZERO)
+                .await
+                .is_none()
+        );
+        let a = cache.begin_refresh("home".into()).unwrap();
+        assert!(cache.begin_refresh("home".into()).is_none());
+        let b = cache.begin_refresh("insights".into()).unwrap();
+        assert!(cache.begin_refresh("third".into()).is_none());
+        drop(a);
+        assert!(cache.begin_refresh("home".into()).is_some());
+        drop(b);
     }
 }

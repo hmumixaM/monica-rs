@@ -17,8 +17,12 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v1/insights/orbit", get(orbit))
         .route("/api/v1/communities/{id}/name", put(rename).delete(reset))
 }
-async fn home(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
-    let mut tx = snapshot(&s, &h).await?;
+async fn home(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    read_pool: Option<axum::Extension<BackgroundReadPool>>,
+) -> Result<Json<Value>> {
+    let mut tx = snapshot_on(&s, &h, read_pool.map(|p| p.0.0)).await?;
     // Only the partial first day needs exact timestamps; all full days read counts.
     let value:Value=sqlx::query_scalar(r#"WITH cutoff AS(SELECT now()-interval '30 days' t),recent AS(
  SELECT d.conversation_id,sum(d.sent+d.received)::bigint n FROM crm.conversation_days d,cutoff WHERE d.day>(cutoff.t AT TIME ZONE 'America/Chicago')::date GROUP BY d.conversation_id
@@ -35,6 +39,7 @@ async fn insights(
     State(s): State<AppState>,
     h: HeaderMap,
     Query(q): Query<Insight>,
+    read_pool: Option<axum::Extension<BackgroundReadPool>>,
 ) -> Result<Json<Value>> {
     let threshold = q.dormant_days.unwrap_or(90);
     if ![90, 180, 365].contains(&threshold) {
@@ -43,7 +48,7 @@ async fn insights(
             "invalid dormant_days",
         ));
     }
-    let mut tx = snapshot(&s, &h).await?;
+    let mut tx = snapshot_on(&s, &h, read_pool.map(|p| p.0.0)).await?;
     let people:Vec<Value>=sqlx::query_scalar(r#"SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'last_contact_at',s.last_contact_at,'last_group_at',s.last_group_at,'direct_message_count',s.direct_message_count,'group_message_count',s.group_message_count,'calls',coalesce((SELECT sum(count) FROM crm.contact_days d WHERE d.profile_id=p.id AND d.kind='call'),0),'dormant',s.last_contact_at<now()-make_interval(days=>$1),'months',coalesce((SELECT jsonb_agg(jsonb_build_object('month',months.month,'sent',coalesce(m.sent,0),'received',coalesce(m.received,0)) ORDER BY months.month) FROM(SELECT to_char(month,'YYYY-MM') AS month FROM generate_series(date_trunc('month',now() AT TIME ZONE 'America/Chicago')-interval '11 months',date_trunc('month',now() AT TIME ZONE 'America/Chicago'),interval '1 month') month) months LEFT JOIN crm.page_profile_months m ON m.profile_id=p.id AND m.month=months.month),'[]'))
  FROM crm.page_contact_stats s JOIN crm.profiles p ON p.id=s.profile_id AND p.archived_at IS NULL AND p.profile_type='person'
  WHERE p.id IN (SELECT profile_id FROM crm.page_contact_stats ORDER BY last_contact_at DESC NULLS LAST LIMIT 30)

@@ -179,6 +179,7 @@ async fn run() -> Result<()> {
                 media_root,
             )
             .await?;
+            state.aggregate_pool = pools.background.clone();
             state.import_hmac_secret = import_hmac_secret.filter(|secret| !secret.is_empty());
             if let Some(secret) = &state.import_hmac_secret {
                 anyhow::ensure!(

@@ -28,9 +28,18 @@ pub fn routes(state: AppState) -> Router<AppState> {
             cache::middleware,
         ))
 }
+#[derive(Clone)]
+struct BackgroundReadPool(sqlx::PgPool);
 async fn snapshot(s: &AppState, h: &HeaderMap) -> Result<Transaction<'static, Postgres>> {
+    snapshot_on(s, h, None).await
+}
+async fn snapshot_on(
+    s: &AppState,
+    h: &HeaderMap,
+    background: Option<sqlx::PgPool>,
+) -> Result<Transaction<'static, Postgres>> {
     user(s, h).await?;
-    let mut tx = s.pool.begin().await?;
+    let mut tx = background.unwrap_or_else(|| s.pool.clone()).begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         .execute(&mut *tx)
         .await?;

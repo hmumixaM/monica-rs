@@ -939,3 +939,116 @@ async fn whatsapp_disconnect_retries_storage_failure_after_restart(pool: PgPool)
     }
     pools.close().await;
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn committed_ingest_backlog_runs_without_idle_delay_and_memory_recovers_afterward(
+    pool: PgPool,
+) {
+    use monica_core::{identity, imports};
+    let person = uuid::Uuid::new_v4();
+    let peer = identity::account_id(Provider::Wechat, "backlog-peer").unwrap();
+    sqlx::query(
+        "INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Backlog peer')",
+    )
+    .bind(person)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'wechat','backlog-peer','person','Backlog peer')").bind(peer).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.source_account_links(account_id,profile_id) VALUES($1,$2)")
+        .bind(peer)
+        .bind(person)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for i in 0..12 {
+        let batch:imports::Batch=serde_json::from_value(json!({"source":"wechat","stream":"messages","batch_id":format!("backlog-{i}"),"idempotency_key":format!("backlog-{i}"),"observed_at":"2026-01-01T00:00:00Z","records":[{"external_id":format!("backlog-message-{i}"),"content":{"account":"self","conversation":"backlog-peer","sender":"backlog-peer","sent_at_ms":i,"text":format!("Backlog body {i}")}}]})).unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        imports::receive(&mut tx, &batch, &format!("hash-{i}"))
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+    }
+    // One actual chunk commits an outbox instead of doing Memory materialization.
+    assert_eq!(imports::resume_pending(&pool).await.unwrap(), 1);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM crm.memory_inputs WHERE profile_id=$1 AND source_kind='chat'"
+        )
+        .bind(person)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
+    assert!(sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM crm.memory_legacy_pending_records WHERE profiles @> ARRAY[$1::uuid])").bind(person).fetch_one(&pool).await.unwrap());
+    // A different import waiting for its retry must not starve derived work.
+    let delayed: imports::Batch = serde_json::from_value(json!({
+        "source":"wechat","stream":"messages","batch_id":"delayed-retry","idempotency_key":"delayed-retry",
+        "observed_at":"2026-01-01T00:00:00Z","records":[]
+    })).unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let delayed_id = imports::receive(&mut tx, &delayed, "delayed-hash")
+        .await
+        .unwrap();
+    sqlx::query("UPDATE crm.import_batches SET retry_after=now()+interval '1 hour' WHERE id=$1")
+        .bind(delayed_id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    // Restart with a durable pending reference and11 real batches. The old
+    // unconditional1s wait cannot finish11 turns within this4s regression bound.
+    let pools = pools(&pool).await;
+    let handle = Scheduler::start(
+        pools.background.clone(),
+        pools.control.clone(),
+        resources(),
+        config(),
+    )
+    .await
+    .unwrap();
+    let result = tokio::time::timeout(Duration::from_secs(4), async {
+        loop {
+            let n: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM crm.import_batches WHERE status='complete'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if n == 12 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    if result.is_err() {
+        handle.shutdown().await.unwrap();
+    }
+    result.expect("productive imports were rate-limited by idle recovery sleeps");
+    tokio::time::timeout(Duration::from_secs(8),async {
+        loop {
+            let done:bool=sqlx::query_scalar("SELECT (SELECT count(*) FROM crm.memory_inputs WHERE profile_id=$1 AND source_kind='chat')=12 AND NOT EXISTS(SELECT 1 FROM crm.memory_legacy_pending_records)").bind(person).fetch_one(&pool).await.unwrap();
+            if done {break;}
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await.expect("durable deferred Memory inputs did not recover");
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT status FROM crm.import_batches WHERE id=$1")
+            .bind(delayed_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "received"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM crm.message_search")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        12
+    );
+    handle.shutdown().await.unwrap();
+    pools.close().await;
+}

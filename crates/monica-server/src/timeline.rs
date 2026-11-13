@@ -63,7 +63,16 @@ async fn list(
             chrono::DateTime::parse_from_rfc3339(at).map_err(|_| invalid())?;
         }
     }
-    let rows: Vec<Value> = sqlx::query_scalar(r#"
+    let query = r#"WITH candidates AS MATERIALIZED (
+SELECT e.* FROM crm.timeline_feed e
+WHERE e.status<>'deleted' AND ($1::uuid IS NULL OR e.profile_id=$1 OR (e.provider='manual' AND EXISTS(SELECT 1 FROM crm.activity_participants ap WHERE ap.activity_id=e.id AND ap.profile_id=$1)))
+AND ($2::text IS NULL OR e.provider=$2) AND ($3::timestamptz IS NULL OR e.occurred_at<$3::timestamptz)
+AND ($4::timestamptz IS NULL OR e.occurred_at>=$4::timestamptz)
+AND ($5::uuid IS NULL OR CASE WHEN $6::timestamptz IS NULL THEN e.occurred_at IS NULL AND e.id<$5 ELSE e.occurred_at<$6::timestamptz OR e.occurred_at IS NULL OR (e.occurred_at=$6::timestamptz AND e.id<$5) END)
+AND (NOT $7 OR EXISTS(SELECT 1 FROM crm.media_links l JOIN crm.media_assets m ON m.id=l.media_id WHERE l.entity_id=e.id AND (e.provider<>'manual' OR m.media_type LIKE 'image/%' OR m.media_type LIKE 'video/%'))) ORDER BY e.occurred_at DESC NULLS LAST,e.id DESC LIMIT $8
+
+)
+
 SELECT jsonb_build_object(
  'id',e.id,'provider',e.provider,'external_id',e.external_id,'profile_id',e.profile_id,
  'profile_name',p.display_name,'avatar_media_id',p.avatar_media_id,'occurred_at',e.occurred_at,
@@ -76,14 +85,28 @@ SELECT jsonb_build_object(
  'location',e.content->'location','shared_link',e.content->'shared_link',
  'media',coalesce(e.content->'media','[]'::jsonb),'local_media',coalesce(media.items,'[]'::jsonb),
  '_content',e.content,'_event_type',e.event_type,'event_metadata',e.content->'metadata')
-FROM crm.timeline_feed e LEFT JOIN crm.profiles p ON p.id=e.profile_id
+FROM candidates e LEFT JOIN crm.profiles p ON p.id=e.profile_id
 LEFT JOIN LATERAL(SELECT jsonb_agg(jsonb_build_object('id',m.id,'media_type',m.media_type,'width',m.width,'height',m.height,'role',l.role,'source_url',(SELECT min(source_url) FROM crm.media_provenance WHERE media_id=m.id)) ORDER BY l.role,m.id) AS items FROM crm.media_links l JOIN crm.media_assets m ON m.id=l.media_id WHERE l.entity_id=e.id AND (e.provider<>'manual' OR m.media_type LIKE 'image/%' OR m.media_type LIKE 'video/%')) media ON true
-WHERE e.status<>'deleted' AND ($1::uuid IS NULL OR e.profile_id=$1 OR (e.provider='manual' AND EXISTS(SELECT 1 FROM crm.activity_participants ap WHERE ap.activity_id=e.id AND ap.profile_id=$1)))
-AND ($2::text IS NULL OR e.provider=$2) AND ($3::timestamptz IS NULL OR e.occurred_at<$3::timestamptz)
-AND ($4::timestamptz IS NULL OR e.occurred_at>=$4::timestamptz)
-AND ($5::uuid IS NULL OR CASE WHEN $6::timestamptz IS NULL THEN e.occurred_at IS NULL AND e.id<$5 ELSE e.occurred_at<$6::timestamptz OR e.occurred_at IS NULL OR (e.occurred_at=$6::timestamptz AND e.id<$5) END)
-AND (NOT $7 OR media.items IS NOT NULL) ORDER BY e.occurred_at DESC NULLS LAST,e.id DESC LIMIT $8
-"#).bind(q.profile_id).bind(q.provider).bind(q.before).bind(q.after).bind(id).bind(at).bind(q.media.is_some()).bind(q.limit.unwrap_or(50).clamp(1,100)).fetch_all(&s.pool).await?;
+ORDER BY e.occurred_at DESC NULLS LAST,e.id DESC
+"#;
+    // Scope through indexed IDs before filtering and hydrating this page. Keep
+    // the original ownership predicate to handle manual/source UUID collisions.
+    let query = if q.profile_id.is_some() {
+        query.replace("FROM crm.timeline_feed e", "FROM crm.timeline_feed e JOIN (SELECT id FROM crm.timeline_events WHERE profile_id=$1 AND status<>'deleted' UNION SELECT activity_id FROM crm.activity_participants WHERE profile_id=$1) eligible ON eligible.id=e.id")
+    } else {
+        query.to_owned()
+    };
+    let rows: Vec<Value> = sqlx::query_scalar(&query)
+        .bind(q.profile_id)
+        .bind(q.provider)
+        .bind(q.before)
+        .bind(q.after)
+        .bind(id)
+        .bind(at)
+        .bind(q.media.is_some())
+        .bind(q.limit.unwrap_or(50).clamp(1, 100))
+        .fetch_all(&s.pool)
+        .await?;
     let mut rows = rows
         .into_iter()
         .map(|mut r| {
@@ -428,6 +451,153 @@ mod tests {
         assert_eq!(
             display_text(&json!("  A real story  ")),
             json!("A real story")
+        );
+    }
+}
+
+#[cfg(test)]
+mod read_tests {
+    use super::*;
+    use axum::{
+        body::{Body, to_bytes},
+        http::Request,
+    };
+    use sha2::{Digest, Sha256};
+    use tower::ServiceExt;
+    async fn page(router: &Router, path: &str) -> Vec<Value> {
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(path)
+                    .header("host", "localhost:17494")
+                    .header("cookie", "crm_session=timeline-fixture")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        serde_json::from_slice(&to_bytes(response.into_body(), 1 << 20).await.unwrap()).unwrap()
+    }
+    fn ids(rows: &[Value]) -> Vec<String> {
+        rows.iter()
+            .map(|r| r["id"].as_str().unwrap().to_owned())
+            .collect()
+    }
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn bounded_timeline_keeps_manual_ownership_null_cursors_and_ready_media(
+        pool: sqlx::PgPool,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::new(
+            pool.clone(),
+            "synthetic-timeline-session-secret-32bytes",
+            "http://localhost:17494".into(),
+            dir.path().into(),
+        )
+        .await
+        .unwrap();
+        let actor = Uuid::new_v4();
+        let person = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let account = Uuid::new_v4();
+        sqlx::query("INSERT INTO crm.app_users(id,email,password_hash) VALUES($1,'timeline@example.invalid','unused')").bind(actor).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 hour')").bind(Uuid::new_v4()).bind(actor).bind(format!("{:x}",Sha256::digest(b"timeline-fixture"))).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Person'),($2,'person','Other')").bind(person).bind(other).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'instagram','timeline-peer','person','Peer')").bind(account).execute(&pool).await.unwrap();
+        let newest = Uuid::new_v4();
+        let oldest = Uuid::new_v4();
+        let missing_date = Uuid::new_v4();
+        let elsewhere = Uuid::new_v4();
+        let deleted = Uuid::new_v4();
+        for (id, owner, at) in [
+            (newest, person, Some("2026-01-03T00:00:00Z")),
+            (oldest, person, Some("2026-01-01T00:00:00Z")),
+            (missing_date, person, None),
+            (elsewhere, other, Some("2026-01-04T00:00:00Z")),
+            (deleted, person, Some("2026-01-05T00:00:00Z")),
+        ] {
+            sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,source_account_id,profile_id,event_type,external_id,occurred_at,content,content_hash,version,status) VALUES($1,'instagram',$1,$2,$3,'post',$1::text,$4::timestamptz,jsonb_build_object('caption','Synthetic timeline'),'hash',1,CASE WHEN $1=$5 THEN 'deleted' ELSE 'active' END)").bind(id).bind(account).bind(owner).bind(at).bind(deleted).execute(&pool).await.unwrap();
+        }
+        let manual = Uuid::new_v4();
+        sqlx::query("INSERT INTO crm.activities(id,activity_type,occurred_at,title,body,source_type,content_hash) VALUES($1,'note','2026-01-02T00:00:00Z','Manual note','Manual body','manual','hash')").bind(manual).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.activity_participants(activity_id,profile_id) VALUES($1,$2)")
+            .bind(manual)
+            .bind(person)
+            .execute(&pool)
+            .await
+            .unwrap();
+        for (index, event, kind) in [
+            (1, oldest, "image/png"),
+            (2, elsewhere, "image/png"),
+            (3, manual, "text/plain"),
+        ] {
+            let media = Uuid::new_v4();
+            sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path) VALUES($1,$2,$3,0,'synthetic')").bind(media).bind(format!("{index:064x}")).bind(kind).execute(&pool).await.unwrap();
+            sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('post',$1,$2,'media')").bind(event).bind(media).execute(&pool).await.unwrap();
+        }
+        let router = crate::auth::routes(state);
+        let first = page(&router, "/api/v1/timeline?limit=2").await;
+        assert_eq!(ids(&first), vec![elsewhere.to_string(), newest.to_string()]);
+        let second = page(
+            &router,
+            &format!(
+                "/api/v1/timeline?limit=2&cursor={}",
+                first[1]["cursor"].as_str().unwrap()
+            ),
+        )
+        .await;
+        assert_eq!(ids(&second), vec![manual.to_string(), oldest.to_string()]);
+        let third = page(
+            &router,
+            &format!(
+                "/api/v1/timeline?limit=2&cursor={}",
+                second[1]["cursor"].as_str().unwrap()
+            ),
+        )
+        .await;
+        assert_eq!(ids(&third), vec![missing_date.to_string()]);
+        assert!(
+            page(
+                &router,
+                &format!(
+                    "/api/v1/timeline?cursor={}",
+                    third[0]["cursor"].as_str().unwrap()
+                )
+            )
+            .await
+            .is_empty()
+        );
+        let own = page(&router, &format!("/api/v1/timeline?profile_id={person}")).await;
+        assert_eq!(
+            ids(&own),
+            vec![
+                newest.to_string(),
+                manual.to_string(),
+                oldest.to_string(),
+                missing_date.to_string()
+            ]
+        );
+        let ready = page(
+            &router,
+            &format!("/api/v1/timeline?profile_id={person}&media=ready&limit=1"),
+        )
+        .await;
+        assert_eq!(ids(&ready), vec![oldest.to_string()]);
+        assert_eq!(ready[0]["media"][0]["ready"], true);
+        let provider = page(
+            &router,
+            &format!("/api/v1/timeline?profile_id={person}&provider=instagram"),
+        )
+        .await;
+        assert_eq!(
+            ids(&provider),
+            vec![
+                newest.to_string(),
+                oldest.to_string(),
+                missing_date.to_string()
+            ]
         );
     }
 }

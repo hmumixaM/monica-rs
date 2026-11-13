@@ -9,6 +9,8 @@ mod adapter_lane;
 mod ai_lane;
 #[path = "scheduler_cdc.rs"]
 mod cdc_lane;
+#[path = "scheduler_maintenance.rs"]
+mod maintenance_lane;
 use crate::{Lease, Provider, messages, resources::ResourceBudget, resources::TaskResources};
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
@@ -94,6 +96,7 @@ struct Shared {
     import_chunks: AtomicU64,
     stopped: AtomicBool,
     activity: watch::Sender<usize>,
+    maintenance_wake: tokio::sync::Notify,
     supervisor: Mutex<Option<JoinHandle<Result<()>>>>,
 }
 
@@ -261,6 +264,7 @@ impl Scheduler {
             import_chunks: AtomicU64::new(0),
             stopped: AtomicBool::new(false),
             activity,
+            maintenance_wake: tokio::sync::Notify::new(),
             supervisor: Mutex::new(None),
         });
         sqlx::query(
@@ -433,6 +437,7 @@ async fn supervise(shared: Arc<Shared>, mut leader: PoolConnection<Postgres>) ->
         workers.spawn(worker(shared.clone(), partition));
     }
     workers.spawn(recover_imports(shared.clone()));
+    workers.spawn(maintenance_lane::run(shared.clone()));
     workers.spawn(adapter_lane::run(shared.clone()));
     workers.spawn(adapter_lane::run_messages(shared.clone()));
     workers.spawn(cdc_lane::run(shared.clone()));
@@ -599,7 +604,7 @@ fn background_request() -> TaskResources {
 /// chunk and commits its processed_count with source facts/jobs. It shares pause,
 /// backpressure and drain admission with normal projection workers.
 async fn recover_imports(shared: Arc<Shared>) -> Result<()> {
-    let mut metrics_at = tokio::time::Instant::now();
+    let mut had_progress = false;
     let mut mode = shared.mode.subscribe();
     loop {
         let current = *mode.borrow_and_update();
@@ -627,55 +632,39 @@ async fn recover_imports(shared: Arc<Shared>) -> Result<()> {
         }
         let active = Active::new(shared.clone());
         drop(gate);
-        match tokio::time::timeout(shared.config.task_timeout, async {
-            let attempted = crate::imports::resume_pending(&shared.background).await?;
-            if let Some(media) = &shared.media {
-                for _ in 0..25 {
-                    if crate::media::consume_record_media(media).await? == 0 {
-                        break;
-                    }
-                }
-                crate::media::consume_imports(&shared.background).await?;
-                crate::media::resolve_dependencies(&shared.background).await?;
-                crate::media::refresh_profiles(&shared.background).await?;
-            }
-            // Maintenance reserves its own I/O memory. Release the import
-            // allocation first to preserve the global acquisition order.
-            drop(permit);
-            if let Some(media) = &shared.media {
-                crate::adapter::consume_media(&shared.background, &media.root, &shared.resources)
-                    .await?;
-                media.recover_publications().await?;
-                media.expire_uploads().await?;
-                media
-                    .collect_orphans(Duration::from_secs(24 * 3600))
-                    .await?;
-            }
-            if metrics_at.elapsed() >= Duration::from_secs(15) {
-                crate::pages::refresh_metrics(&shared.background).await?;
-                metrics_at = tokio::time::Instant::now();
-            }
-            Ok::<_, anyhow::Error>(attempted)
-        })
+        let progressed = match tokio::time::timeout(
+            shared.config.task_timeout,
+            crate::imports::resume_pending(&shared.background),
+        )
         .await
         {
             Ok(Ok(attempted)) => {
                 shared
                     .import_chunks
                     .fetch_add(attempted as u64, Ordering::Relaxed);
+                attempted > 0
             }
             Ok(Err(_)) | Err(_) => {
-                // The importer owns retry/quarantine metadata. A cancelled chunk
-                // rolls back its facts and progress together and is replayable.
                 shared.failed.fetch_add(1, Ordering::Relaxed);
+                false
             }
-        }
+        };
+        drop(permit);
         drop(active);
-        // resume_pending also returns one for a busy SKIP LOCKED batch. A fixed
-        // delay prevents the recovery lane from spinning against an HTTP owner.
-        tokio::select! {
-            _ = tokio::time::sleep(Duration::from_secs(1)) => {}
-            _ = mode.changed() => {}
+        if progressed {
+            had_progress = true;
+            // A committed chunk yields its admission/resources, then continues
+            // without turning an idle retry delay into an ingestion rate limit.
+            tokio::task::yield_now().await;
+        } else {
+            if had_progress {
+                shared.maintenance_wake.notify_one();
+                had_progress = false;
+            }
+            tokio::select! {
+                _ = tokio::time::sleep(shared.config.poll_interval) => {}
+                _ = mode.changed() => {}
+            }
         }
     }
 }
