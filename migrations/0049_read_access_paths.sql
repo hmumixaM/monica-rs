@@ -71,21 +71,52 @@ BEGIN
  RETURN changed+affected>0;
 END $$;
 
+-- Share attribution payloads and privacy eligibility without repeating a
+-- population join for every object selected by a deferred batch.
+CREATE VIEW crm.memory_legacy_objects AS
+ SELECT e.* FROM (
+ SELECT 'message'::text kind,m.message_id entity_id,
+ CASE WHEN c.conversation_type='group' THEN coalesce(m.sender_profile_id,l.profile_id) ELSE c.profile_id END profile_id,
+ 'chat'::text source_kind,true private,
+ jsonb_build_object('id',m.message_id,'kind',c.conversation_type,'provider',m.provider,'at',m.occurred_at,'conversation_id',m.conversation_id,'text',m.body,'sender',m.sender,'sender_profile_id',coalesce(m.sender_profile_id,l.profile_id),'direction',coalesce(m.direction,CASE WHEN m.sender=m.account THEN 'sent' ELSE 'received' END),'speaker',CASE WHEN c.conversation_type='group' THEN 'TA' WHEN m.direction='unknown' THEN '未知' WHEN m.direction='sent' OR (m.direction IS NULL AND m.sender=m.account) THEN '我' ELSE 'TA' END,'group',CASE WHEN c.conversation_type='group' THEN coalesce(c.source_display_name,c.external_id) END) payload
+ FROM crm.message_search m JOIN crm.conversations c ON c.id=m.conversation_id
+ LEFT JOIN crm.source_account_links l ON l.account_id=m.sender_account_id
+ WHERE c.connection_id IS NULL AND NOT m.tombstone
+ UNION ALL
+ SELECT 'social',e.id,e.profile_id,'social',false,jsonb_build_object('id',e.id,'kind',e.event_type,'provider',e.provider,'at',e.occurred_at,'content',e.content)
+ FROM crm.timeline_events e WHERE e.status<>'deleted' AND NOT EXISTS(SELECT 1 FROM crm.connection_evidence source WHERE source.id=e.id)
+ UNION ALL
+ SELECT 'activity',a.id,ap.profile_id,'note',true,jsonb_build_object('id',a.id,'kind',a.activity_type,'at',a.occurred_at,'title',a.title,'text',a.body,'state',a.state,'due_at',a.due_at)
+ FROM crm.activities a JOIN crm.activity_participants ap ON ap.activity_id=a.id
+ WHERE a.activity_type NOT IN ('wechat_direct_summary','wechat_group_summary')
+ ) e;
+CREATE VIEW crm.memory_legacy_eligible_profiles AS
+ SELECT p.id FROM crm.profiles p WHERE p.profile_type='person' AND p.archived_at IS NULL
+ AND NOT EXISTS(SELECT 1 FROM crm.person_identifiers i WHERE i.profile_id=p.id AND i.is_self);
+CREATE OR REPLACE VIEW crm.memory_legacy_current AS
+ SELECT e.* FROM crm.memory_legacy_objects e JOIN crm.memory_legacy_eligible_profiles p ON p.id=e.profile_id;
+CREATE FUNCTION crm.memory_legacy_selected(record_kind text,record_ids uuid[])
+ RETURNS SETOF crm.memory_legacy_current LANGUAGE sql STABLE AS $$
+ WITH selected AS MATERIALIZED(
+  SELECT * FROM crm.memory_legacy_objects WHERE kind=record_kind AND entity_id=ANY(record_ids)
+ ) SELECT e.* FROM selected e JOIN crm.memory_legacy_eligible_profiles p ON p.id=e.profile_id
+$$;
+
 -- Deferred reductions see the entire completed import. Keep object lookups
--- correlated instead of re-evaluating a full ID batch per profile.
+-- bounded before the shared profile-eligibility join.
 CREATE OR REPLACE FUNCTION crm.memory_sync_legacy(record_kind text,record_ids uuid[]) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE owners uuid[];
 BEGIN
  IF cardinality(record_ids)>1000 THEN RAISE EXCEPTION 'legacy Memory batch exceeds 1000'; END IF;
  SELECT array_agg(profile_id ORDER BY profile_id) INTO owners FROM (
  SELECT profile_id FROM crm.memory_legacy_owners WHERE kind=record_kind AND entity_id=ANY(record_ids)
- UNION SELECT c.profile_id FROM (SELECT DISTINCT unnest(record_ids) id) ids CROSS JOIN LATERAL(SELECT profile_id FROM crm.memory_legacy_current WHERE kind=record_kind AND entity_id=ids.id OFFSET 0) c) p;
+ UNION SELECT profile_id FROM crm.memory_legacy_selected(record_kind,record_ids)) p;
  IF owners IS NULL THEN RETURN; END IF;
  INSERT INTO crm.memory_heads(profile_id) SELECT unnest(owners) ON CONFLICT DO NOTHING;
  PERFORM profile_id FROM crm.memory_heads WHERE profile_id=ANY(owners) ORDER BY profile_id FOR UPDATE;
  WITH wanted AS MATERIALIZED (
  SELECT c.*,encode(sha256(convert_to('legacy:'||kind||':'||entity_id::text,'UTF8')),'hex') source_key,
- 'legacy:'||kind||':'||entity_id::text source_id FROM (SELECT DISTINCT unnest(record_ids) id) ids CROSS JOIN LATERAL(SELECT * FROM crm.memory_legacy_current WHERE kind=record_kind AND entity_id=ids.id OFFSET 0) c
+ 'legacy:'||kind||':'||entity_id::text source_id FROM crm.memory_legacy_selected(record_kind,record_ids) c
  ), inserted AS (
  INSERT INTO crm.memory_inputs(profile_id,source_key,source_kind,source_id,bucket,payload,input_hash,private,payload_bytes)
  SELECT profile_id,source_key,source_kind,source_id,left(source_key,2),jsonb_build_object('_legacy_kind',kind,'_legacy_id',entity_id),encode(sha256(convert_to(payload::text,'UTF8')),'hex'),private,octet_length(payload::text) FROM wanted ORDER BY profile_id,source_key
