@@ -9,7 +9,7 @@ import { Button } from "./button";
 import styles from "./primitives.module.css";
 
 export const PROVIDER_LABEL: Record<string, string> = {
-  wechat: "微信", wechat_group: "微信群", instagram: "Instagram", linkedin: "LinkedIn", monica: "Monica", manual: "手工",
+  wechat: "微信", wechat_group: "微信群", instagram: "Instagram", linkedin: "LinkedIn", monica: "Monica", manual: "手工", whatsapp: "WhatsApp", apple_messages: "短信 / iMessage", apple_contacts: "通讯录", mail: "邮件", linkedin_messages: "LinkedIn 消息", chatlog: "微信归档",
 };
 
 export function providerLabel(provider: string) {

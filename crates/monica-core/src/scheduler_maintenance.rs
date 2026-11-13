@@ -10,6 +10,7 @@ use tokio::time::Instant;
 pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
     let mut mode = shared.mode.subscribe();
     let mut housekeeping_at = Instant::now();
+    let mut monitor_at = Instant::now() - Duration::from_secs(5);
     loop {
         let current = *mode.borrow_and_update();
         match current {
@@ -37,6 +38,10 @@ pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
         let active = Active::new(shared.clone());
         drop(gate);
         let result = tokio::time::timeout(shared.config.task_timeout, async {
+            if monitor_at.elapsed() >= Duration::from_secs(5) {
+                crate::import_monitor::refresh(&shared.background).await?;
+                monitor_at = Instant::now();
+            }
             let importing: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.import_batches WHERE status IN ('received','running') AND retry_after<=clock_timestamp())")
                 .fetch_one(&shared.background).await?;
             let mut reduced = 0;
@@ -69,6 +74,7 @@ pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
                 }
             }
             if !importing && housekeeping_at.elapsed() >= Duration::from_secs(15) {
+                sqlx::query("DELETE FROM crm.import_run_events WHERE id IN(SELECT id FROM crm.import_run_events WHERE created_at<now()-interval '90 days' ORDER BY created_at LIMIT 1000)").execute(&shared.background).await?;
                 crate::pages::refresh_metrics(&shared.background).await?;
                 housekeeping_at = Instant::now();
             }

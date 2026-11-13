@@ -257,7 +257,7 @@ async fn events(
     Query(q): Query<Page>,
 ) -> Result<Json<Value>> {
     user(&s, &h).await?;
-    let sql=["wechat","instagram","linkedin"].iter().map(|p|format!("SELECT jsonb_build_object('id',o.object_id,'source','{p}','external_id',x.external_id,'content_hash',o.hash,'state',CASE WHEN o.version=1 THEN 'new' ELSE 'changed' END,'observed_at',m.observed_at,'source_event',o.event_id) AS value,m.observed_at FROM {p}.observations o JOIN {p}.objects x ON x.id=o.object_id LEFT JOIN {p}.revision_metadata m ON m.object_id=o.object_id AND m.version=o.version")).collect::<Vec<_>>().join(" UNION ALL ");
+    let sql=["wechat","instagram","linkedin","whatsapp","apple_messages","apple_contacts","mail"].iter().map(|p|format!("SELECT jsonb_build_object('id',o.object_id,'source','{p}','external_id',x.external_id,'content_hash',o.hash,'state',CASE WHEN o.version=1 THEN 'new' ELSE 'changed' END,'observed_at',m.observed_at,'source_event',o.event_id) AS value,m.observed_at FROM {p}.observations o JOIN {p}.objects x ON x.id=o.object_id LEFT JOIN {p}.revision_metadata m ON m.object_id=o.object_id AND m.version=o.version")).collect::<Vec<_>>().join(" UNION ALL ");
     let rows: Vec<Value> = sqlx::query_scalar(&format!(
         "SELECT value FROM ({sql}) e ORDER BY observed_at DESC NULLS LAST LIMIT $1"
     ))
@@ -268,10 +268,12 @@ async fn events(
 }
 async fn reconciliation(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     user(&s, &h).await?;
-    let sources:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('source',source,'stream',stream,'source_digest',(array_agg(body_hash ORDER BY received_at DESC,id DESC))[1],'source_count',sum(record_count),'projected_count',sum(processed_count),'excluded_count',0,'missing_ids',coalesce(jsonb_agg(batch_id ORDER BY received_at) FILTER(WHERE processed_count<record_count),'[]'),'stage',CASE WHEN bool_and(processed_count=record_count) THEN 'durable' ELSE 'receiving' END,'details',jsonb_build_object('batches',count(*),'inserted',sum(inserted_count),'changed',sum(changed_count),'unchanged',sum(unchanged_count)),'checked_at',max(coalesce(completed_at,received_at))) FROM crm.import_batches GROUP BY source,stream ORDER BY source,stream").fetch_all(&s.pool).await?;
+    let mut sources:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('source',source,'stream',stream,'source_digest',(array_agg(body_hash ORDER BY received_at DESC,id DESC))[1],'source_count',sum(record_count),'projected_count',sum(processed_count),'excluded_count',0,'missing_ids',coalesce(jsonb_agg(batch_id ORDER BY received_at) FILTER(WHERE processed_count<record_count),'[]'),'stage',CASE WHEN bool_and(processed_count=record_count) THEN 'durable' ELSE 'receiving' END,'details',jsonb_build_object('batches',count(*),'inserted',sum(inserted_count),'changed',sum(changed_count),'unchanged',sum(unchanged_count)),'checked_at',max(coalesce(completed_at,received_at))) FROM crm.import_batches GROUP BY source,stream ORDER BY source,stream").fetch_all(&s.pool).await?;
+    let pages:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('source',provider,'stream',stream,'source_digest',NULL,'source_count',sum(records),'projected_count',sum(processed),'excluded_count',0,'missing_ids','[]'::jsonb,'stage',CASE WHEN bool_and(state='complete') THEN 'durable' ELSE 'receiving' END,'details',jsonb_build_object('pages',count(*),'inserted',sum(inserted),'changed',sum(changed),'unchanged',sum(unchanged)),'checked_at',max(updated_at)) FROM crm.import_activity WHERE kind='page' GROUP BY provider,stream ORDER BY provider,stream").fetch_all(&s.pool).await?;
+    sources.extend(pages);
     let jobs:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('job_type',job_type,'status',status,'count',sum(n)) FROM (SELECT 'project_source'::text job_type,state status,count(*) n FROM crm.jobs GROUP BY state UNION ALL SELECT 'project_source','complete',count(*) FROM crm.job_history HAVING count(*)>0 UNION ALL SELECT 'conversation_summary','queued',count(*) FROM crm.conversation_work HAVING count(*)>0) x GROUP BY job_type,status ORDER BY job_type,status").fetch_all(&s.pool).await?;
     let media:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('state',state,'count',count(*)) FROM crm.media_dependencies GROUP BY state ORDER BY state").fetch_all(&s.pool).await?;
-    let messages:Value=sqlx::query_scalar("SELECT jsonb_build_object('processed_tables',(SELECT count(*) FROM crm.conversation_state),'source_rows',(SELECT count(*) FROM wechat.messages)+(SELECT count(*) FROM instagram.messages)+(SELECT count(*) FROM linkedin.messages),'processed_rows',(SELECT count(*) FROM crm.message_search))").fetch_one(&s.pool).await?;
+    let messages:Value=sqlx::query_scalar("SELECT jsonb_build_object('processed_tables',(SELECT count(*) FROM crm.conversation_state),'source_rows',(SELECT count(*) FROM wechat.messages)+(SELECT count(*) FROM instagram.messages)+(SELECT count(*) FROM linkedin.messages)+(SELECT count(*) FROM whatsapp.messages)+(SELECT count(*) FROM apple_messages.messages)+(SELECT count(*) FROM apple_contacts.messages)+(SELECT count(*) FROM mail.messages),'processed_rows',(SELECT count(*) FROM crm.message_search))").fetch_one(&s.pool).await?;
     Ok(Json(
         json!({"sources":sources,"media":media,"jobs":jobs,"messages":messages}),
     ))
@@ -452,6 +454,17 @@ mod tests {
                     .unwrap();
             let receipt_id: Uuid = receipt["id"].as_str().unwrap().parse().unwrap();
             imports::resume(&pool, receipt_id).await.unwrap();
+            let visible: (String, i64) =
+                sqlx::query_as("SELECT state,processed FROM crm.import_activity WHERE id=$1")
+                    .bind(format!("batch:{receipt_id}"))
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(
+                visible,
+                ("saved".into(), 0),
+                "journal completion is not query readiness"
+            );
             connections::deliver(&pool, Provider::Linkedin, *cid, 100)
                 .await
                 .unwrap();
@@ -488,6 +501,22 @@ mod tests {
             2
         );
         let cid = connections_ids[0];
+        let counted: i64 = sqlx::query_scalar(
+            "SELECT sum(records)::bigint FROM crm.import_activity WHERE provider='linkedin'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let receipts: i64 = sqlx::query_scalar(
+            "SELECT sum(record_count)::bigint FROM crm.import_batches WHERE source='linkedin'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            counted, receipts,
+            "signed connection pages are tracked by receipts only"
+        );
         let changed = json!({"source":"linkedin","connection_id":cid,"stream":"messages","batch_id":"edit","idempotency_key":"edit","observed_at":"2026-01-02T12:00:00Z","cursor_before":"1","cursor_after":"2","records":[{"external_id":"same-message","conversation_external_id":"same-thread","occurred_at":"2026-01-01T00:00:00Z","content":{"text":"edited"}}]});
         let body = serde_json::to_vec(&changed).unwrap();
         let response = router

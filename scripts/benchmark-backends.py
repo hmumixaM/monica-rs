@@ -67,8 +67,9 @@ def ready(process, url, log):
 
 
 class RustBackend:
-    def __init__(self, migration_timeout_seconds=1800):
+    def __init__(self, migration_timeout_seconds=1800, binary=None):
         self.migration_timeout_seconds = migration_timeout_seconds
+        self.selected_binary = binary
 
     def __enter__(self):
         self.temp = tempfile.TemporaryDirectory(prefix='monica-benchmark-rust-', dir='/tmp')
@@ -85,7 +86,7 @@ class RustBackend:
                 'MONICA_SESSION_SECRET': 'synthetic-reference-session-secret-32bytes',
                 'MONICA_IMPORT_HMAC_SECRET': SECRET, 'MONICA_MEDIA_ROOT': str(self.root/'media'),
                 'RUST_LOG':'info,sqlx::pool::acquire=debug'}
-            self.binary = str(ROOT/'target/release/monica-server')
+            self.binary = str(self.selected_binary or ROOT/'target/release/monica-server')
             subprocess.run([self.binary, 'migrate'], env=self.environment, check=True)
             sql(self, 'CREATE EXTENSION pg_stat_statements')
             self.url = f'http://127.0.0.1:{port()}'
@@ -410,6 +411,7 @@ def main():
     parser.add_argument('--backends',nargs='+',choices=['crm','desktop','multisource','rust'],default=['crm','desktop','rust'])
     parser.add_argument('--output',type=Path,default=ROOT/'.autonomous/complete-monica/benchmark-backends.jsonl')
     parser.add_argument('--skip-build',action='store_true')
+    parser.add_argument('--rust-server',type=Path,default=ROOT/'target/release/monica-server',help='Explicit Rust binary for an artifact or baseline comparison; use --skip-build')
     parser.add_argument('--migration-timeout-seconds',type=int,default=1800,help='Administrative Rust schema deadline; outside measured API phases')
     args=parser.parse_args()
     assert min(args.rounds,args.contacts,args.messages,args.samples,args.concurrency,args.batch_size,*args.scales)>0
@@ -422,7 +424,7 @@ def main():
         'cpu_count':os.cpu_count(),'memory_bytes':psutil.virtual_memory().total,'baselines':BASELINES,
         'rust_commit':provenance['rust_commit'],
         'rust_dirty':provenance['rust_dirty'],
-        'binary_sha256':hashlib.sha256((ROOT/'target/release/monica-server').read_bytes()).hexdigest() if (ROOT/'target/release/monica-server').exists() else None,
+        'binary_sha256':hashlib.sha256(args.rust_server.read_bytes()).hexdigest() if args.rust_server.exists() else None,
         'arguments':{k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()},
         'limitations':['Ordinary coexisting host services are not stopped. Host CPU/memory pressure is recorded; this is not a dedicated machine.',
         'Cold means first endpoint call after imports; OS/PostgreSQL caches are not evicted.',
@@ -446,7 +448,7 @@ def main():
                 for kind in order:
                     print(f'Benchmark {kind} round={round_number} scale={scale}',flush=True)
                     try:
-                        with (RustBackend(args.migration_timeout_seconds) if kind=='rust' else ReferenceBackend(kind)) as backend:
+                        with (RustBackend(args.migration_timeout_seconds,args.rust_server) if kind=='rust' else ReferenceBackend(kind)) as backend:
                             result=case(backend,kind,args,round_number,scale)
                         result['status']='complete'
                     except Exception as error:

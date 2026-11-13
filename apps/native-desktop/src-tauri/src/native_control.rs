@@ -152,11 +152,29 @@ impl NativeControl {
             s.busy = true;
             s.error = None
         })?;
+        let run_id = uuid::Uuid::new_v5(
+            &uuid::Uuid::NAMESPACE_OID,
+            format!("{provider}:{:?}", std::time::SystemTime::now()).as_bytes(),
+        );
+        let report = |state: &str| {
+            if post(
+                transport,
+                "source-run",
+                &json!({"provider":provider,"run_id":run_id.to_string(),"state":state}),
+            )
+            .is_err()
+            {
+                eprintln!("Native source telemetry could not be saved");
+            }
+        };
+        let mut reported = false;
         let result = (|| {
             if !remote_enabled(transport, provider)? {
                 self.save_enabled(provider, false)?;
                 return Ok(0);
             }
+            report("collecting");
+            reported = true;
             if cfg!(debug_assertions) && std::env::var_os("MONICA_RUST_TEST_DATA_DIR").is_some() {
                 return Err("测试模式不读取本机联系人或 Messages；请使用合成读取器测试".into());
             }
@@ -178,6 +196,9 @@ impl NativeControl {
                 Ok(0)
             }
         })();
+        if reported {
+            report(if result.is_ok() { "ready" } else { "failed" });
+        }
         self.update(provider, |s| {
             s.busy = false;
             match &result {

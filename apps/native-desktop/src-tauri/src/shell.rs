@@ -182,6 +182,35 @@ async fn runtime_action(app: AppHandle, action: String) -> Result<RuntimeStatus,
     result
 }
 #[tauri::command]
+async fn local_account(app: AppHandle) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>()
+            .runtime
+            .lock()
+            .map_err(|_| "运行状态已锁定")?
+            .account()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn reset_account(
+    app: AppHandle,
+    email: String,
+    password: String,
+    reset_totp: bool,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>()
+            .runtime
+            .lock()
+            .map_err(|_| "运行状态已锁定")?
+            .reset_account(&email, &password, reset_totp)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
 async fn create_account(app: AppHandle, email: String, password: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         app.state::<AppState>()
@@ -340,6 +369,8 @@ pub fn run() {
             runtime_status,
             runtime_action,
             create_account,
+            local_account,
+            reset_account,
             open_monica,
             open_logs,
             autostart_enabled,

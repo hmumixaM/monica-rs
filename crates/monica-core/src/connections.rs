@@ -162,6 +162,27 @@ pub async fn commit_page(
     records: &[Value],
     next_cursor: &Value,
 ) -> Result<u64> {
+    commit_page_impl(tx, provider, cid, stream, records, next_cursor, true).await
+}
+pub(crate) async fn commit_import_page(
+    tx: &mut Transaction<'_, Postgres>,
+    provider: Provider,
+    cid: Uuid,
+    stream: &str,
+    records: &[Value],
+    next_cursor: &Value,
+) -> Result<u64> {
+    commit_page_impl(tx, provider, cid, stream, records, next_cursor, false).await
+}
+async fn commit_page_impl(
+    tx: &mut Transaction<'_, Postgres>,
+    provider: Provider,
+    cid: Uuid,
+    stream: &str,
+    records: &[Value],
+    next_cursor: &Value,
+    track: bool,
+) -> Result<u64> {
     lock_connection(tx, cid).await?;
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM crm.source_connections WHERE id=$1 AND provider=$2)",
@@ -219,6 +240,19 @@ pub async fn commit_page(
         let last_hashes: Vec<_> = changed_heads.values().map(|r| r.1.clone()).collect();
         sqlx::query(&format!("INSERT INTO {s}.connection_record_heads(connection_id,external_id,revision,content_hash) SELECT $1,* FROM unnest($2::text[],$3::bigint[],$4::text[]) ON CONFLICT(connection_id,external_id) DO UPDATE SET revision=excluded.revision,content_hash=excluded.content_hash,updated_at=now()")).bind(cid).bind(last_ids).bind(last_versions).bind(last_hashes).execute(&mut **tx).await?;
         sqlx::query(&format!("INSERT INTO {s}.connection_outbox(connection_id,external_id,revision) SELECT $1,id,version FROM unnest($2::text[],$3::bigint[]) WITH ORDINALITY r(id,version,position) ORDER BY position")).bind(cid).bind(ids).bind(versions).execute(&mut **tx).await?;
+    }
+    if track {
+        // Stable page identity includes committed revision numbers, so retries do
+        // not inflate counts while A-B-A source changes remain distinct.
+        let page_hash = identity::bytes_hash(&identity::canonical_json(&json!([
+            records,
+            next_cursor,
+            heads
+        ])));
+        let inserted = refs.iter().filter(|r| r.1 == 1).count() as i64;
+        sqlx::query("INSERT INTO crm.import_activity(id,provider,connection_id,stream,kind,state,received_at,records,inserted,changed,unchanged) VALUES($1,$2,$3,$4,'page','saved',now(),$5,$6,$7,$8) ON CONFLICT DO NOTHING")
+        .bind(format!("page:{cid}:{stream}:{page_hash}" )).bind(s).bind(cid).bind(stream)
+        .bind(records.len() as i64).bind(inserted).bind(changed as i64-inserted).bind(records.len() as i64-changed as i64).execute(&mut **tx).await?;
     }
     set_cursor(tx, provider, cid, stream, next_cursor).await?;
     Ok(changed)
@@ -344,6 +378,7 @@ pub async fn deliver_bounded(
         &rows.iter().map(|r| r.sequence).collect::<Vec<_>>(),
     )
     .await?;
+    sqlx::query(&format!("UPDATE crm.import_activity SET state='complete',processed=records,completed_at=now(),updated_at=now() WHERE connection_id=$1 AND kind IN ('page','batch') AND state='saved' AND NOT EXISTS(SELECT 1 FROM {s}.connection_outbox WHERE connection_id=$1 AND delivered_at IS NULL)",s=provider.schema())).bind(cid).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(rows.len())
 }

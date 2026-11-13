@@ -714,6 +714,37 @@ impl Supervisor {
         }
         Ok(())
     }
+    pub fn account(&self) -> Result<Value> {
+        let url = self.status.url.as_ref().ok_or("本地服务尚未就绪")?;
+        self.client
+            .get(format!("{url}/internal/account"))
+            .bearer_auth(&self.secrets.control)
+            .send()
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .map_err(|e| e.to_string())
+    }
+    pub fn reset_account(&self, email: &str, password: &str, reset_totp: bool) -> Result<()> {
+        let url = self.status.url.as_ref().ok_or("本地服务尚未就绪")?;
+        let response = self
+            .client
+            .post(format!("{url}/internal/account/reset-password"))
+            .bearer_auth(&self.secrets.control)
+            .json(&json!({"email":email,"password":password,"reset_totp":reset_totp}))
+            .send()
+            .map_err(|e| e.to_string())?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(response
+                .json::<Value>()
+                .ok()
+                .and_then(|v| v["detail"].as_str().map(str::to_owned))
+                .unwrap_or_else(|| "密码重置未完成".into()))
+        }
+    }
     pub fn bootstrap(&self, email: &str, password: &str) -> Result<()> {
         let url = self.status.url.as_ref().ok_or("本地服务尚未就绪")?;
         let response = self
