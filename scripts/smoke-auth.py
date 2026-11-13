@@ -234,3 +234,10 @@ def run(base):
         request('/api/v1/auth/login', dict(credentials, password='wrong-password-value'), status=401)
     request('/api/v1/auth/login', credentials, status=429)
     print('Auth smoke passed: bootstrap, session, CSRF, Host/Origin, TOTP, recovery, revocation, throttling')
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Exercise a fresh isolated Monica HTTP instance.')
+    parser.add_argument('base_url')
+    run(parser.parse_args().base_url.rstrip('/'))
