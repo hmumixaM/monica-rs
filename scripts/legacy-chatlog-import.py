@@ -75,7 +75,7 @@ def bind_reader_target(db,state,own_id,snapshot=None):
     if path.is_symlink() or path.with_suffix('.partial').is_symlink():raise ValueError("Chatlog target policy is a symlink")
     if path.exists():
         if json.loads(path.read_text())!=policy:raise ValueError("Chatlog state belongs to another target; use a new state directory")
-    elif (state/"raw").exists():
+    elif any(path.exists() for path in (state/"raw",state/"target.json",state/"reconcile/raw")):
         if snapshot is None:raise ValueError("Existing Chatlog state has no target receipt; use a new state directory")
         bind_state(db,state,snapshot)
         atomic(path,policy);path.chmod(0o600)

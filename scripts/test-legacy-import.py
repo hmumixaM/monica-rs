@@ -279,7 +279,13 @@ class MigrationContract(unittest.TestCase):
         state_a=self.folder/('chatlog-later-state-'+self.suffix)
         chatlog.bind_state(self.target,state_a,chatlog.Importer(self.target,latest).id)
         state_b=self.folder/('other-state-'+self.suffix);state_b.mkdir()
+        reconcile_only=self.folder/('old-reconcile-only-'+self.suffix);reconcile_only.mkdir()
+        shutil.copytree(state_a/'raw',reconcile_only/'reconcile/raw')
+        shutil.copyfile(state_a/'target.json',reconcile_only/'target.json')
         with psycopg.connect(other_url,autocommit=True) as other:
+            with self.assertRaisesRegex(ValueError,'another target'):
+                chatlog.bind_reader_target(other,reconcile_only,'synthetic-self',chatlog.Importer(self.target,latest).id)
+            self.assertFalse((reconcile_only/'chatlog-target.json').exists())
             with self.assertRaisesRegex(ValueError,'another target'):
                 chatlog.bind_state(other,state_a,chatlog.Importer(self.target,latest).id)
             legacy_state=self.folder/('unbound-state-'+self.suffix)
@@ -287,6 +293,8 @@ class MigrationContract(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'matching target receipts'):
                 chatlog.bind_state(other,legacy_state,chatlog.Importer(self.target,latest).id)
             chatlog.bind_state(other,state_b,chatlog.Importer(self.target,latest).id)
+        chatlog.bind_reader_target(self.target,reconcile_only,'synthetic-self',chatlog.Importer(self.target,latest).id)
+        self.assertTrue((reconcile_only/'chatlog-target.json').is_file())
         self.admin.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(other_name)))
         self.admin.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(other_name)))
         with psycopg.connect(other_url,autocommit=True) as other:
