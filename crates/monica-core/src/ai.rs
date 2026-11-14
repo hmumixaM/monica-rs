@@ -6,6 +6,8 @@ use serde_json::{Value, json};
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
+#[path = "ai_known.rs"]
+pub mod known;
 #[path = "ai_mail.rs"]
 pub mod mail;
 #[path = "ai_memory.rs"]
@@ -100,6 +102,14 @@ pub async fn snapshot(
             let id: Uuid = parts.next().context("missing profile")?.parse()?;
             let row = sqlx::query("SELECT id,display_name,summary,generation FROM crm.profiles WHERE id=$1 AND archived_at IS NULL AND profile_type='person' FOR SHARE").bind(id).fetch_optional(&mut **tx).await?.context("inactive profile")?;
             input["profile"] = json!({"id":id,"name":row.get::<String,_>("display_name"),"summary":row.get::<Option<String>,_>("summary")});
+            if kind == "ai.profile" {
+                input["known_structured"] = json!(
+                    known::structured(&mut **tx, &[id])
+                        .await?
+                        .remove(&id)
+                        .unwrap_or_default()
+                );
+            }
             versions["profile"] = json!(row.get::<i64, _>("generation"));
             let week = if kind == "ai.person_week" {
                 Some(parts.next().context("missing week")?.parse::<NaiveDate>()?)
@@ -422,6 +432,17 @@ pub fn validate_output(lease: &Lease, output: Value) -> Result<Value> {
         if evidence.is_empty()
             || !["high", "medium"].contains(&item["confidence"].as_str().unwrap_or_default())
         {
+            continue;
+        }
+        let represented =
+            json!({"kind":kind,"value":value,"quote":item["quote"],"evidence":evidence});
+        if known::represented(
+            &represented,
+            lease.input["known_structured"]
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
+        ) {
             continue;
         }
         let date = if kind == "meetup" {
