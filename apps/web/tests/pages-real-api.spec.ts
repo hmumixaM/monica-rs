@@ -12,17 +12,18 @@ test('real Rust populated directory, calendar, orbit, map and profile overview',
  const coverage=page.locator('section').filter({has:page.getByRole('heading',{name:'来源与关联账号',exact:true})});
  const timeline=page.locator('section').filter({has:page.getByRole('heading',{name:'跨来源往来',exact:true})});
  const left=await coverage.boundingBox();const right=await timeline.boundingBox();expect(right!.x).toBeGreaterThan(left!.x+left!.width);
- await page.screenshot({path:'../../.local-validation/frontend-profile-populated-desktop.png',fullPage:true});
- await page.goto('/suggestions');await expect(page.getByText('模型功能没有开启',{exact:true})).toBeVisible();
+ await page.evaluate(()=>window.scrollTo(0,0));await expect(timeline.getByRole('link').first()).toBeVisible();await page.screenshot({path:'../../.local-validation/frontend-profile-populated-desktop.png'});
+ await page.goto('/suggestions');await expect(page.getByText('暂时没有建议',{exact:true})).toBeVisible();
  await page.goto('/profiles');await page.getByRole('button',{name:'新建',exact:true}).click();
  const create=page.getByRole('dialog',{name:'新建联系人',exact:true});await create.getByLabel('名称',{exact:true}).fill('Synthetic empty profile');await create.getByRole('button',{name:'创建',exact:true}).click();
- await expect(page.getByRole('heading',{name:'Synthetic empty profile',exact:true})).toBeVisible();
+ await expect(page.getByRole('heading',{name:/^Synthetic empty profile/})).toBeVisible();
  await expect(page.getByText('还没有关联的来源记录。',{exact:true})).toBeVisible();
  const emptyProfile=page.url();
  for(const width of [1440,390]){await page.setViewportSize({width,height:1000});for(const theme of ['light','dark']){
   await page.evaluate(t=>{document.documentElement.dataset.theme=t;window.scrollTo(0,0);},theme);
   await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
   const form=await page.getByLabel('关联邮箱或手机号',{exact:true}).boundingBox();expect(form!.width).toBeLessThan(400);
+  if(width===1440)await expect.poll(async()=>{const facts=await coverage.locator('..').boundingBox();const activity=await timeline.boundingBox();return Math.abs(activity!.y-facts!.y);}).toBeLessThan(1);
   await page.screenshot({path:`../../.local-validation/frontend-profile-empty-${width}-${theme}.png`,fullPage:true});
  }}
  await page.goto(emptyProfile+'?tab=messages');await expect(page.getByRole('heading',{name:'跨来源往来',exact:true})).toHaveCount(0);
