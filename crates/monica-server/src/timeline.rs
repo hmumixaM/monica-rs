@@ -162,7 +162,7 @@ async fn detail(
         activity["media"] = json!(media);
         return Ok(Json(activity));
     }
-    let mut row:Value=sqlx::query_scalar("SELECT jsonb_build_object('id',e.id,'provider',e.provider,'external_id',e.external_id,'profile_id',e.profile_id,'occurred_at',e.occurred_at,'content_hash',e.content_hash,'profile_display_name',p.display_name,'content',e.content,'event_type',e.event_type)||CASE WHEN e.event_type='post' THEN jsonb_build_object('source_updated_at',e.source_updated_at,'last_seen_at',e.last_seen_at,'status',e.status) ELSE jsonb_build_object('expires_at',e.expires_at,'coverage_status',e.status) END FROM crm.timeline_events e LEFT JOIN crm.profiles p ON p.id=e.profile_id WHERE e.id=$1 AND ($2::text IS NULL OR e.provider=$2)").bind(id).bind(q.provider).fetch_optional(&s.pool).await?.ok_or(ApiError(StatusCode::NOT_FOUND,"timeline event not found"))?;
+    let (mut row, source_object_id):(Value,Uuid)=sqlx::query_as("SELECT jsonb_build_object('id',e.id,'provider',e.provider,'external_id',e.external_id,'profile_id',e.profile_id,'occurred_at',e.occurred_at,'content_hash',e.content_hash,'profile_display_name',p.display_name,'content',e.content,'event_type',e.event_type)||CASE WHEN e.event_type='post' THEN jsonb_build_object('source_updated_at',e.source_updated_at,'last_seen_at',e.last_seen_at,'status',e.status) ELSE jsonb_build_object('expires_at',e.expires_at,'coverage_status',e.status) END, e.object_id FROM crm.timeline_events e LEFT JOIN crm.profiles p ON p.id=e.profile_id WHERE e.id=$1 AND ($2::text IS NULL OR e.provider=$2)").bind(id).bind(q.provider).fetch_optional(&s.pool).await?.ok_or(ApiError(StatusCode::NOT_FOUND,"timeline event not found"))?;
     row["event_metadata"] = metadata::normalize(
         row["provider"].as_str().unwrap(),
         row["event_type"].as_str().unwrap(),
@@ -201,9 +201,16 @@ async fn detail(
         .as_str()
         .filter(|p| ["wechat", "instagram", "linkedin"].contains(p))
     {
-        revision_query.push_str(&format!(" UNION ALL SELECT r.hash,m.observed_at,o.external_id,r.version FROM {provider}.revisions r JOIN {provider}.objects o ON o.id=r.object_id LEFT JOIN {provider}.revision_metadata m ON m.object_id=r.object_id AND m.version=r.version WHERE r.object_id=$1"));
+        revision_query.push_str(&format!(" UNION ALL SELECT r.hash,m.observed_at,o.external_id,r.version FROM {provider}.revisions r JOIN {provider}.objects o ON o.id=r.object_id LEFT JOIN {provider}.revision_metadata m ON m.object_id=r.object_id AND m.version=r.version WHERE r.object_id=$2"));
     }
-    let revisions:Vec<Value>=sqlx::query_scalar(&format!("SELECT jsonb_build_object('content_hash',content_hash,'observed_at',observed_at,'source_record_id',source_record_id) FROM ({revision_query}) revisions ORDER BY observed_at DESC NULLS LAST,revision_seq DESC")).bind(id).fetch_all(&s.pool).await?;
+    let revision_sql = format!(
+        "SELECT jsonb_build_object('content_hash',content_hash,'observed_at',observed_at,'source_record_id',source_record_id) FROM ({revision_query}) revisions ORDER BY observed_at DESC NULLS LAST,revision_seq DESC"
+    );
+    let mut query = sqlx::query_scalar::<_, Value>(&revision_sql).bind(id);
+    if ["wechat", "instagram", "linkedin"].contains(&row["provider"].as_str().unwrap_or("")) {
+        query = query.bind(source_object_id);
+    }
+    let revisions = query.fetch_all(&s.pool).await?;
     row["revisions"] = json!(
         revisions
             .into_iter()
@@ -485,6 +492,84 @@ mod read_tests {
         rows.iter()
             .map(|r| r["id"].as_str().unwrap().to_owned())
             .collect()
+    }
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn migrated_detail_keeps_public_media_and_reads_source_object_history(
+        pool: sqlx::PgPool,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::new(
+            pool.clone(),
+            "synthetic-timeline-session-secret-32bytes",
+            "http://localhost:17494".into(),
+            dir.path().into(),
+        )
+        .await
+        .unwrap();
+        let actor = Uuid::new_v4();
+        sqlx::query("INSERT INTO crm.app_users(id,email,password_hash) VALUES($1,'history@example.invalid','unused')")
+            .bind(actor).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 hour')")
+            .bind(Uuid::new_v4()).bind(actor).bind(format!("{:x}",Sha256::digest(b"timeline-fixture"))).execute(&pool).await.unwrap();
+        let source = monica_core::Record {
+            provider: monica_core::Provider::Instagram,
+            account: "history-source".into(),
+            object: "history-post".into(),
+            kind: "post".into(),
+            event: "source-revision".into(),
+            payload: json!({"caption":"Source content"}),
+        };
+        monica_core::ingest(&pool, &source).await.unwrap();
+        let account = monica_core::identity::account_id(source.provider, &source.account).unwrap();
+        let object = monica_core::identity::object_id(account, &source.kind, &source.object);
+        sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'instagram','history-source','person','Synthetic')")
+            .bind(account).execute(&pool).await.unwrap();
+        let event = Uuid::new_v4();
+        assert_ne!(event, object);
+        sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,source_account_id,event_type,external_id,content,content_hash,version) VALUES($1,'instagram',$2,$3,'post','history-post','{\"caption\":\"Legacy content\"}','legacy',1)")
+            .bind(event).bind(object).bind(account).execute(&pool).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let notebook =
+            monica_core::content::register(&mut tx, "post", &json!({"text":"Notebook content"}))
+                .await
+                .unwrap();
+        sqlx::query("INSERT INTO crm.notebook_social_revisions(id,event_id,content_object_id,content_hash,observed_at,source_record_id) VALUES($1,$2,$3,$4,now(),'notebook-history')")
+            .bind(Uuid::new_v4()).bind(event).bind(notebook.id).bind(&notebook.hash).execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+        let media = Uuid::new_v4();
+        sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,verified_at) VALUES($1,$2,'image/jpeg',1,'synthetic',now())")
+            .bind(media).bind("e".repeat(64)).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('social_post',$1,$2,'image-1')")
+            .bind(event).bind(media).execute(&pool).await.unwrap();
+        let router = crate::auth::routes(state);
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/timeline/{event}"))
+                    .header("host", "localhost:17494")
+                    .header("cookie", "crm_session=timeline-fixture")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let row: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 1 << 20).await.unwrap())
+                .unwrap();
+        assert_eq!(row["id"], event.to_string());
+        assert_eq!(row["media"][0]["id"], media.to_string());
+        let hashes: Vec<_> = row["revisions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["content_hash"].as_str().unwrap())
+            .collect();
+        assert_eq!(hashes.len(), 2);
+        assert!(hashes.contains(&notebook.hash.as_str()));
+        assert!(
+            hashes.contains(&monica_core::identity::observation_hash(&source.payload).as_str())
+        );
     }
     #[sqlx::test(migrations = "../../migrations")]
     async fn bounded_timeline_keeps_manual_ownership_null_cursors_and_ready_media(

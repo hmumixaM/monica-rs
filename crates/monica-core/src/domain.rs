@@ -160,6 +160,7 @@ pub async fn project(tx: &mut Transaction<'_, Postgres>, lease: &Lease) -> Resul
         .and_then(Value::as_str)
         .unwrap_or(&external);
     let kind: String = row.get("object_kind");
+    let mut timeline_event_id = None;
     sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO NOTHING")
         .bind(account).bind(s).bind(&external).bind(row.get::<String,_>("account_kind")).bind(name).execute(&mut **tx).await?;
     let fields_projection = ["profile", "record", "field", "contact"].contains(&kind.as_str());
@@ -282,15 +283,35 @@ pub async fn project(tx: &mut Transaction<'_, Postgres>, lease: &Lease) -> Resul
                     external,
                 )
             };
+            let post: Uuid = sqlx::query_scalar("SELECT id FROM crm.timeline_events WHERE provider=$1 AND (id=$2 OR object_id=$2) ORDER BY (id=$2) DESC LIMIT 1")
+                .bind(s).bind(post).fetch_optional(&mut **tx).await?
+                .context("interaction parent post has not been projected")?;
             sqlx::query("INSERT INTO crm.social_interactions(id,post_id,provider,external_id,interaction_type,author_account_id,author_profile_id,author_external_id,author_name,occurred_at,content,is_deleted) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,$11,$12) ON CONFLICT(post_id,external_id,interaction_type) DO UPDATE SET content=excluded.content,is_deleted=excluded.is_deleted,author_profile_id=excluded.author_profile_id")
                 .bind(lease.object).bind(post).bind(s).bind(&object_external).bind(&kind).bind(account).bind(profile).bind(&external).bind(name).bind(&occurred).bind(&payload).bind(payload.get("is_deleted").and_then(Value::as_bool).unwrap_or(false)).execute(&mut **tx).await?;
         }
         "post" | "story" => {
-            sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,source_account_id,profile_id,event_type,external_id,occurred_at,expires_at,content,content_hash,status,version) VALUES($1,$2,$1,$3,$4,$5,$6,$7::timestamptz,$8::timestamptz,$9,$10,$11,$12) ON CONFLICT(id) DO UPDATE SET profile_id=excluded.profile_id,occurred_at=excluded.occurred_at,expires_at=excluded.expires_at,content=excluded.content,content_hash=excluded.content_hash,status=excluded.status,version=excluded.version,last_seen_at=now() WHERE crm.timeline_events.version<excluded.version")
+            let applied: Option<Uuid> = sqlx::query_scalar("INSERT INTO crm.timeline_events(id,provider,object_id,source_account_id,profile_id,event_type,external_id,occurred_at,expires_at,content,content_hash,status,version) VALUES($1,$2,$1,$3,$4,$5,$6,$7::timestamptz,$8::timestamptz,$9,$10,$11,$12) ON CONFLICT(provider,object_id) DO UPDATE SET profile_id=excluded.profile_id,occurred_at=excluded.occurred_at,expires_at=excluded.expires_at,content=excluded.content,content_hash=excluded.content_hash,status=excluded.status,version=excluded.version,last_seen_at=now() WHERE crm.timeline_events.version<excluded.version RETURNING id")
                 .bind(lease.object).bind(s).bind(account).bind(profile).bind(&kind).bind(&object_external).bind(&occurred)
                 .bind(payload.get("expires_at").and_then(Value::as_str)).bind(&payload).bind(row.get::<String,_>("hash"))
-                .bind(if payload.get("is_deleted").and_then(Value::as_bool)==Some(true) {"deleted"} else {"active"}).bind(lease.version).execute(&mut **tx).await?;
-            if let Some(items) = payload.get("interactions").and_then(Value::as_array) {
+                .bind(if payload.get("is_deleted").and_then(Value::as_bool)==Some(true) {"deleted"} else if kind=="story" {payload.get("coverage_status").and_then(Value::as_str).unwrap_or("active")} else {"active"}).bind(lease.version).fetch_optional(&mut **tx).await?;
+            let event_id = match applied {
+                Some(id) => id,
+                None => {
+                    sqlx::query_scalar(
+                        "SELECT id FROM crm.timeline_events WHERE provider=$1 AND object_id=$2",
+                    )
+                    .bind(s)
+                    .bind(lease.object)
+                    .fetch_one(&mut **tx)
+                    .await?
+                }
+            };
+            timeline_event_id = Some(event_id);
+            if let Some(items) = payload
+                .get("interactions")
+                .and_then(Value::as_array)
+                .filter(|_| applied.is_some())
+            {
                 for item in items {
                     let ext = item
                         .get("external_id")
@@ -303,13 +324,13 @@ pub async fn project(tx: &mut Transaction<'_, Postgres>, lease: &Lease) -> Resul
                         .and_then(Value::as_str)
                         .unwrap_or("comment");
                     let id = identity::object_id(lease.object, interaction, ext);
-                    sqlx::query("INSERT INTO crm.social_interactions(id,post_id,provider,external_id,interaction_type,author_external_id,author_name,occurred_at,content,metadata,is_deleted) VALUES($1,$2,$3,$4,$5,$6,$7,$8::timestamptz,$9,$10,$11) ON CONFLICT(post_id,external_id,interaction_type) DO UPDATE SET content=excluded.content,metadata=excluded.metadata,is_deleted=excluded.is_deleted,author_name=excluded.author_name")
-                        .bind(id).bind(lease.object).bind(s).bind(ext).bind(interaction).bind(item.get("author_external_id").and_then(Value::as_str))
+                    let interaction_id: Uuid = sqlx::query_scalar("INSERT INTO crm.social_interactions(id,post_id,provider,external_id,interaction_type,author_external_id,author_name,occurred_at,content,metadata,is_deleted) VALUES($1,$2,$3,$4,$5,$6,$7,$8::timestamptz,$9,$10,$11) ON CONFLICT(post_id,external_id,interaction_type) DO UPDATE SET content=excluded.content,metadata=excluded.metadata,is_deleted=excluded.is_deleted,author_name=excluded.author_name RETURNING id")
+                        .bind(id).bind(event_id).bind(s).bind(ext).bind(interaction).bind(item.get("author_external_id").and_then(Value::as_str))
                         .bind(item.get("author_name").and_then(Value::as_str)).bind(item.get("occurred_at").and_then(Value::as_str))
                         .bind(item.get("content").unwrap_or(item)).bind({ let mut metadata=item.get("metadata").filter(|v|v.is_object()).cloned().unwrap_or(json!({})); for key in ["target_external_id","ref_author_external_id"] { if let Some(v)=item.get(key) { metadata[key]=v.clone(); } } metadata })
-                        .bind(item.get("is_deleted").and_then(Value::as_bool).unwrap_or(false)).execute(&mut **tx).await?;
+                        .bind(item.get("is_deleted").and_then(Value::as_bool).unwrap_or(false)).fetch_one(&mut **tx).await?;
                     sqlx::query("UPDATE crm.social_interactions i SET author_account_id=a.id,author_profile_id=l.profile_id FROM crm.source_accounts a LEFT JOIN crm.source_account_links l ON l.account_id=a.id WHERE i.id=$1 AND a.provider=i.provider AND a.external_id=i.author_external_id")
-                        .bind(id).execute(&mut **tx).await?;
+                        .bind(interaction_id).execute(&mut **tx).await?;
                 }
             }
         }
@@ -386,8 +407,8 @@ pub async fn project(tx: &mut Transaction<'_, Postgres>, lease: &Lease) -> Resul
             crate::linking::rebuild_profile(tx, profile).await?;
         }
     }
-    if ["post", "story"].contains(&kind.as_str()) {
-        crate::ai::memory::legacy::queue_record(tx, "social", lease.object).await?;
+    if let Some(event_id) = timeline_event_id {
+        crate::ai::memory::legacy::queue_record(tx, "social", event_id).await?;
     }
     Ok(())
 }
