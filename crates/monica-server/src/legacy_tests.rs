@@ -382,6 +382,33 @@ async fn imported_messages_expose_bounded_evidence_and_safe_original_files(pool:
         assert_eq!(body["metadata"]["participants"][0]["id"], sender);
         assert_eq!(body["metadata"]["participants"][0]["profile_id"], person);
     }
+    // Earlier corrections did not save the person field. A CRM observation
+    // that explicitly supplied only a person remains its historical owner.
+    sqlx::query("UPDATE crm.legacy_message_evidence SET original=$2 WHERE message_id=$1")
+        .bind(message)
+        .bind(json!({"sender_account_id":null,"sender_profile_id":original_person}))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let response = call(
+        &app,
+        "testserver",
+        "GET",
+        &format!("/api/v1/evidence/{message}?revision=2"),
+        "crm_session=new-session",
+        "",
+    )
+    .await;
+    let body: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 65536).await.unwrap()).unwrap();
+    assert_eq!(
+        body["metadata"]["participants"][0]["id"],
+        "intermediate-sender"
+    );
+    assert_eq!(
+        body["metadata"]["participants"][0]["profile_id"],
+        json!(original_person)
+    );
     // A manual sender overrides an account link, and older messages can have
     // that confirmed person as their sole attribution.
     for source in [Some(current_sender), None] {
@@ -401,6 +428,10 @@ async fn imported_messages_expose_bounded_evidence_and_safe_original_files(pool:
         assert_eq!(
             body["metadata"]["participants"][0]["profile_id"],
             json!(original_person)
+        );
+        assert_eq!(
+            body["metadata"]["participants"][0]["name"],
+            "Synthetic sender"
         );
     }
     let url = format!("/api/v1/imports/legacy/content/{original}");
