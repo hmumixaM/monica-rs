@@ -63,6 +63,23 @@ class CopyContract(unittest.TestCase):
             finally:
                 writer.close();worker.journal.close()
 
+    def test_resume_recreates_partial_instead_of_reusing_its_old_inode(self):
+        import hashlib
+        with tempfile.TemporaryDirectory(prefix='monica-copy-resume-') as temporary:
+            root=Path(temporary);source=root/'source';source.mkdir();target=root/'target'
+            (source/'photo').write_bytes(b'synthetic complete bytes')
+            worker=m.Copier(source,target,root/'journal.sqlite',rate=10**9)
+            partial=worker.partial_root/(hashlib.sha256((str(source.resolve())+':photo').encode()).hexdigest()+'.partial')
+            partial.write_bytes(b'old incomplete bytes');partial.chmod(0o400)
+            old_handle=partial.open('rb')
+            old_inode=__import__('os').fstat(old_handle.fileno()).st_ino
+            try:
+                worker.run()
+                self.assertEqual((target/'photo').read_bytes(),b'synthetic complete bytes')
+                self.assertNotEqual((target/'photo').stat().st_ino,old_inode)
+                self.assertEqual((target/'photo').stat().st_gid,(target/'photo').parent.stat().st_gid)
+            finally:old_handle.close();worker.journal.close()
+
     def test_health_pause_does_not_publish_an_incomplete_file(self):
         with tempfile.TemporaryDirectory(prefix="monica-pause-") as folder:
             root=Path(folder);source=root/"source";source.mkdir();target=root/"target"

@@ -84,15 +84,18 @@ class Copier:
         mode="sqlite" if sqlite_backup else "file"
         # A journal commit can outlive a not-yet-flushed destination on power
         # loss. Always verify resumed bytes, even when inode metadata matches.
-        if saved and saved[0]==json.dumps(source_stamp) and saved[3]==mode and target.is_file() and saved[1]==json.dumps(fingerprint(target.stat())) and sha256(target,self.pace)==saved[2]:
+        if saved and saved[0]==json.dumps(source_stamp) and saved[3]==mode and target.is_file() and saved[1]==json.dumps(fingerprint(target.stat())) and target.stat().st_gid==target.parent.stat().st_gid and sha256(target,self.pace)==saved[2]:
             self.skipped+=1;return
         target.parent.mkdir(parents=True,exist_ok=True)
         temporary=self.partial_root/(hashlib.sha256((str(self.source)+":"+str(relative)).encode()).hexdigest()+".partial")
         for attempt in range(3):
             self.guard()
             before=source_fingerprint()
+            # Recreate our incomplete file so resume inherits the current setgid
+            # directory, rather than publishing an old root-group inode.
+            if temporary.is_symlink():raise ValueError("copy partial is a symlink")
+            temporary.unlink(missing_ok=True)
             if sqlite_backup:
-                if temporary.exists():temporary.unlink()  # Only this worker's incomplete destination.
                 with closing(sqlite3.connect(path.as_uri()+"?mode=ro",uri=True,timeout=.25)) as source:
                     source.execute("PRAGMA query_only=on")
                     # Pin an existing WAL read snapshot. Incremental backup can
@@ -166,6 +169,7 @@ class Copier:
 
 
 def main():
+    os.umask(0o027)
     os.nice(19)
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source",type=Path,default=Path("/source"))

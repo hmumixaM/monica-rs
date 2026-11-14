@@ -56,6 +56,17 @@ async fn authenticated_fake_ai_decisions_are_atomic_and_private_outputs_hide(poo
         response(
             &app,
             "GET",
+            "/api/v1/ai/suggestions",
+            Value::Null,
+            StatusCode::OK
+        )
+        .await,
+        json!({"enabled":false,"total":0,"items":0,"kinds":{},"people":[]})
+    );
+    assert_eq!(
+        response(
+            &app,
+            "GET",
             "/api/v1/ai/status",
             Value::Null,
             StatusCode::OK

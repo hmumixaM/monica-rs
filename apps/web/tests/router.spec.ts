@@ -36,3 +36,17 @@ test('failed directory is an error instead of an empty address book',async({page
  await page.route('**/api/**',route=>new URL(route.request().url()).pathname==='/api/v1/me'?route.fulfill({json:{id:'synthetic'}}):route.fulfill({status:404,json:{detail:'Unavailable fixture endpoint'}}));
  await page.goto('/profiles');await expect(page.getByText('联系人读取失败，请重试。')).toBeVisible();await expect(page.getByText('这里还没有人')).toHaveCount(0);
 });
+
+test('suggestions render the legacy disabled-model response without crashing',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.route('**/api/**',route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path==='/api/v1/me')return route.fulfill({json:{id:'synthetic'}});
+  if(path==='/api/v1/ai/suggestions')return route.fulfill({json:{enabled:false,total:0,people:[]}});
+  return route.fulfill({status:404,json:{detail:'Unsupported fixture route'}});
+ });
+ await page.goto('/suggestions');
+ await expect(page.getByRole('heading',{name:'资料建议',exact:true})).toBeVisible();
+ await expect(page.getByText('模型功能没有开启',{exact:true})).toBeVisible();
+ expect(errors).toEqual([]);
+});

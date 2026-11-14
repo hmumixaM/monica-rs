@@ -17,7 +17,6 @@ import { ProfileHero, type Photo } from "./hero";
 import { ProfileOverview } from "./overview";
 import { GroupOverview } from "./people";
 import styles from "./profile.module.css";
-import { SourceCoverage } from "./source-coverage";
 import { RelationshipPulse } from "./pulse";
 import type { Profile } from "./types";
 
@@ -87,12 +86,11 @@ export function ProfileView({ profileId }: { profileId: string }) {
   return <Page className={styles.page}>
     <ProfileHero profile={profile} hasMessages={!!overview.data?.messages || !person} editing={editing}
       onEdit={() => setEditing((value) => !value)} onPhoto={setPhoto} onLinksChanged={refresh} />
-    {person && <ButtonLink href={`/ask?profile=${profile.id}`}>询问此人</ButtonLink>}
+    {person && <ButtonLink className={styles.askLink} href={`/ask?profile=${profile.id}`}>询问此人</ButtonLink>}
     {editing && detail.data && <FieldEditor profileId={profileId} profile={profile} onSaved={refresh} onCancel={() => setEditing(false)} />}
     {person && <RelationshipPulse profileId={profileId} overview={overview.data} dates={profile.significant_dates ?? []} groupCount={groupCount} />}
     <Tabs className={styles.tabs} label="资料分区" items={tabs} value={tab} onSelect={select} />
     {tab === "overview" && (detail.data ? <ProfileOverview profile={profile} hasPosts={summary.data?.has_posts} /> : detail.isError ? <EmptyState title="资料未能加载" actions={<Button onClick={() => void detail.refetch()}>重试</Button>} /> : <Skeleton height={240} />)}
-    {tab === "overview" && person && <SourceCoverage profileId={profileId} />}
     {tab === "timeline" && <div data-tab-panel="timeline"><SocialFeed profileId={profileId} /></div>}
     {tab === "photos" && <ProfilePhotoGallery key={profileId} profileId={profileId} name={profile.display_name} />}
     {tab === "messages" && <MessagesTab profileId={profileId} person={person} />}

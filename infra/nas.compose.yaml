@@ -24,6 +24,7 @@ services:
       driver: json-file
       options: {max-size: 10m, max-file: '3'}
   server:
+    group_add: ['10001']
     image: ${MONICA_IMAGE:?Set the reviewed Rust image digest}
     environment:
       MONICA_DATABASE_URL: postgresql://monica_rust:${MONICA_DB_PASSWORD}@postgres/monica_rust

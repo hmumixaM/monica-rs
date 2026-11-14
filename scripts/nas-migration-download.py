@@ -20,12 +20,30 @@ spec=importlib.util.spec_from_file_location("export_guard",Path(__file__).with_n
 guard=importlib.util.module_from_spec(spec);spec.loader.exec_module(guard)
 
 
+def manifest_program(root='/volume1/docker/monica-rs/migration'):
+    return '''import json,pathlib,sqlite3
+root=pathlib.Path(ROOT)
+status=root/'copy-status-chatlog-db.json'
+if not status.exists():status=root/'copy-status.json'
+state=json.loads(status.read_text())
+if state.get('source')!='chatlog-db' or state.get('state')!='complete':raise RuntimeError('Chatlog copy must complete before download')
+db=sqlite3.connect((root/'chatlog-db.sqlite').as_uri()+'?mode=ro',uri=True)
+files=[dict(zip(['path','sha256','bytes','mode'],r)) for r in db.execute('SELECT path,sha256,bytes,mode FROM files ORDER BY path')]
+print(json.dumps({'status':state,'files':files}))
+'''.replace('ROOT',repr(str(root)))
+
+def privileged_command(host, program):
+    return [*guard.ssh_args(host),"sudo -S -p '' /usr/bin/python3 -u -c "+shlex.quote(program)]
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--directory",required=True,type=Path)
     p.add_argument("--host",default="nas")
     p.add_argument("--legacy-url",default="https://nas.tailfb022c.ts.net:9443/api/v1/ready")
     a=p.parse_args();root=a.directory.resolve()
+    password=os.environ.get("NAS_PASSWORD")
+    if not password:p.error("NAS_PASSWORD must be set in the environment")
     root.mkdir(mode=0o700,parents=True,exist_ok=True)
     marker=root/"copy-policy.json"
     policy={"kind":"isolated-chatlog-snapshot","host":a.host,"source":"/volume1/docker/monica-rs/snapshots/chatlog/db_storage"}
@@ -35,19 +53,8 @@ def main():
     else:marker.write_text(json.dumps(policy));marker.chmod(0o600)
     if shutil.disk_usage(root).free<guard.MIN_FREE:raise ValueError("Mac must retain at least 20 GiB free")
     baseline=max(guard.health(a.legacy_url) for _ in range(3))
-    password=os.environ.get('NAS_PASSWORD')
-    if not password:p.error('NAS_PASSWORD is required for restricted reading of the new archive')
-    remote='''import json,pathlib,sqlite3
-root=pathlib.Path('/volume1/docker/monica-rs/migration')
-status=root/'copy-status-chatlog-db.json'
-if not status.exists():status=root/'copy-status.json'  # Original copy worker compatibility; source identity is still checked.
-state=json.loads(status.read_text())
-if state.get('source')!='chatlog-db' or state.get('state')!='complete':raise RuntimeError('Chatlog copy must complete before download')
-db=sqlite3.connect((root/'chatlog-db.sqlite').as_uri()+'?mode=ro',uri=True)
-files=[dict(zip(['path','sha256','bytes','mode'],r)) for r in db.execute('SELECT path,sha256,bytes,mode FROM files ORDER BY path')]
-print(json.dumps({'status':state,'files':files}))
-'''
-    receipt=subprocess.run([*guard.ssh_args(a.host),"sudo -S -p '' /usr/bin/python3 -c "+shlex.quote(remote)],input=password+"\n",capture_output=True,text=True,timeout=45,check=True)
+    remote=manifest_program()
+    receipt=subprocess.run(privileged_command(a.host,remote),input=password+"\n",capture_output=True,text=True,timeout=45,check=True)
     manifest=json.loads(receipt.stdout)
     for f in manifest["files"]:
         path=Path(f["path"])
@@ -78,7 +85,7 @@ print(json.dumps({'status':state,'files':files}))
         # DSM can restrict rsync independently of SSH command access. This
         # transport reads only completed files from the new isolated archive.
         with log.open("ab") as errors,partial.open("ab") as output:
-            process=subprocess.Popen([*guard.ssh_args(a.host),"sudo -S -p '' /usr/bin/python3 -u -c "+shlex.quote(stream_program)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=errors)
+            process=subprocess.Popen(privileged_command(a.host,stream_program),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=errors)
             process.stdin.write((password+"\n").encode());process.stdin.close()
             started=time.monotonic();last_output=started;received=0
             try:

@@ -321,6 +321,7 @@ impl FromRequest<AppState> for Credentials {
     }
 }
 async fn bootstrap(State(s): State<AppState>, c: Credentials) -> ApiResult<Json<Value>> {
+    let email = c.email.trim().to_lowercase();
     let permit = s
         .passwords
         .clone()
@@ -339,7 +340,7 @@ async fn bootstrap(State(s): State<AppState>, c: Credentials) -> ApiResult<Json<
         "INSERT INTO crm.app_users(id,email,password_hash) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
     )
     .bind(id)
-    .bind(&c.email)
+    .bind(&email)
     .bind(hash)
     .execute(&mut *tx)
     .await?
@@ -349,7 +350,7 @@ async fn bootstrap(State(s): State<AppState>, c: Credentials) -> ApiResult<Json<
     }
     sqlx::query("INSERT INTO crm.audit_events(user_id,action,metadata) VALUES($1,'auth.bootstrap',jsonb_build_object('email',$2::text))")
         .bind(id)
-        .bind(&c.email)
+        .bind(&email)
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
@@ -388,10 +389,11 @@ async fn login(
             "too many login attempts; try again later",
         ));
     }
-    let row = sqlx::query("SELECT id,password_hash FROM crm.app_users WHERE email=$1")
-        .bind(&c.email)
-        .fetch_optional(&s.pool)
-        .await?;
+    let row =
+        sqlx::query("SELECT id,password_hash FROM crm.app_users WHERE lower(btrim(email))=$1")
+            .bind(c.email.trim().to_lowercase())
+            .fetch_optional(&s.pool)
+            .await?;
     let encoded: String = row
         .as_ref()
         .map(|r| r.get("password_hash"))
@@ -639,6 +641,80 @@ mod tests {
     use axum::body::{Body, to_bytes};
     use tower::ServiceExt;
 
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn email_case_and_whitespace_remain_compatible_with_password_recovery(
+        pool: sqlx::PgPool,
+    ) {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::new(
+            pool.clone(),
+            "synthetic-email-recovery-secret-at-least32",
+            "http://testserver".into(),
+            root.path().into(),
+        )
+        .await
+        .unwrap();
+        let credentials = |email: &str, password: &str| Credentials {
+            email: email.into(),
+            password: password.into(),
+            totp_code: None,
+            recovery_code: None,
+        };
+        let _ = bootstrap(
+            State(state.clone()),
+            credentials(" Alice@Example.com ", "synthetic-original-password"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            sqlx::query_scalar::<_, String>("SELECT email FROM crm.app_users")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            "alice@example.com"
+        );
+        // Compatibility also covers records created before normalization.
+        sqlx::query("UPDATE crm.app_users SET email='Alice@Example.com'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            login(
+                State(state.clone()),
+                HeaderMap::new(),
+                None,
+                credentials(" ALICE@EXAMPLE.COM ", "synthetic-original-password")
+            )
+            .await
+            .unwrap()
+            .status(),
+            StatusCode::OK
+        );
+        let _ = reset_password(
+            &state,
+            ResetPassword {
+                email: " alice@example.com ".into(),
+                password: "synthetic-replacement-password".into(),
+                reset_totp: false,
+            },
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            login(
+                State(state),
+                HeaderMap::new(),
+                None,
+                credentials("Alice@Example.com", "synthetic-replacement-password")
+            )
+            .await
+            .unwrap()
+            .status(),
+            StatusCode::OK
+        );
+    }
+
     #[tokio::test]
     async fn real_python_auth_validation_contract() {
         let fixture: Value =
@@ -723,11 +799,12 @@ pub(crate) async fn reset_password(
         .map_err(|_| bad(StatusCode::INTERNAL_SERVER_ERROR, "password worker failed"))?
         .map_err(|_| bad(StatusCode::INTERNAL_SERVER_ERROR, "password hashing failed"))?;
     let mut tx = s.pool.begin().await?;
-    let row: Option<(Uuid, String)> =
-        sqlx::query_as("SELECT id,password_hash FROM crm.app_users WHERE email=$1 FOR UPDATE")
-            .bind(body.email.trim().to_lowercase())
-            .fetch_optional(&mut *tx)
-            .await?;
+    let row: Option<(Uuid, String)> = sqlx::query_as(
+        "SELECT id,password_hash FROM crm.app_users WHERE lower(btrim(email))=$1 FOR UPDATE",
+    )
+    .bind(body.email.trim().to_lowercase())
+    .fetch_optional(&mut *tx)
+    .await?;
     let (id, current) = row.ok_or(bad(
         StatusCode::NOT_FOUND,
         "Account not found; create a first-use account",

@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -12,6 +13,20 @@ m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
 
 class CancellationBoundary(unittest.TestCase):
+    def test_mounted_evidence_inherits_read_only_service_group(self):
+        with tempfile.TemporaryDirectory(prefix='copy-permissions-') as temporary:
+            root=Path(temporary).resolve();source=root/'source';source.mkdir()
+            data=root/'new';config=root/'config'
+            nested=data/'snapshots/monica-next/media/objects/aa';nested.mkdir(parents=True);nested.chmod(0o700)
+            (data/'migration').mkdir();(data/'migration/media.sqlite').touch()
+            with patch.object(m,'DATA_ROOT',str(data)),patch.object(m,'CONFIG_ROOT',str(config)),patch.dict(m.SOURCES,{'media':(str(source),'monica-next/media',False)}),patch('os.chown') as chown:
+                program=m.remote_program('media','synthetic-image','synthetic-copy',b'# synthetic worker')
+                namespace={};exec(program.split('pause=root/')[0],namespace);namespace['lock'].close()
+            self.assertEqual(data.stat().st_mode&0o7777,0o700)
+            for path in [data/'snapshots',data/'snapshots/monica-next',data/'snapshots/monica-next/media',data/'snapshots/monica-next/media/objects',nested,data/'migration']:
+                self.assertEqual(path.stat().st_mode&0o7777,0o2750)
+                self.assertIn(__import__('unittest').mock.call(path,0,10001),chown.call_args_list)
+
     def test_missing_or_unrelated_container_is_never_stopped(self):
         for reply in [subprocess.CompletedProcess([],1,""),subprocess.CompletedProcess([],0,json.dumps([{"Id":"old-container","Config":{"Labels":{}}}]))]:
             with patch("subprocess.run",return_value=reply) as run,patch("pathlib.Path.write_text") as write:

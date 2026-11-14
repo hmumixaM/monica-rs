@@ -664,3 +664,173 @@ async fn legacy_relationships_and_tags_follow_links_without_reserving_manual_slo
         2
     );
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn chatlog_archive_http_is_authenticated_scoped_and_keyset_paged(pool: PgPool) {
+    let user = Uuid::new_v4();
+    let snapshot = Uuid::new_v4();
+    let other = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.app_users(id,email,password_hash) VALUES($1,'archive@example.test','synthetic')").bind(user).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 day')").bind(Uuid::new_v4()).bind(user).bind(format!("{:x}",Sha256::digest(b"archive-session"))).execute(&pool).await.unwrap();
+    for id in [snapshot, other] {
+        sqlx::query("INSERT INTO crm.legacy_chatlog_snapshots(id,manifest,own_id,status) VALUES($1,'{\"files\":[]}','synthetic-self','converted')").bind(id).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.legacy_chatlog_tables(snapshot_id,file_name,table_name,mode,expected,processed,status,reason) VALUES($1,'a.db','first','history',2,2,'complete','synthetic'),($1,'b.db','second','history',0,0,'complete','synthetic')").bind(id).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.legacy_chatlog_history VALUES($1,'a.db','first',9007199254740993,$2),($1,'a.db','first',9007199254740995,$3)").bind(id).bind(json!({"owner":id,"text":"first"})).bind(json!({"owner":id,"text":"second"})).execute(&pool).await.unwrap();
+    }
+    let root = tempfile::tempdir().unwrap();
+    let app = auth::routes(
+        AppState::new(
+            pool,
+            "synthetic-archive-secret-at-least-32bytes",
+            "http://testserver".into(),
+            root.path().into(),
+        )
+        .await
+        .unwrap(),
+    );
+    let cookies = "crm_session=archive-session";
+    let catalog = format!("/api/v1/imports/chatlog/{snapshot}/tables?limit=1");
+    assert_eq!(
+        call(&app, "testserver", "GET", &catalog, "", "")
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        call(
+            &app,
+            "testserver",
+            "GET",
+            &format!("/api/v1/imports/chatlog/{snapshot}/tables?after_file=a.db"),
+            cookies,
+            ""
+        )
+        .await
+        .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let response = call(&app, "testserver", "GET", &catalog, cookies, "").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 65536).await.unwrap()).unwrap();
+    assert_eq!(body["records"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        body["next"],
+        json!({"after_file":"a.db","after_table":"first"})
+    );
+    let response = call(
+        &app,
+        "testserver",
+        "GET",
+        &format!("/api/v1/imports/chatlog/{snapshot}/tables?after_file=a.db&after_table=first"),
+        cookies,
+        "",
+    )
+    .await;
+    let body: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 65536).await.unwrap()).unwrap();
+    assert_eq!(body["records"][0]["file_name"], "b.db");
+    let history =
+        format!("/api/v1/imports/chatlog/{snapshot}/history?file=a.db&table=first&limit=1");
+    assert_eq!(
+        call(&app, "testserver", "GET", &history, "", "")
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    for (suffix, key, text) in [
+        ("", "9007199254740993", "first"),
+        ("&after=9007199254740993", "9007199254740995", "second"),
+    ] {
+        let response = call(
+            &app,
+            "testserver",
+            "GET",
+            &(history.clone() + suffix),
+            cookies,
+            "",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 65536).await.unwrap()).unwrap();
+        assert_eq!(body["records"][0]["key"], key);
+        assert_eq!(body["next"], key);
+        assert_eq!(
+            body["records"][0]["original"],
+            json!({"owner":snapshot,"text":text})
+        );
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn historical_relation_evidence_does_not_reserve_a_manual_relationship(pool: PgPool) {
+    let user = Uuid::new_v4();
+    let a = Uuid::new_v4();
+    let b = Uuid::new_v4();
+    let sa = Uuid::new_v4();
+    let sb = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.app_users(id,email,password_hash) VALUES($1,'relations@example.test','synthetic')").bind(user).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 day')").bind(Uuid::new_v4()).bind(user).bind(format!("{:x}",Sha256::digest(b"relation-session"))).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','A'),($2,'person','B')").bind(a).bind(b).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'wechat','evidence-a','person','A'),($2,'wechat','evidence-b','person','B')").bind(sa).bind(sb).execute(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO crm.source_account_links(account_id,profile_id) VALUES($1,$2),($3,$4)",
+    )
+    .bind(sa)
+    .bind(a)
+    .bind(sb)
+    .bind(b)
+    .execute(&pool)
+    .await
+    .unwrap();
+    for kind in ["contact_share", "legacy_group", "legacy_interaction"] {
+        sqlx::query("INSERT INTO crm.relationship_edges(id,from_profile_id,to_profile_id,relationship_type,evidence_kind) VALUES($1,$2,$3,'friend',$4)").bind(Uuid::new_v4()).bind(a).bind(b).bind(kind).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.source_relationship_edges(id,from_account_id,to_account_id,relationship_type,source_type,evidence_kind) VALUES($1,$2,$3,'friend','wechat',$4)").bind(Uuid::new_v4()).bind(sa).bind(sb).bind(kind).execute(&pool).await.unwrap();
+    }
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM crm.presented_relationship_edges")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    let root = tempfile::tempdir().unwrap();
+    let app = auth::routes(
+        AppState::new(
+            pool.clone(),
+            "synthetic-relation-secret-at-least32",
+            "http://testserver".into(),
+            root.path().into(),
+        )
+        .await
+        .unwrap(),
+    );
+    for _ in 0..2 {
+        let response=app.clone().oneshot(Request::post(format!("/api/v1/profiles/{a}/relationships")).header("host","testserver").header("content-type","application/json").header("cookie","crm_session=relation-session; crm_csrf=synthetic-csrf").header("x-csrf-token","synthetic-csrf").body(Body::from(json!({"to_profile_id":b,"relationship_type":"friend","note":"Confirmed manual relationship"}).to_string())).unwrap()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+    }
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM crm.presented_relationship_edges")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT note FROM crm.presented_relationship_edges")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "Confirmed manual relationship"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM crm.relationship_edges WHERE evidence_kind<>'relationship'"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        3
+    );
+}

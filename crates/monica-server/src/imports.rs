@@ -106,13 +106,13 @@ async fn accept(
             ));
         }
     }
-    let active: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM crm.import_service_tokens WHERE source=$1 AND revoked_at IS NULL",
-    )
-    .bind(batch.source.schema())
-    .fetch_one(&mut *tx)
-    .await?;
-    if active > 0 {
+    // Once an installation issues a collector token, never fall back to
+    // HMAC-only imports, including after every token has been revoked.
+    let tokens_required: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.import_service_tokens)")
+            .fetch_one(&mut *tx)
+            .await?;
+    if tokens_required {
         let token = header(&h, "x-import-token")?;
         let n=sqlx::query("UPDATE crm.import_service_tokens SET last_used_at=now() WHERE source=$1 AND token_hash=$2 AND revoked_at IS NULL").bind(batch.source.schema()).bind(format!("{:x}",Sha256::digest(token.as_bytes()))).execute(&mut *tx).await?.rows_affected();
         if n != 1 {
@@ -392,6 +392,39 @@ mod tests {
         request
             .headers_mut()
             .insert("x-import-token", "collector-token".parse().unwrap());
+        assert_eq!(
+            router.clone().oneshot(request).await.unwrap().status(),
+            StatusCode::CREATED
+        );
+        sqlx::query("UPDATE crm.import_service_tokens SET revoked_at=now()")
+            .execute(&pool)
+            .await
+            .unwrap();
+        // Revoking the last key never restores HMAC-only access, including
+        // attempts to switch to a provider with no issued token.
+        for (index, source) in ["instagram", "wechat"].into_iter().enumerate() {
+            let mut other: Value = serde_json::from_slice(&body).unwrap();
+            other["source"] = json!(source);
+            let other = serde_json::to_vec(&other).unwrap();
+            for with_token in [false, true] {
+                let mut request = signed(&other, &format!("revoked-{index}-{with_token}"), secret);
+                if with_token {
+                    request
+                        .headers_mut()
+                        .insert("x-import-token", "collector-token".parse().unwrap());
+                }
+                assert_eq!(
+                    router.clone().oneshot(request).await.unwrap().status(),
+                    StatusCode::UNAUTHORIZED
+                );
+            }
+        }
+        sqlx::query("INSERT INTO crm.import_service_tokens(id,source,label,token_hash) VALUES($1,'instagram','replacement',$2)")
+            .bind(Uuid::new_v4()).bind(format!("{:x}",Sha256::digest(b"replacement-token"))).execute(&pool).await.unwrap();
+        let mut request = signed(&body, "replacement", secret);
+        request
+            .headers_mut()
+            .insert("x-import-token", "replacement-token".parse().unwrap());
         assert_eq!(
             router.clone().oneshot(request).await.unwrap().status(),
             StatusCode::CREATED

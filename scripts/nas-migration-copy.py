@@ -66,13 +66,22 @@ if script.is_symlink():raise RuntimeError("worker script is a symlink")
 if script.exists() and script.read_bytes()!=worker:raise RuntimeError("worker checksum conflict")
 script.write_bytes(worker);script.chmod(0o444)
 os.chown(root,0,0);root.chmod(0o700)
-# The outer root protects the archive on the host. Container bind-mount roots
-# and their children must be traversable by the Rust runtime's UID 10001.
+# Only the container service group can traverse mounted evidence/status roots.
+# setgid preserves that group for newly copied files and nested directories.
 for path in [root/"snapshots",root/"snapshots"/relative.split("/")[0],destination,root/"migration"]:
- os.chown(path,0,0);path.chmod(0o755)
+ os.chown(path,0,10001);path.chmod(0o2750)
+for folder,dirs,_ in os.walk(destination,followlinks=False):
+ path=pathlib.Path(folder)
+ if any((path/name).is_symlink() for name in dirs):raise RuntimeError("archive directory symlink")
+ info=path.stat()
+ if (info.st_uid,info.st_gid,info.st_mode&0o7777)!=(0,10001,0o2750):
+  os.chown(path,0,10001);path.chmod(0o2750)
 for path in [config,config/"migration"]:os.chown(path,1026,100)
-for path in [journal,journal.with_name(journal.name+"-wal"),journal.with_name(journal.name+"-shm"),root/"migration/partials"]:
+for path in [journal,journal.with_name(journal.name+"-wal"),journal.with_name(journal.name+"-shm")]:
  if path.exists():os.chown(path,0,0)
+partials=root/"migration/partials"
+if partials.exists():
+ os.chown(partials,0,10001);partials.chmod(0o2750)
 pause=root/"migration/pause"
 memory=lambda:next(int(x.split()[1]) for x in pathlib.Path("/proc/meminfo").read_text().splitlines() if x.startswith("MemAvailable:"))
 if memory()<768*1024:raise RuntimeError("NAS copy memory floor not met")

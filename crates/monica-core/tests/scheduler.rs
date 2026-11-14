@@ -4,7 +4,7 @@ use monica_core::{
     scheduler::{Scheduler, SchedulerConfig, SchedulerHandle},
 };
 use serde_json::json;
-use sqlx::{ConnectOptions, PgPool};
+use sqlx::{ConnectOptions, PgPool, postgres::PgPoolOptions};
 use std::time::{Duration, Instant};
 
 fn config() -> SchedulerConfig {
@@ -271,12 +271,35 @@ async fn blocked_subject_yields_other_partition_and_drain_waits_for_commit(pool:
         .unwrap();
     ingest(&pool, &record("blocked", "2", "new")).await.unwrap();
     ingest(&pool, &independent).await.unwrap();
-    let pools = pools(&pool).await;
+    let mut pools = pools(&pool).await;
+    // This scenario intentionally holds a projection lock across scheduler
+    // coordination. Keep the production pool's 1s contention deadline out of
+    // the fixture, so CI load cannot turn the held lock into a retry.
+    pools.background.close().await;
+    pools.background = PgPoolOptions::new()
+        .max_connections(PoolBudget::default().background)
+        .acquire_timeout(PoolBudget::default().acquire_timeout)
+        .connect_with(
+            pool.connect_options()
+                .as_ref()
+                .clone()
+                .application_name("monica-background")
+                .options([
+                    ("lock_timeout", "15000"),
+                    ("statement_timeout", "20000"),
+                    ("idle_in_transaction_session_timeout", "30000"),
+                ]),
+        )
+        .await
+        .unwrap();
+    let mut scheduler_config = config();
+    scheduler_config.task_timeout = Duration::from_secs(30);
+    scheduler_config.drain_timeout = Duration::from_secs(35);
     let handle = Scheduler::start(
         pools.background.clone(),
         pools.control.clone(),
         resources(),
-        config(),
+        scheduler_config,
     )
     .await
     .unwrap();
@@ -299,7 +322,22 @@ async fn blocked_subject_yields_other_partition_and_drain_waits_for_commit(pool:
     .unwrap();
     // Exercise a real lease heartbeat while the result transaction holds its
     // job row. The heartbeat must not deadlock the task or falsely release it.
-    tokio::time::sleep(Duration::from_millis(350)).await;
+    tokio::time::timeout(Duration::from_secs(4), async {
+        loop {
+            let renewing: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND application_name='monica-control' AND wait_event_type='Lock' AND query LIKE 'UPDATE crm.jobs SET lease_until=%')",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if renewing {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("lease heartbeat did not reach the held result transaction");
     let drain_handle = handle.clone();
     let draining = tokio::spawn(async move { drain_handle.drain().await });
     tokio::time::timeout(Duration::from_secs(4), async {
@@ -525,17 +563,16 @@ async fn staged_disk_request_does_not_wait_behind_unavailable_memory() {
         })
         .await
         .unwrap();
-    let waiting_resources = resources.clone();
-    let large = tokio::spawn(async move {
-        waiting_resources
-            .acquire(TaskResources {
-                memory_bytes: 192 * 1024 * 1024,
-                ..Default::default()
-            })
-            .await
-            .unwrap()
+    let large = resources.acquire(TaskResources {
+        memory_bytes: 192 * 1024 * 1024,
+        ..Default::default()
     });
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    tokio::pin!(large);
+    std::future::poll_fn(|cx| {
+        assert!(large.as_mut().poll(cx).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
     let disk = tokio::time::timeout(
         Duration::from_secs(1),
         resources.acquire(TaskResources {

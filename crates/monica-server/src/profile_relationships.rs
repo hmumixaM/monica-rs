@@ -133,7 +133,7 @@ async fn add_relationship(
         ));
     }
     times(&mut tx, &p.valid_from, &p.valid_to).await?;
-    let edge:Option<Uuid>=sqlx::query_scalar("INSERT INTO crm.relationship_edges(id,from_profile_id,to_profile_id,relationship_type,note,valid_from,valid_to) VALUES($1,$2,$3,$4,$5,$6::timestamptz,$7::timestamptz) ON CONFLICT(from_profile_id,to_profile_id,relationship_type) WHERE NOT legacy_source_owned DO UPDATE SET note=excluded.note,valid_from=excluded.valid_from,valid_to=excluded.valid_to,updated_at=now() WHERE (relationship_edges.note,relationship_edges.valid_from,relationship_edges.valid_to) IS DISTINCT FROM (excluded.note,excluded.valid_from,excluded.valid_to) RETURNING id")
+    let edge:Option<Uuid>=sqlx::query_scalar("INSERT INTO crm.relationship_edges(id,from_profile_id,to_profile_id,relationship_type,note,valid_from,valid_to) VALUES($1,$2,$3,$4,$5,$6::timestamptz,$7::timestamptz) ON CONFLICT(from_profile_id,to_profile_id,relationship_type) WHERE NOT legacy_source_owned AND evidence_kind='relationship' DO UPDATE SET note=excluded.note,valid_from=excluded.valid_from,valid_to=excluded.valid_to,updated_at=now() WHERE (relationship_edges.note,relationship_edges.valid_from,relationship_edges.valid_to) IS DISTINCT FROM (excluded.note,excluded.valid_from,excluded.valid_to) RETURNING id")
         .bind(Uuid::new_v4()).bind(id).bind(p.to_profile_id).bind(&p.relationship_type).bind(&p.note).bind(&p.valid_from).bind(&p.valid_to).fetch_optional(&mut *tx).await?;
     let edge = if let Some(edge) = edge {
         let payload = json!({"to_profile_id":p.to_profile_id,"relationship_type":p.relationship_type,"note":p.note,"valid_from":p.valid_from,"valid_to":p.valid_to});
@@ -145,7 +145,7 @@ async fn add_relationship(
             .await?;
         edge
     } else {
-        sqlx::query_scalar("SELECT id FROM crm.relationship_edges WHERE from_profile_id=$1 AND to_profile_id=$2 AND relationship_type=$3 AND NOT legacy_source_owned").bind(id).bind(p.to_profile_id).bind(p.relationship_type).fetch_one(&mut *tx).await?
+        sqlx::query_scalar("SELECT id FROM crm.relationship_edges WHERE from_profile_id=$1 AND to_profile_id=$2 AND relationship_type=$3 AND NOT legacy_source_owned AND evidence_kind='relationship'").bind(id).bind(p.to_profile_id).bind(p.relationship_type).fetch_one(&mut *tx).await?
     };
     tx.commit().await?;
     Ok((

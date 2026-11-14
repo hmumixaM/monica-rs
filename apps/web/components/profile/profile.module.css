@@ -7,6 +7,7 @@
 }
 .loadingHero { display: flex; align-items: center; gap: var(--space-5); padding-block: var(--space-5);
   & > div { flex: 1; display: grid; gap: var(--space-2); } }
+.askLink { justify-self: start; }
 
 /* ---- Name card ----------------------------------------------------------- */
 .hero { display: grid; gap: var(--space-3); min-inline-size: 0; }
@@ -128,6 +129,9 @@
   @media (max-width: 720px) { padding-inline: var(--space-4); }
 }
 .activityColumn { display: grid; gap: var(--space-5); align-content: start; min-inline-size: 0; }
+.factsColumn, .activityColumn {
+  & > [data-deferred="ready"]:empty { display: none; }
+}
 .feedPanel { padding: var(--space-4) var(--space-5) var(--space-5); border-radius: var(--radius-panel); background: var(--color-surface);
   @media (max-width: 720px) { padding: var(--space-4); } }
 

@@ -39,3 +39,9 @@ NAS 当前内核支持 cpuset 和 CPU shares，不支持 CFS 配额及 pids cont
 回退仅停止新项目，例如在新配置目录使用 `docker-compose -p monica-rs stop`。保留新数据与迁移证据。不要使用 `down -v`，不要清理旧目录或操作旧版 Compose 项目。
 
 SQLite 一致性备份的行为依据其[官方 Online Backup API 文档](https://www.sqlite.org/c3ref/backup_finish.html)。NAS 上的备份负责一致性和字节记录；完整 `quick_check` 在独立 Mac 副本完成后，才能进入业务导入。
+
+Chatlog apply 在标记转换完成前自动调用 Rust `legacy-finalize`，刷新会话、月份、侧栏摘要和确定性 Memory 输入；verify 也核对这些独立读取投影。可用 `--server-binary` 或 `MONICA_SERVER_BINARY`（兼容 `MONICA_LEGACY_FINALIZER`）指定同一源码版本的 Rust 可执行文件。此流程不调用模型。新数据总根保持 root/0700；挂载的档案、遥测和复制暂存目录使用服务组 10001 的 setgid 只读权限。下载器通过环境 `NAS_PASSWORD` 向限定新目录的读取命令提供 sudo stdin 凭据。
+
+后续本地 Chatlog 快照中消失的行只形成 `snapshot_record_absent` 差异证据。快照缺失不能证明上游删除，因此历史消息、联系人和动态仍保留；显式撤回通知继续按原有版本化路径处理。
+
+Reader 的本地进度与 ACK 绑定到具体目标 PostgreSQL 实例、数据库及来源身份。换目标时需指定新 `--state` 目录。旧状态只有在每条 ACK 均能在当前目标库找到匹配提交收据时才允许补建目标绑定，避免将另一份副本的已读进度当作当前目标已入库的证明。

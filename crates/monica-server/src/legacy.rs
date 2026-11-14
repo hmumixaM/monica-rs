@@ -107,20 +107,16 @@ async fn list(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>, Ap
     ))
 }
 #[derive(Deserialize)]
-struct IssuePage {
-    after: Option<String>,
-    limit: Option<i64>,
-}
-#[derive(Deserialize)]
-struct ChatlogTablesPage {
+struct CatalogPage {
     after_file: Option<String>,
     after_table: Option<String>,
+    limit: Option<i64>,
 }
 async fn chatlog_tables(
     State(s): State<AppState>,
     h: HeaderMap,
     Path(id): Path<Uuid>,
-    Query(q): Query<ChatlogTablesPage>,
+    Query(q): Query<CatalogPage>,
 ) -> Result<Json<Value>, ApiError> {
     user(&s, &h).await?;
     if q.after_file.is_some() != q.after_table.is_some() {
@@ -129,8 +125,8 @@ async fn chatlog_tables(
             "Both table cursor fields are required",
         ));
     }
-    let records:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(t)-'snapshot_id'-'after_row' FROM crm.legacy_chatlog_tables t WHERE snapshot_id=$1 AND ($2::text IS NULL OR(file_name,table_name)>($2,$3)) ORDER BY file_name,table_name LIMIT 100")
-        .bind(id).bind(q.after_file).bind(q.after_table).fetch_all(&s.pool).await?;
+    let records:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(t)-'snapshot_id'-'after_row' FROM crm.legacy_chatlog_tables t WHERE snapshot_id=$1 AND ($2::text IS NULL OR (file_name,table_name)>($2,$3)) ORDER BY file_name,table_name LIMIT $4")
+        .bind(id).bind(q.after_file).bind(q.after_table).bind(q.limit.unwrap_or(100).clamp(1,100)).fetch_all(&s.pool).await?;
     let next = records
         .last()
         .map(|r| json!({"after_file":r["file_name"],"after_table":r["table_name"]}));
@@ -141,6 +137,7 @@ struct ChatlogHistoryPage {
     file: String,
     table: String,
     after: Option<i64>,
+    limit: Option<i64>,
 }
 async fn chatlog_history(
     State(s): State<AppState>,
@@ -149,10 +146,16 @@ async fn chatlog_history(
     Query(q): Query<ChatlogHistoryPage>,
 ) -> Result<Json<Value>, ApiError> {
     user(&s, &h).await?;
-    let records:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('key',row_key::text,'original',payload) FROM crm.legacy_chatlog_history WHERE snapshot_id=$1 AND file_name=$2 AND table_name=$3 AND ($4::bigint IS NULL OR row_key>$4) ORDER BY row_key LIMIT 25")
-        .bind(id).bind(q.file).bind(q.table).bind(q.after).fetch_all(&s.pool).await?;
+    let records:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('key',row_key::text,'original',payload) FROM crm.legacy_chatlog_history WHERE snapshot_id=$1 AND file_name=$2 AND table_name=$3 AND ($4::bigint IS NULL OR row_key>$4) ORDER BY row_key LIMIT $5")
+        .bind(id).bind(q.file).bind(q.table).bind(q.after).bind(q.limit.unwrap_or(25).clamp(1,100)).fetch_all(&s.pool).await?;
     let next = records.last().map(|r| r["key"].clone());
     Ok(Json(json!({"records":records,"next":next})))
+}
+
+#[derive(Deserialize)]
+struct IssuePage {
+    after: Option<String>,
+    limit: Option<i64>,
 }
 async fn chatlog_issues(
     State(s): State<AppState>,

@@ -14,5 +14,5 @@ export function Deferred({ children, height = 120 }: { children: ReactNode; heig
     observer.observe(element.current);
     return () => observer.disconnect();
   }, [visible]);
-  return <div ref={element} style={visible ? undefined : { minHeight: height }}>{visible ? children : null}</div>;
+  return <div ref={element} data-deferred={visible ? "ready" : "pending"} style={visible ? undefined : { minHeight: height }}>{visible ? children : null}</div>;
 }

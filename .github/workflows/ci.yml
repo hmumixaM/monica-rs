@@ -5,6 +5,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   test:
+    # PostgreSQL 16 packages are part of the Ubuntu 24.04 test contract.
     runs-on: ubuntu-24.04
     services:
       postgres:
@@ -48,6 +49,7 @@ jobs:
           "$RUNNER_TEMP/legacy-migration/bin/python" scripts/test-legacy-import.py
           python3 scripts/test-migration-file-copy.py
           python3 scripts/test-nas-migration-copy.py
+          python3 scripts/test-nas-migration-download.py
   web:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -62,10 +64,14 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y postgresql-16
       - run: npm ci && npm run build && npx playwright install --with-deps chrome
         working-directory: apps/web
-      - run: npm test -- tests/router.spec.ts tests/ask-runtime.spec.ts
+      - run: npm test -- tests/router.spec.ts tests/ask-runtime.spec.ts tests/auth-errors.spec.ts
         working-directory: apps/web
       - run: cargo build --locked -p monica-server
       - run: python3 scripts/frontend-smoke.py
+        env:
+          MONICA_PG_BIN: /usr/lib/postgresql/16/bin
+      - name: Populated Rust pages and MCP UI
+        run: python3 scripts/frontend-pages-smoke.py
         env:
           MONICA_PG_BIN: /usr/lib/postgresql/16/bin
       - uses: actions/upload-artifact@v4
@@ -84,22 +90,26 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: services/whatsapp/go.mod
-          cache-dependency-path: services/whatsapp/go.sum
+          cache-dependency-path: |
+            services/whatsapp/go.sum
+            tools/migration-media/go.sum
       - run: python3 scripts/test-collector-bridge.py && python3 scripts/test-collector-chatlog.py
       - run: python3 scripts/test-build-context.py
       - run: python3 scripts/test-collector-supervisor.py
       - run: python3 -m pip install uv==0.9.17
       - name: Benchmark availability and latency reporting
         run: uv run --no-project --python 3.12 --with psutil==7.1.3 python scripts/test-benchmark-read-results.py
-      - name: LinkedIn messages against the locked collector dependencies
+      - name: Collector publication and messages against locked dependencies
         env:
           UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/monica-collector-tests
-        run: uv run --project apps/desktop/collectors --frozen python -m pytest apps/desktop/collectors/tests/test_messages_adapter.py
+        run: uv run --project apps/desktop/collectors --frozen python -m pytest apps/desktop/collectors/tests
       - run: go test ./...
         working-directory: services/whatsapp
-      - name: Offline migration codec and filesystem contract
-        run: go test ./...
+      - name: Migration media preservation and codec contracts
+        run: go test -mod=readonly ./...
         working-directory: tools/migration-media
+        env:
+          CGO_ENABLED: '1'
   optional-containers:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45

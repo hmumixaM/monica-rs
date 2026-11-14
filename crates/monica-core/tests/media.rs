@@ -586,3 +586,43 @@ async fn signed_connection_media_waits_for_projection_without_cross_account_link
     expected.sort();
     assert_eq!(actual, expected);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn validated_publication_enriches_raw_blob_without_changing_identity(pool: PgPool) {
+    let root = tempfile::tempdir().unwrap();
+    let media = store(pool.clone(), root.path());
+    let bytes = b"same-content-addressed-source-bytes";
+    let input = root.path().join("source");
+    tokio::fs::write(&input, bytes).await.unwrap();
+    let mut raw = asset(bytes);
+    raw.media_type = "application/octet-stream".into();
+    raw.file_name = None;
+    raw.width = None;
+    raw.height = None;
+    let original = media
+        .publish(&input, raw.clone(), "mail", Some("raw-original"))
+        .await
+        .unwrap();
+    let image = media
+        .publish(&input, asset(bytes), "manual", Some("validated-image"))
+        .await
+        .unwrap();
+    assert_eq!(image.id, original.id);
+    assert_eq!(image.media_type, "image/png");
+    assert_eq!((image.width, image.height), (Some(2), Some(2)));
+    assert_eq!(image.file_name.as_deref(), Some("synthetic.png"));
+    let repeated = media
+        .publish(&input, raw, "mail", Some("second-original"))
+        .await
+        .unwrap();
+    assert_eq!(repeated.id, image.id);
+    assert_eq!(repeated.media_type, "image/png");
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM crm.media_provenance WHERE media_id=$1")
+            .bind(image.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        3
+    );
+}

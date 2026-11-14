@@ -16,6 +16,7 @@ import sqlite3
 import subprocess
 import sys
 import uuid
+from urllib.parse import quote, urlencode
 
 import psycopg
 from psycopg import sql
@@ -65,6 +66,22 @@ def bind_state(db,state,snapshot):
     atomic(marker,identity);marker.chmod(0o600)
 
 
+def bind_reader_target(db,state,own_id,snapshot=None):
+    # ACK/known rows are receipts for one physical target, not transferable
+    # evidence that another restored database has consumed these pages.
+    identity=db.execute("SELECT system_identifier::text,current_database(),(SELECT oid::text FROM pg_database WHERE datname=current_database()) FROM pg_control_system()").fetchone()
+    policy={"format":1,"target":[*identity,str(Path(db.info.host).resolve()),str(db.info.port)],"own_id":own_id}
+    path=state/"chatlog-target.json"
+    if path.is_symlink() or path.with_suffix('.partial').is_symlink():raise ValueError("Chatlog target policy is a symlink")
+    if path.exists():
+        if json.loads(path.read_text())!=policy:raise ValueError("Chatlog state belongs to another target; use a new state directory")
+    elif (state/"raw").exists():
+        if snapshot is None:raise ValueError("Existing Chatlog state has no target receipt; use a new state directory")
+        bind_state(db,state,snapshot)
+        atomic(path,policy);path.chmod(0o600)
+    else:
+        atomic(path,policy);path.chmod(0o600)
+
 def inspect(root,own_id):
     root=root.resolve(strict=True)
     files=[]
@@ -99,6 +116,61 @@ class Importer:
         if not verifying:db.execute("INSERT INTO crm.legacy_chatlog_snapshots(id,manifest,own_id) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING",(self.id,Jsonb(manifest),self.own))
         elif not db.execute("SELECT 1 FROM crm.legacy_chatlog_snapshots WHERE id=%s AND status IN ('converted','verified')",(self.id,)).fetchone():raise ValueError("Chatlog snapshot has not been fully converted")
 
+    def recorded_source_gap(self,key):
+        return self.db.execute("SELECT 1 FROM crm.legacy_chatlog_issues i JOIN crm.legacy_chatlog_snapshots s ON s.id=i.snapshot_id WHERE s.own_id=%s AND i.issue_key=%s AND i.status='source_missing' LIMIT 1",(self.own,key)).fetchone() is not None
+
+    def snapshot_absence(self,value):
+        # Reader tombstones describe disappearance from a later local snapshot,
+        # not proof that the upstream user deleted the original. Keep historical
+        # facts and archive this bounded observation as an explicit source gap.
+        co,_=self.content("chatlog_snapshot_absence",value)
+        key="snapshot-absence:"+hashlib.sha256(reader.encode(value).encode()).hexdigest()
+        if self.verifying:
+            if not self.recorded_source_gap(key):raise ValueError("Chatlog snapshot absence was not recorded")
+        else:
+            details={"observation":value,"content_object_id":str(co),"interpretation":"Snapshot absence is not proof of upstream deletion; historical facts retained"}
+            self.db.execute("INSERT INTO crm.legacy_chatlog_issues(snapshot_id,issue_key,kind,status,details) VALUES(%s,%s,'snapshot_record_absent','source_missing',%s) ON CONFLICT DO NOTHING",(self.id,key,Jsonb(details)))
+
+    def verify_conversations(self):
+        if self.db.execute("SELECT EXISTS(SELECT 1 FROM crm.memory_legacy_pending_records)").fetchone()[0]:raise ValueError("Chatlog deterministic Memory inputs are not settled")
+        # Verify the independent read projections, including new conversations
+        # and corrections that change the last message or its visibility.
+        bad=self.db.execute("""SELECT EXISTS(
+ SELECT 1 FROM crm.conversations c
+ LEFT JOIN LATERAL(SELECT count(*) n,min(occurred_at) first_at,max(occurred_at) last_at FROM crm.message_search WHERE conversation_id=c.id AND NOT tombstone) t ON true
+ LEFT JOIN LATERAL(SELECT message_id,external_id,left(body,80) preview FROM crm.message_search WHERE conversation_id=c.id AND NOT tombstone ORDER BY occurred_at DESC,message_id DESC LIMIT 1) m ON true
+ LEFT JOIN crm.conversation_state s ON(s.provider,s.account,s.conversation)=(c.provider,c.account,c.external_id)
+ LEFT JOIN crm.conversation_summaries v ON(v.provider,v.account,v.conversation)=(c.provider,c.account,c.external_id)
+ WHERE c.provider='wechat' AND c.account=%s AND (
+ (c.message_count,c.first_message_at,c.last_message_at,c.last_message_id,c.last_message_preview) IS DISTINCT FROM(t.n,t.first_at,t.last_at,m.message_id,m.preview)
+ OR (s.message_count,s.last_at_ms,s.last_id,s.preview) IS DISTINCT FROM(t.n,coalesce((extract(epoch FROM t.last_at)*1000)::bigint,0),coalesce(m.external_id,''),coalesce(m.preview,''))
+ OR (v.message_count,v.last_at_ms,v.last_id,v.preview) IS DISTINCT FROM(s.message_count,s.last_at_ms,s.last_id,s.preview)))""",(self.own,)).fetchone()[0]
+        if bad:raise ValueError("Chatlog conversation summaries are not settled")
+        for table,timezone in [("message_months","America/Chicago"),("message_months_utc","UTC")]:
+            query=sql.SQL("""WITH expected AS(
+ SELECT m.conversation_id,to_char(m.occurred_at AT TIME ZONE %s,'YYYY-MM') AS month,count(*) FILTER(WHERE m.sender=m.account) sent,count(*) FILTER(WHERE m.sender<>m.account) received,min(m.occurred_at) first_message_at,max(m.occurred_at) last_message_at
+ FROM crm.message_search m JOIN crm.conversations c ON c.id=m.conversation_id WHERE c.provider='wechat' AND c.account=%s AND NOT m.tombstone GROUP BY 1,2),actual AS(
+ SELECT t.* FROM crm.{} t JOIN crm.conversations c ON c.id=t.conversation_id WHERE c.provider='wechat' AND c.account=%s)
+ SELECT EXISTS((SELECT * FROM expected EXCEPT SELECT * FROM actual) UNION ALL(SELECT * FROM actual EXCEPT SELECT * FROM expected))""").format(sql.Identifier(table))
+            if self.db.execute(query,(timezone,self.own,self.own)).fetchone()[0]:raise ValueError("Chatlog monthly summaries are not settled")
+
+    def finish(self, server_binary):
+        if self.verifying:
+            self.verify_revocations()
+            self.verify_conversations()
+            return
+        self.settle_revocations()
+        self.db.execute("UPDATE crm.legacy_chatlog_snapshots SET status='settling' WHERE id=%s",(self.id,))
+        migration=self.db.execute("SELECT id FROM crm.legacy_migrations WHERE status='database_ready'").fetchone()[0]
+        parameters=psycopg.conninfo.conninfo_to_dict(self.db.info.dsn)
+        connection={key:value for key,value in parameters.items() if key in {"host","port","user","password","sslmode","sslrootcert","sslcert","sslkey"}}
+        database_url="postgresql:///"+quote(self.db.info.dbname,safe="")+"?"+urlencode(connection)
+        environment=dict(os.environ,MONICA_DATABASE_URL=database_url)
+        subprocess.run([str(server_binary),"legacy-finalize",str(migration)],env=environment,check=True)
+        self.verify_revocations()
+        self.verify_conversations()
+        self.db.execute("UPDATE crm.legacy_chatlog_snapshots SET status='converted',completed_at=now() WHERE id=%s",(self.id,))
+
     def account(self,external,name=None):
         if external not in self.accounts:
             if self.verifying:raise ValueError("Chatlog account is missing from the Rust copy")
@@ -110,7 +182,12 @@ class Importer:
 
     def archive_tables(self,root,scan):
         import base64
-        def value(v):return {'sqlite_blob_base64':base64.b64encode(v).decode()} if isinstance(v,bytes) else v
+        import math
+        def value(v):
+            if isinstance(v,bytes):return {'sqlite_blob_base64':base64.b64encode(v).decode()}
+            if isinstance(v,str) and '\0' in v:return {'sqlite_text_utf8_base64':base64.b64encode(v.encode('utf-8')).decode()}
+            if isinstance(v,float) and not math.isfinite(v):return {'sqlite_real_hex':v.hex()}
+            return v
         for file in self.manifest['files']:
             with closing(reader.standalone(root/file['name'])) as source:
                 for table in file['tables']:
@@ -186,23 +263,24 @@ class Importer:
         if not target or target=='0':
             key='revoke-reference-absent:'+str(mid)
             if self.verifying:
-                if not self.db.execute("SELECT 1 FROM crm.legacy_chatlog_issues WHERE snapshot_id=%s AND issue_key=%s AND status='source_missing'",(self.id,key)).fetchone():raise ValueError("Chatlog notice source gap was not recorded")
+                if not self.recorded_source_gap(key):raise ValueError("Chatlog notice source gap was not recorded")
             else:
                 self.db.execute("INSERT INTO crm.legacy_chatlog_issues(snapshot_id,issue_key,kind,entity_id,status,details) VALUES(%s,%s,'revoke_notice_without_target',%s,'source_missing','{\"reason\":\"upstream notice contains no stable target server ID; original notice is preserved\"}') ON CONFLICT DO NOTHING",(self.id,key,mid))
             return
         if not target.isdecimal():raise ValueError("unsupported Chatlog revoke target identifier")
         if self.verifying:
-            row=self.db.execute("SELECT status,target_record_id FROM crm.legacy_chatlog_revocations WHERE snapshot_id=%s AND notice_message_id=%s",(self.id,mid)).fetchone()
+            row=self.db.execute("SELECT status,target_record_id FROM crm.legacy_chatlog_revocations WHERE notice_message_id=%s AND conversation_id=%s AND target_record_id=%s AND status<>'pending' ORDER BY (snapshot_id=%s) DESC LIMIT 1",(mid,cid,'server:'+target,self.id)).fetchone()
             if not row or row[0]=='pending' or row[1]!='server:'+target:raise ValueError("Chatlog revoke notice is missing or unresolved")
             return
         self.db.execute("INSERT INTO crm.legacy_chatlog_revocations(notice_message_id,conversation_id,target_record_id,content_object_id,snapshot_id) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",(mid,cid,"server:"+target,co,self.id))
 
     def settle_revocations(self):
+        after=(uuid.UUID(int=0),uuid.UUID(int=0))
         while True:
-            rows=self.db.execute("SELECT notice_message_id,conversation_id,target_record_id,content_object_id FROM crm.legacy_chatlog_revocations WHERE snapshot_id=%s AND status='pending' ORDER BY notice_message_id LIMIT 100",(self.id,)).fetchall()
+            rows=self.db.execute("SELECT r.notice_message_id,r.conversation_id,r.target_record_id,r.content_object_id,r.snapshot_id FROM crm.legacy_chatlog_revocations r JOIN crm.legacy_chatlog_snapshots s ON s.id=r.snapshot_id WHERE s.own_id=%s AND r.status IN ('pending','source_missing') AND (r.notice_message_id,r.snapshot_id)>(%s,%s) ORDER BY r.notice_message_id,r.snapshot_id LIMIT 100",(self.own,*after)).fetchall()
             if not rows:break
             with self.db.transaction():
-                for notice,cid,sid,co in rows:
+                for notice,cid,sid,co,snapshot_id in rows:
                     targets=self.db.execute("SELECT m.message_id,to_jsonb(m),coalesce(v.content_object_id,e.content_object_id) FROM crm.legacy_message_evidence e JOIN crm.message_search m USING(message_id) LEFT JOIN crm.legacy_chatlog_projection p ON p.entity_type='message' AND p.entity_id=m.message_id LEFT JOIN crm.legacy_chatlog_versions v ON v.entity_type=p.entity_type AND v.entity_id=p.entity_id AND v.revision=p.revision WHERE e.source_record_id=%s AND m.conversation_id=%s",(sid,cid)).fetchall()
                     for mid,current,body_co in targets:
                         new={"body":current["body"],"message_type":current["message_type"],"direction":current["direction"],"tombstone":True}
@@ -210,32 +288,18 @@ class Importer:
                             self.queue("message",[mid])
                             self.db.execute("UPDATE crm.legacy_chatlog_snapshots SET changed=changed+1 WHERE id=%s",(self.id,))
                     status='applied' if targets else 'source_missing'
+                    if targets:self.db.execute("UPDATE crm.legacy_chatlog_issues SET status='resolved' WHERE issue_key=%s AND kind='revoke_target_absent' AND snapshot_id IN(SELECT id FROM crm.legacy_chatlog_snapshots WHERE own_id=%s)",('revoke:'+str(notice),self.own))
                     if not targets:self.db.execute("INSERT INTO crm.legacy_chatlog_issues(snapshot_id,issue_key,kind,entity_id,status,details) VALUES(%s,%s,'revoke_target_absent',%s,'source_missing','{\"scope\":\"absent from the complete frozen CRM and Chatlog copies\"}') ON CONFLICT DO NOTHING",(self.id,'revoke:'+str(notice),notice))
-                    self.db.execute("UPDATE crm.legacy_chatlog_revocations SET status=%s WHERE notice_message_id=%s AND snapshot_id=%s",(status,notice,self.id))
+                    self.db.execute("UPDATE crm.legacy_chatlog_revocations SET status=%s WHERE notice_message_id=%s AND snapshot_id=%s",(status,notice,snapshot_id))
+            after=(rows[-1][0],rows[-1][4])
             print(json.dumps({"phase":"chatlog_revocations","processed":len(rows)}),flush=True)
 
     def verify_revocations(self):
-        bad=self.db.execute("SELECT EXISTS(SELECT 1 FROM crm.legacy_chatlog_revocations r WHERE r.snapshot_id=%s AND (r.status='pending' OR r.status='applied' AND EXISTS(SELECT 1 FROM crm.legacy_message_evidence e JOIN crm.message_search m USING(message_id) WHERE e.source_record_id=r.target_record_id AND m.conversation_id=r.conversation_id AND NOT m.tombstone)))",(self.id,)).fetchone()[0]
+        bad=self.db.execute("SELECT EXISTS(SELECT 1 FROM crm.legacy_chatlog_revocations r JOIN crm.legacy_chatlog_snapshots s ON s.id=r.snapshot_id WHERE s.own_id=%s AND (r.status='pending' OR (r.status='applied' AND EXISTS(SELECT 1 FROM crm.legacy_message_evidence e JOIN crm.message_search m USING(message_id) WHERE e.source_record_id=r.target_record_id AND m.conversation_id=r.conversation_id AND NOT m.tombstone)) OR (r.status='source_missing' AND EXISTS(SELECT 1 FROM crm.legacy_message_evidence e JOIN crm.message_search m USING(message_id) WHERE e.source_record_id=r.target_record_id AND m.conversation_id=r.conversation_id))))",(self.own,)).fetchone()[0]
         if bad:raise ValueError("Chatlog revoke projection is incomplete or differs")
         if self.db.execute("SELECT EXISTS(SELECT 1 FROM crm.legacy_chatlog_issues WHERE snapshot_id=%s AND status='pending')",(self.id,)).fetchone()[0]:raise ValueError("Chatlog migration has unresolved issues")
 
-    def settle_projections(self):
-        from urllib.parse import quote, urlencode
-        migration=self.db.execute("SELECT id FROM crm.legacy_migrations ORDER BY created_at LIMIT 1").fetchone()[0]
-        binary=Path(os.environ.get('MONICA_LEGACY_FINALIZER',str(Path(__file__).resolve().parents[1]/'target/debug/monica-server'))).resolve(strict=True)
-        self.db.execute("UPDATE crm.legacy_chatlog_snapshots SET status='settling' WHERE id=%s",(self.id,))
-        target='postgresql://'+quote(self.db.info.user,safe='')+'@localhost/'+quote(self.db.info.dbname,safe='')+'?'+urlencode({'host':self.db.info.host,'port':self.db.info.port})
-        subprocess.run([str(binary),'legacy-finalize',str(migration)],env={**os.environ,'MONICA_DATABASE_URL':target},check=True)
 
-    def verify_projections(self):
-        if self.db.execute("SELECT EXISTS(SELECT 1 FROM crm.memory_legacy_pending_records)").fetchone()[0]:raise ValueError('Chatlog deterministic Memory inputs are not settled')
-        bad=self.db.execute("""SELECT EXISTS(SELECT 1 FROM crm.conversations c
- LEFT JOIN LATERAL(SELECT count(*) n,min(occurred_at) first_at,max(occurred_at) last_at FROM crm.message_search WHERE conversation_id=c.id AND NOT tombstone) a ON true
- LEFT JOIN LATERAL(SELECT message_id,left(body,80) preview FROM crm.message_search WHERE conversation_id=c.id AND NOT tombstone ORDER BY occurred_at DESC,message_id DESC LIMIT 1) last ON true
- LEFT JOIN crm.conversation_state s ON(s.provider,s.account,s.conversation)=(c.provider,c.account,c.external_id)
- LEFT JOIN crm.conversation_summaries v ON(v.provider,v.account,v.conversation)=(c.provider,c.account,c.external_id)
- WHERE c.message_count IS DISTINCT FROM a.n OR c.first_message_at IS DISTINCT FROM a.first_at OR c.last_message_at IS DISTINCT FROM a.last_at OR c.last_message_id IS DISTINCT FROM last.message_id OR c.last_message_preview IS DISTINCT FROM last.preview OR s.message_count IS DISTINCT FROM a.n OR v.message_count IS DISTINCT FROM a.n OR s.preview IS DISTINCT FROM coalesce(last.preview,'') OR v.preview IS DISTINCT FROM coalesce(last.preview,''))""").fetchone()[0]
-        if bad:raise ValueError('Chatlog conversation projections are stale; run offline settlement')
 
     def conversation(self,talker):
         if talker not in self.conversations:
@@ -257,7 +321,7 @@ class Importer:
         new={**new,"version":revision} if kind=="post" else new
         projection={**({} if not old else old[1]),**new}
         self.db.execute("INSERT INTO crm.legacy_chatlog_projection VALUES(%s,%s,%s,%s,%s) ON CONFLICT(entity_type,entity_id) DO UPDATE SET original_row=excluded.original_row,current_row=excluded.current_row,revision=excluded.revision",(kind,eid,Jsonb(original),Jsonb(projection),revision))
-        saved={**projection,**({"raw_object_id":str(raw_id)} if raw_id else {})}
+        saved={**current,**new,**({"raw_object_id":str(raw_id)} if raw_id else {})}
         self.db.execute("INSERT INTO crm.legacy_chatlog_versions(entity_type,entity_id,revision,content_object_id,saved_row,snapshot_id) VALUES(%s,%s,%s,%s,%s,%s)",(kind,eid,revision,content_id,Jsonb(saved),self.id))
         self.db.execute(sql.SQL("UPDATE crm.{} SET {} WHERE {}=%s").format(sql.Identifier(table),sql.SQL(',').join(sql.SQL('{}=%s').format(sql.Identifier(k)) for k in new),sql.Identifier(key)),[*[Jsonb(v) if isinstance(v,(dict,list)) else v for v in new.values()],eid])
         return True
@@ -324,7 +388,7 @@ class Importer:
         if value.get('source_gap')!='sender_reference_absent':return
         key='sender-reference-absent:'+str(mid)
         if self.verifying:
-            if not self.db.execute("SELECT 1 FROM crm.legacy_chatlog_issues WHERE snapshot_id=%s AND issue_key=%s AND status='source_missing'",(self.id,key)).fetchone():raise ValueError('Chatlog sender source gap was not recorded')
+            if not self.recorded_source_gap(key):raise ValueError('Chatlog sender source gap was not recorded')
         else:
             details={'reason':'source Name2Id reference is the empty or zero sentinel','retained_existing_attribution':retained,'source_sender_id':value['raw_message']['real_sender_id']}
             self.db.execute("INSERT INTO crm.legacy_chatlog_issues(snapshot_id,issue_key,kind,entity_id,status,details) VALUES(%s,%s,'sender_reference_absent',%s,'source_missing',%s) ON CONFLICT DO NOTHING",(self.id,key,mid,Jsonb(details)))
@@ -392,9 +456,13 @@ class Importer:
         with self.db.transaction():
             seen=not self.verifying and bool(self.db.execute("SELECT 1 FROM crm.legacy_chatlog_pages WHERE snapshot_id=%s AND digest=%s",(self.id,digest)).fetchone())
             if seen and not self.reconciling:return
-            values=[r["content"] for r in frame["batch"]["records"]]
-            counts=[0,0,0]
-            if values and values[0]["kind"]=="message":counts=self.messages(values)
+            records=[r["content"] for r in frame["batch"]["records"]]
+            values=[]
+            for value in records:
+                if value.get("deleted") and not value.get("participants"):self.snapshot_absence(value)
+                else:values.append(value)
+            counts=[0,len(records)-len(values),0]
+            if values and values[0]["kind"]=="message":counts=[a+b for a,b in zip(counts,self.messages(values))]
             else:
                 for value in values:
                     if value["kind"]=="post":result=self.post(value)
@@ -409,9 +477,9 @@ class Importer:
                     else:raise ValueError("unmapped Chatlog record kind")
                     counts=[a+b for a,b in zip(counts,result)]
             if not self.verifying:
-                self.db.execute("INSERT INTO crm.legacy_chatlog_pages VALUES(%s,%s,%s) ON CONFLICT DO NOTHING",(self.id,digest,len(values)))
-                self.db.execute("UPDATE crm.legacy_chatlog_snapshots SET records=records+%s,inserted=inserted+%s,unchanged=unchanged+%s,changed=changed+%s WHERE id=%s",(0 if seen else len(values),counts[0],0 if seen else counts[1],counts[2],self.id))
-        print(json.dumps({"phase":"chatlog_verify" if self.verifying else "chatlog_convert","records":len(values),"inserted":counts[0],"unchanged":counts[1],"changed":counts[2]}),flush=True)
+                self.db.execute("INSERT INTO crm.legacy_chatlog_pages VALUES(%s,%s,%s) ON CONFLICT DO NOTHING",(self.id,digest,len(records)))
+                self.db.execute("UPDATE crm.legacy_chatlog_snapshots SET records=records+%s,inserted=inserted+%s,unchanged=unchanged+%s,changed=changed+%s WHERE id=%s",(0 if seen else len(records),counts[0],0 if seen else counts[1],counts[2],self.id))
+        print(json.dumps({"phase":"chatlog_verify" if self.verifying else "chatlog_convert","records":len(records),"inserted":counts[0],"unchanged":counts[1],"changed":counts[2]}),flush=True)
 
 
 def search_text(value):
@@ -431,6 +499,7 @@ def main():
     p.add_argument("--snapshots",type=Path,required=True)
     p.add_argument("--state",type=Path,required=True)
     p.add_argument("--manifest",type=Path,required=True)
+    p.add_argument("--server-binary",type=Path,default=Path(os.environ.get("MONICA_SERVER_BINARY",os.environ.get("MONICA_LEGACY_FINALIZER") or shutil.which("monica-server") or str(Path(__file__).resolve().parents[1]/"target/debug/monica-server"))))
     a=p.parse_args();source=a.snapshots.resolve(strict=True);state=a.state.resolve()
     if source==state or source in state.parents or state in source.parents:p.error("snapshot and writable state roots must be disjoint")
     own=os.environ.get("MONICA_LEGACY_WECHAT_SELF_ID")
@@ -449,7 +518,7 @@ def main():
         if not db.execute("SELECT pg_try_advisory_lock(hashtextextended('monica-offline-chatlog',0))").fetchone()[0]:raise ValueError('another offline Chatlog operation is active on this target')
         reconciling=a.action=='reconcile'
         importer=Importer(db,manifest,verifying,reconciling)
-        if not verifying:bind_state(db,state,importer.id)
+        if not verifying:bind_reader_target(db,state,own,importer.id)
         import tempfile
         temporary=tempfile.TemporaryDirectory(prefix="verify-",dir=state) if verifying else None
         reader_state=Path(temporary.name) if temporary else state
@@ -469,10 +538,7 @@ def main():
             while scan.step(emit):pass
             if scan.db.execute("SELECT count(*) FROM files WHERE done=0").fetchone()[0]:raise ValueError("Chatlog source scan incomplete")
             importer.archive_tables(source,scan)
-            if verifying:
-                importer.verify_revocations();importer.verify_projections()
-            else:
-                importer.settle_revocations();importer.settle_projections();importer.verify_projections()
+            importer.finish(a.server_binary)
         finally:
             scan.close()
             if temporary:temporary.cleanup()

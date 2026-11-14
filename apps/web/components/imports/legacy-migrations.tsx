@@ -24,7 +24,7 @@ export function LegacyMigrations({compact=false}:{compact?:boolean}) {
  const [after,setAfter]=useState<string|null>(null);
  const history=useQuery({queryKey:['legacy-history',selected?.id,table?.store,table?.table_name,after],queryFn:()=>fetchJson<{records:{key:string;original:Record<string,unknown>}[];next:string|null}>(`/api/v1/imports/migrations/${selected!.id}/history?`+new URLSearchParams({store:table!.store,table:table!.table_name,...(after?{after}:{}),limit:'25'})),enabled:!!selected&&!!table});
  if(query.isError)return <Failure onRetry={()=>void query.refetch()}>无法读取旧版迁移状态。</Failure>;
- if(!query.data?.records.length&&!query.data?.copies?.length)return null;
+ if(!query.data?.records.length&&!query.data?.chatlog?.length&&!query.data?.copies?.length)return null;
  return <Section title="旧版数据迁移" className={styles.panel}>
   <p>本次复制保留独立的数据副本。历史采集记录与本次迁移进度分别保存。</p>
   {query.data?.records.map(m=><div key={m.id}><p><strong>{states[m.status]||m.status}</strong> · {formatDateTime(m.created_at,true)}</p>

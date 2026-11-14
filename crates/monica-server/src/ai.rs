@@ -274,7 +274,9 @@ async fn suggestions(
 ) -> Result<Json<Value>> {
     user(&s, &h).await?;
     if !enabled(&s).await? {
-        return Ok(Json(json!({"enabled":false,"total":0,"people":[]})));
+        return Ok(Json(
+            json!({"enabled":false,"total":0,"items":0,"kinds":{},"people":[]}),
+        ));
     }
     let mut people = pending(&s, None).await?;
     let mut counts = serde_json::Map::new();
