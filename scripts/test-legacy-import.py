@@ -180,6 +180,9 @@ class MigrationContract(unittest.TestCase):
         chatlog=importlib.util.module_from_spec(spec);spec.loader.exec_module(chatlog)
         os.environ["MONICA_LEGACY_WECHAT_SELF_ID"]="synthetic-self"
         self.target.execute("SET TIME ZONE 'America/Chicago'")
+        # This is explicit person attribution, not an account-derived owner.
+        # Chatlog may later identify its source account without replacing it.
+        self.writers["crm"].execute("UPDATE message_events SET sender_account_id=NULL WHERE id=%s",(U('message'),))
         self.writers["crm"].execute("UPDATE content_objects SET payload_json=%s",(Jsonb('Original value'),))
         self.writers["crm"].execute("UPDATE message_search SET body='Original value'")
         manifest=m.inspect_sources(self.sources);original=m.Importer(self.sources,self.target,manifest);original.apply()
@@ -228,6 +231,31 @@ class MigrationContract(unittest.TestCase):
             finally:scan.close()
             return current,frames
         current,frames=run(snapshots,self.folder/("chatlog-state-"+self.suffix))
+        self.assertEqual(self.target.execute("SELECT sender_profile_id FROM crm.message_search WHERE message_id=%s",(U('message'),)).fetchone()[0],uuid.UUID(U('person')))
+        # Reproduce an older finalizer's damage, then apply the real repair
+        # migration. Its immutable evidence is the authority; replay is inert.
+        self.target.execute("UPDATE crm.message_search SET sender_profile_id=NULL WHERE message_id=%s",(U('message'),))
+        repair=(ROOT/'migrations/0067_preserve_legacy_explicit_message_owners.sql').read_text()
+        for field in ['original_row','current_row']:
+            self.target.execute(sql.SQL("UPDATE crm.legacy_chatlog_projection SET {}={}||jsonb_build_object('sender_profile_id',NULL) WHERE entity_type='message' AND entity_id=%s").format(sql.Identifier(field),sql.Identifier(field)),(U('message'),))
+            self.target.execute(repair)
+            self.assertIsNone(self.target.execute("SELECT sender_profile_id FROM crm.message_search WHERE message_id=%s",(U('message'),)).fetchone()[0])
+            self.target.execute(sql.SQL("UPDATE crm.legacy_chatlog_projection SET {}={}-'sender_profile_id' WHERE entity_type='message' AND entity_id=%s").format(sql.Identifier(field),sql.Identifier(field)),(U('message'),))
+        self.target.execute("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES(%s,'person','Previous derived owner')",(U('previous-owner'),))
+        self.target.execute("UPDATE crm.message_search SET sender_profile_id=%s WHERE message_id=%s",(U('previous-owner'),U('message')))
+        self.target.execute(repair)
+        self.assertEqual(self.target.execute("SELECT sender_profile_id FROM crm.message_search WHERE message_id=%s",(U('message'),)).fetchone()[0],uuid.UUID(U('previous-owner')))
+        self.target.execute("UPDATE crm.message_search SET sender_profile_id=NULL WHERE message_id=%s",(U('message'),))
+        self.target.execute("INSERT INTO crm.memory_legacy_owners(kind,entity_id,profile_id) VALUES('message',%s,%s) ON CONFLICT DO NOTHING",(U('message'),U('previous-owner')))
+        self.target.execute(repair)
+        self.assertEqual(self.target.execute("SELECT sender_profile_id FROM crm.message_search WHERE message_id=%s",(U('message'),)).fetchone()[0],uuid.UUID(U('person')))
+        self.assertEqual(self.target.execute("SELECT current_row->>'sender_profile_id' FROM crm.legacy_chatlog_projection WHERE entity_type='message' AND entity_id=%s",(U('message'),)).fetchone()[0],U('person'))
+        queued=self.target.execute("SELECT profiles FROM crm.memory_legacy_pending_records WHERE kind='message' AND entity_id=%s",(U('message'),)).fetchone()[0]
+        self.assertIn(uuid.UUID(U('person')),queued)
+        self.assertIn(uuid.UUID(U('previous-owner')),queued)
+        self.target.execute(repair)
+        chatlog.Importer(self.target,current).finish(SERVER)
+        original.verifying=True;original.apply()
         self.assertEqual(self.target.execute("SELECT count(*) FROM crm.message_search").fetchone()[0],3)
         self.assertEqual(self.target.execute("SELECT count(*) FROM crm.timeline_events").fetchone()[0],1)
         self.assertEqual(self.target.execute("SELECT external_id FROM crm.timeline_events").fetchone()[0],'synthetic-canonical-post')
@@ -264,7 +292,7 @@ class MigrationContract(unittest.TestCase):
         self.assertEqual(self.target.execute("SELECT direction,sender_account_id FROM crm.message_search WHERE body='Video with source sender absent'").fetchone(),('unknown',None))
         self.assertEqual(self.target.execute("SELECT direction,sender_account_id FROM crm.message_search WHERE message_id=%s",(U('message'),)).fetchone(),('received',uuid.UUID(U('account'))))
         self.assertEqual(self.target.execute("SELECT content->>'text' FROM crm.social_interactions").fetchone()[0],'Updated comment')
-        self.assertEqual(self.target.execute("SELECT original_row->>'body',revision FROM crm.legacy_chatlog_projection WHERE entity_type='message' AND entity_id=%s",(U("message"),)).fetchone(),("Original value",2))
+        self.assertEqual(self.target.execute("SELECT original_row->>'body',revision FROM crm.legacy_chatlog_projection WHERE entity_type='message' AND entity_id=%s",(U("message"),)).fetchone(),("Original value",3))
         self.assertEqual(self.target.execute("SELECT c.payload_json FROM crm.legacy_message_evidence e JOIN crm.content_objects c ON c.id=e.content_object_id WHERE e.message_id=%s",(U("message"),)).fetchone()[0],"Original value")
         original.verifying=True;original.apply()
         # A successful old receipt must not prevent an explicit correction of
@@ -324,7 +352,7 @@ class MigrationContract(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'attribution differs'):new_importer.messages([value])
         run(corrected,self.folder/("chatlog-corrected-state-"+self.suffix))
         self.assertEqual(self.target.execute("SELECT sender FROM crm.message_search WHERE message_id=%s",(U('message'),)).fetchone()[0],'synthetic-corrected-sender')
-        self.assertEqual(self.target.execute("SELECT original_row->>'sender' FROM crm.legacy_chatlog_projection WHERE entity_type='message' AND entity_id=%s",(U('message'),)).fetchone()[0],'synthetic-account')
+        self.assertEqual(self.target.execute("SELECT original_row->>'sender' FROM crm.legacy_chatlog_projection WHERE entity_type='message' AND entity_id=%s",(U('message'),)).fetchone()[0],U('person'))
         self.target.execute("SET default_transaction_read_only=on")
         try:run(corrected,self.folder/("chatlog-corrected-verify-"+self.suffix),verify=True)
         finally:self.target.execute("SET default_transaction_read_only=off")

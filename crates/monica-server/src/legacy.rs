@@ -252,13 +252,15 @@ pub async fn evidence_version(
     let profile = attribution
         .get("sender_profile_id")
         .or_else(|| {
-            external
-                .is_none()
-                .then(|| evidence["original"].get("sender_profile_id"))
-                .flatten()
+            (external.is_none()
+                || evidence["original"]
+                    .get("sender_account_id")
+                    .is_some_and(Value::is_null))
+            .then(|| evidence["original"].get("sender_profile_id"))
+            .flatten()
         })
         .and_then(Value::as_str);
-    let mut participants:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('role','sender','id',a.external_id,'profile_id',CASE WHEN $3 THEN coalesce($4::uuid,l.profile_id) ELSE $4::uuid END,'name',a.display_name)),'[]'::jsonb) FROM crm.source_accounts a LEFT JOIN crm.source_account_links l ON l.account_id=a.id WHERE a.provider=$5 AND (a.id=$1::uuid OR ($1::uuid IS NULL AND a.external_id=$2))")
+    let mut participants:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('role','sender','id',a.external_id,'profile_id',CASE WHEN $3 THEN coalesce($4::uuid,l.profile_id) ELSE $4::uuid END,'name',coalesce(p.display_name,a.display_name))),'[]'::jsonb) FROM crm.source_accounts a LEFT JOIN crm.source_account_links l ON l.account_id=a.id LEFT JOIN crm.profiles p ON p.id=CASE WHEN $3 THEN coalesce($4::uuid,l.profile_id) ELSE $4::uuid END WHERE a.provider=$5 AND (a.id=$1::uuid OR ($1::uuid IS NULL AND a.external_id=$2))")
         .bind(sender).bind(external).bind(selected==current).bind(profile).bind(message["provider"].as_str()).fetch_one(pool).await?;
     if participants.as_array().is_some_and(Vec::is_empty)
         && let Some(profile) = profile
@@ -374,17 +376,9 @@ pub async fn finalize(pool: &PgPool, id: Uuid) -> anyhow::Result<()> {
     );
     sqlx::query("UPDATE crm.relationship_edges e SET legacy_source_owned=true FROM crm.legacy_relationship_owners o WHERE o.edge_id=e.id AND NOT e.legacy_source_owned")
         .execute(pool).await?;
-    loop {
-        let count=sqlx::query("WITH batch AS(SELECT m.message_id FROM crm.message_search m JOIN crm.legacy_message_evidence e USING(message_id) WHERE m.sender_account_id IS NOT NULL AND m.sender_profile_id IS NOT NULL ORDER BY m.message_id LIMIT 10000) UPDATE crm.message_search m SET sender_profile_id=NULL FROM batch b WHERE m.message_id=b.message_id")
-            .execute(pool).await?.rows_affected();
-        if count == 0 {
-            break;
-        }
-        println!(
-            "{}",
-            json!({"phase":"message_attribution","corrected":count})
-        );
-    }
+    // The importer already separates account-derived people from explicit
+    // person-only attribution. A later source-account observation must retain
+    // that explicit person, including when it differs from the account link.
     // Imported explicit sequence values must precede ordinary application writes.
     let sequences:Vec<(String,String,String)>=sqlx::query_as("SELECT table_schema,table_name,column_name FROM information_schema.columns WHERE table_schema='crm' AND is_identity='YES'").fetch_all(pool).await?;
     for (schema, table, column) in sequences {
