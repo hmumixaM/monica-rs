@@ -372,11 +372,16 @@ class Worker:
                 except (ValueError, OSError, subprocess.SubprocessError, KeyError):
                     state, q, asset = ('available', best[1], best[0]) if best else ('decode_failed', 'none', None)
         with self.db.transaction():
+            self.db.execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED')
             # Fence pause and source retractions/edits before attaching a decoded file.
             allowed = self.db.execute('SELECT enabled AND NOT paused FROM crm.wechat_image_control FOR SHARE').fetchone()
             if not allowed or not allowed[0]:
                 raise Paused()
-            current = self.db.execute(CURRENT + ' AND m.message_id=%s FOR SHARE OF m,c', (self.args.account, mid)).fetchone()
+            # Acquire row locks in a separate statement. After waiting for a
+            # projector, a joined locking SELECT can retain old outer-join
+            # payloads via EvalPlanQual. The next statement needs a fresh snapshot.
+            self.db.execute("SELECT m.message_id FROM crm.message_search m JOIN crm.conversations c ON c.id=m.conversation_id WHERE m.message_id=%s AND c.account=%s FOR SHARE OF m,c", (mid, self.args.account)).fetchone()
+            current = self.db.execute(CURRENT + ' AND m.message_id=%s', (self.args.account, mid)).fetchone()
             if current != row:
                 state, q, asset = 'source_changed', 'none', None
             media_id = None

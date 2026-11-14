@@ -11,6 +11,8 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from types import SimpleNamespace
 import unittest
 import uuid
@@ -200,6 +202,42 @@ print(json.dumps(dict(sha256=h,byte_length=len(data),media_type='image/png',obje
                     self.assertEqual(buckets[0][2]['total'], 1)
                     self.assertEqual(buckets[0][2]['available'], 1)
                     self.assertEqual(db.execute('SELECT counts FROM crm.wechat_image_runs WHERE id=%s', (native.run_id,)).fetchone()[0]['total'], 1)
+                # Real lock wait: a projector changes only raw XML while the
+                # visible body remains [图片]. The final read must see its commit.
+                editor = psycopg.connect(db.info.dsn, autocommit=True)
+                editor.execute('BEGIN')
+                editor.execute('UPDATE crm.message_search SET body=body WHERE message_id=%s', (native_mid,))
+                editor.execute("UPDATE crm.connection_evidence SET revision=4,content_hash='projected-a' WHERE id=%s", (native_mid,))
+                editor.execute("UPDATE wechat.connection_record_heads SET revision=4,content_hash='projected-a' WHERE connection_id=%s", (connection,))
+                waited, errors = [], []
+                def release_projector():
+                    try:
+                        deadline = time.monotonic() + 5
+                        while time.monotonic() < deadline:
+                            event = admin.execute('SELECT wait_event_type FROM pg_stat_activity WHERE pid=%s', (db.info.backend_pid,)).fetchone()
+                            if event and event[0] == 'Lock':
+                                waited.append(True)
+                                editor.execute('COMMIT')
+                                return
+                            time.sleep(0.01)
+                        errors.append('worker did not reach a lock wait')
+                        editor.execute('ROLLBACK')
+                    except Exception as error:
+                        errors.append(str(error))
+                thread = threading.Thread(target=release_projector)
+                thread.start()
+                try:
+                    native.item(native_mid)
+                finally:
+                    thread.join(timeout=6)
+                    editor.close()
+                self.assertFalse(thread.is_alive())
+                self.assertEqual(errors, [])
+                self.assertEqual(waited, [True])
+                self.assertEqual(db.execute('SELECT state,media_id FROM crm.wechat_group_images WHERE run_id=%s AND message_id=%s', (native.run_id, native_mid)).fetchone(), ('source_changed', None))
+                with redirect_stdout(io.StringIO()):
+                    native.run()
+                self.assertEqual(current_sha(), sha_a)
                 native_ledger.close()
         finally:
             if db:
