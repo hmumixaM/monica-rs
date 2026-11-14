@@ -17,7 +17,9 @@
 图片从该账号的 `msg` 目录或其独立副本读取。Linux 必须将来源挂载为只读。
 扫描全部 `Img` 缓存目录，以原文 XML 的图片 MD5 关联；可用冻结的 hardlink 元数据索引补充
 文件名与 MD5 不同的别名。账号隔离，不根据相同昵称、消息正文中的任意哈希或发送者猜测关联。
-既有媒体优先复用；发现更高等级缓存时才补充。原有媒体和证据保留。
+既有媒体通过当前原文图片引用核对后复用；发现更高等级缓存时才补充。
+原文换图时不会把旧附件误报成当前图片。只解除该功能自己生成的过期公开关联，
+原有导入／手工关联、媒体文件和来源证据保留。
 
 这不是微信云端下载协议。微信从未缓存的历史图片，需要先在微信中取得，再同步进只读来源。
 任务不调用 Chatlog 的图片 HTTP 路由：部分 Chatlog 版本会在这些 GET 请求中写回解密文件，
@@ -50,6 +52,11 @@ python3 scripts/wechat-group-images.py --run \
   --expected-database monica_rust \
   --expected-system-id '<Rust PostgreSQL system identifier>'
 ```
+
+原生连接的 `crm.conversations.account` 是 connection UUID，来源微信账号则是 wxid。
+这种情况必须另加 `--source-owner '<微信账号 wxid>'`，并与该连接保存的 `external_account` 一致。
+冻结索引校验的是 source-owner；目标查询使用 account，两者不可混为同一个标识。
+旧版迁移账号没有原生 connection 时，source-owner 直接采用目标 account，不允许跨账号覆盖。
 
 连接凭据只通过环境变量 `MONICA_DATABASE_URL` 提供。
 有需要时，已有图片解密凭据只通过 `MONICA_MIGRATION_IMAGE_KEY` 和

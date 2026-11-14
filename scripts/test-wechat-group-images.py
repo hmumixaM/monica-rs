@@ -100,7 +100,7 @@ print(json.dumps(dict(sha256=h,byte_length=len(data),media_type='image/png',obje
                     db.execute("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,occurred_at,body,message_type,tombstone) VALUES(%s,%s,'wechat','synthetic-self',%s,'unknown','2026-01-01T23:59:59Z','[图片]',%s,%s)", (mid, gid, str(mid), kind, tombstone))
                     db.execute("INSERT INTO crm.content_objects(id,content_kind,sha256,byte_length,payload_json) VALUES(%s,'message',%s,1,%s)", (co, str(co), Jsonb({'text': body})))
                     db.execute("INSERT INTO crm.legacy_message_evidence(message_id,content_object_id,original) VALUES(%s,%s,'{}')", (mid, co))
-                args = SimpleNamespace(account='synthetic-self', decoder=decoder, expected_database=name, expected_system_id=system, file_index=index, retry=False)
+                args = SimpleNamespace(account='synthetic-self', source_owner=None, decoder=decoder, expected_database=name, expected_system_id=system, file_index=index, retry=False)
                 ledger = sqlite3.connect(state / 'state.sqlite')
                 w = worker.Worker(db, ledger, args, (source, media, state), {'PATH': os.environ['PATH']})
                 with self.assertRaises(worker.Paused):
@@ -137,6 +137,57 @@ print(json.dumps(dict(sha256=h,byte_length=len(data),media_type='image/png',obje
                 self.assertEqual(db.execute('SELECT count(*) FROM crm.message_search').fetchone()[0], 8)
                 self.assertEqual(db.execute('SELECT count(*) FROM crm.profiles').fetchone()[0], 0)
                 ledger.close()
+                # Native account UUID and source owner are separate namespaces.
+                db.execute('UPDATE crm.wechat_image_control SET paused=false')
+                connection, native_group, native_mid = [uuid.uuid4() for _ in range(3)]
+                db.execute("INSERT INTO crm.source_connections(id,provider,external_account,display_name,connection_method) VALUES(%s,'wechat','synthetic-self','Synthetic','chatlog')", (connection,))
+                db.execute("INSERT INTO crm.conversations(id,provider,account,external_id,conversation_type,connection_id) VALUES(%s,'wechat',%s,'native-group','group',%s)", (native_group, str(connection), connection))
+                db.execute("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,occurred_at,body,message_type) VALUES(%s,%s,'wechat',%s,'native-message','unknown','2026-01-02T00:00:00Z','[图片]','3')", (native_mid, native_group, str(connection)))
+                payload_a = {'body': f'<msg><img md5="{a}"/></msg>'}
+                payload_b = {'body': f'<msg><img md5="{alias}"/></msg>', 'deleted': True, 'included': False}
+                for key, payload in [('projected-a', payload_a), ('undelivered-b', payload_b)]:
+                    db.execute('INSERT INTO wechat.connection_payloads(content_hash,payload) VALUES(%s,%s)', (key, Jsonb(payload)))
+                db.execute("INSERT INTO wechat.connection_record_heads(connection_id,external_id,revision,content_hash) VALUES(%s,'native-message',2,'undelivered-b')", (connection,))
+                db.execute("INSERT INTO crm.connection_evidence(id,connection_id,external_id,revision,content_hash,kind,included,message_id,conversation_id) VALUES(%s,%s,'native-message',1,'projected-a','message',true,%s,%s)", (native_mid, connection, native_mid, native_group))
+                native_state = root / 'native-state'; native_state.mkdir()
+                native_ledger = sqlite3.connect(native_state / 'state.sqlite')
+                args.account, args.source_owner, args.retry = str(connection), None, False
+                native = worker.Worker(db, native_ledger, args, (source, media, native_state), {'PATH': os.environ['PATH']})
+                with self.assertRaises(ValueError):
+                    native.open()
+                args.source_owner = 'other-owner'
+                with self.assertRaises(ValueError):
+                    native.open()
+                args.source_owner = 'synthetic-self'
+                with redirect_stdout(io.StringIO()):
+                    native.run()
+                sha_a = worker.digest(high)
+                current_sha = lambda: db.execute('SELECT a.sha256 FROM crm.wechat_group_images i JOIN crm.media_assets a ON a.id=i.media_id WHERE i.run_id=%s AND i.message_id=%s', (native.run_id, native_mid)).fetchone()[0]
+                self.assertEqual(current_sha(), sha_a)  # CE revision1, not newer deleted head2.
+                old_asset = db.execute('SELECT media_id FROM crm.wechat_group_images WHERE run_id=%s AND message_id=%s', (native.run_id, native_mid)).fetchone()[0]
+                db.execute("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('message_event',%s,%s,'manual-image')", (native_mid, old_asset))
+                # A same-tier replacement must select B and preserve manual A.
+                db.execute("INSERT INTO wechat.connection_payloads(content_hash,payload) VALUES('projected-b',%s)", (Jsonb({'body': payload_b['body'], 'included': True, 'deleted': False}),))
+                db.execute("UPDATE wechat.connection_record_heads SET revision=3,content_hash='projected-b' WHERE connection_id=%s", (connection,))
+                db.execute("UPDATE crm.connection_evidence SET revision=3,content_hash='projected-b' WHERE id=%s", (native_mid,))
+                args.retry = True
+                with redirect_stdout(io.StringIO()):
+                    native.run()
+                expected = worker.digest(folder / (filename + '_h.dat'))
+                self.assertEqual(current_sha(), expected)
+                self.assertEqual(db.execute("SELECT count(*) FROM crm.media_links WHERE entity_id=%s AND media_id=%s AND role LIKE 'wechat-group-image:%%'", (native_mid, old_asset)).fetchone()[0], 0)
+                self.assertEqual(db.execute("SELECT count(*) FROM crm.media_links WHERE entity_id=%s AND media_id=%s AND role='manual-image'", (native_mid, old_asset)).fetchone()[0], 1)
+                # Simulate restart after decoding, before public-link commit, with
+                # a damaged derived receipt. The healthy source must be decoded.
+                native_ledger.execute("UPDATE decoded SET asset='invalid json' WHERE path=?", ('attach/a/2026/Img/' + filename + '_h.dat',)); native_ledger.commit()
+                db.execute("DELETE FROM crm.media_links WHERE entity_id=%s AND role LIKE 'wechat-group-image:%%'", (native_mid,))
+                with redirect_stdout(io.StringIO()):
+                    native.run()
+                self.assertEqual(current_sha(), expected)
+                receipt = native_ledger.execute('SELECT asset FROM decoded WHERE path=?', ('attach/a/2026/Img/' + filename + '_h.dat',)).fetchone()[0]
+                self.assertEqual(json.loads(receipt)['sha256'], expected)
+                self.assertEqual(db.execute('SELECT counts FROM crm.wechat_image_runs WHERE id=%s', (native.run_id,)).fetchone()[0]['total'], 1)
+                native_ledger.close()
         finally:
             if db:
                 db.close()

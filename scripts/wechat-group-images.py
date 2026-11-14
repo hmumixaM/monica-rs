@@ -26,7 +26,7 @@ MAX_IMAGE = 64 * 1024 * 1024
 NIL = uuid.UUID(int=0)
 NAME = re.compile(r'^([0-9a-f]{32})(.*)$', re.I)
 ATTRIBUTES = ('md5', 'hdmd5', 'hevc_mid_size_md5', 'thumbmd5')
-# Resolve raw content from the CURRENT legacy revision or native connection head.
+# Resolve raw content from the current CRM revision, never an undelivered head.
 SCOPE = '''m.provider='wechat' AND c.provider='wechat' AND c.account=%s AND c.conversation_type='group'
  AND NOT m.tombstone AND (lower(m.message_type) IN ('image','photo') OR
  CASE WHEN m.message_type ~ '^-?[0-9]{1,20}$' THEN mod(mod(m.message_type::numeric,4294967296)+4294967296,4294967296)=3 ELSE false END)'''
@@ -41,8 +41,8 @@ CURRENT = '''SELECT m.message_id,m.conversation_id,(m.occurred_at AT TIME ZONE '
  LEFT JOIN crm.legacy_chatlog_versions lv ON lv.entity_type='message' AND lv.entity_id=m.message_id AND lv.revision=p.revision
  LEFT JOIN crm.content_objects v ON v.id=lv.content_object_id
  LEFT JOIN crm.connection_evidence ce ON ce.message_id=m.message_id
- LEFT JOIN wechat.connection_records r ON r.connection_id=ce.connection_id AND r.external_id=ce.external_id
- WHERE ''' + SCOPE
+ LEFT JOIN wechat.connection_payloads r ON r.content_hash=ce.content_hash
+ WHERE (ce.id IS NULL OR (ce.included AND NOT ce.deleted)) AND ''' + SCOPE
 
 
 class Paused(Exception):
@@ -268,12 +268,19 @@ class Worker:
             raise ValueError('Rust group-image migration required')
         if not self.db.execute("SELECT pg_try_advisory_lock(hashtextextended('monica-wechat-group-images',0))").fetchone()[0]:
             raise ValueError('another group-image worker is active')
+        connections = self.db.execute("SELECT DISTINCT c.connection_id,s.external_account FROM crm.conversations c JOIN crm.source_connections s ON s.id=c.connection_id WHERE c.provider='wechat' AND c.account=%s AND c.conversation_type='group'", (self.args.account,)).fetchall()
+        self.source_owner = self.args.source_owner or self.args.account
+        if connections:
+            if len(connections) != 1 or str(connections[0][0]) != self.args.account or not self.args.source_owner or connections[0][1] != self.source_owner:
+                raise ValueError('explicit source owner must match the target WeChat connection')
+        elif self.source_owner != self.args.account:
+            raise ValueError('legacy target account must match the source owner')
         self.guard(True)
         self.ledger.executescript('''CREATE TABLE IF NOT EXISTS identity(value TEXT NOT NULL,run_id TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS files(md5 TEXT,path TEXT,quality TEXT,tier INTEGER,bytes INTEGER,mtime INTEGER,PRIMARY KEY(md5,path));
  CREATE INDEX IF NOT EXISTS files_hash ON files(md5,tier);
  CREATE TABLE IF NOT EXISTS decoded(path TEXT PRIMARY KEY,raw_sha256 TEXT NOT NULL,asset TEXT NOT NULL);''')
-        stamp = json.dumps([*identity, self.args.account, str(self.source), str(self.media)], separators=(',', ':'))
+        stamp = json.dumps([*identity, self.args.account, self.source_owner, str(self.source), str(self.media)], separators=(',', ':'))
         prior = self.ledger.execute('SELECT value,run_id FROM identity').fetchone()
         if prior and prior[0] != stamp:
             raise ValueError('recovery state belongs to another target or source')
@@ -302,18 +309,20 @@ class Worker:
         state, q, asset = 'source_changed', 'none', None
         if row:
             refs = image_references(*row[3:])
+            reference_hash = hashlib.sha256(json.dumps(sorted(refs), separators=(',', ':')).encode()).hexdigest()
+            provenance_prefix = 'group-image:' + str(mid) + ':' + reference_hash
             choices = candidates(self.ledger, refs)
             state = 'no_reference' if not refs else 'source_missing'
             # Reuse assets published by the original import, as well as this worker.
             # An opaque filename never earns an original/high quality claim.
-            existing = self.db.execute("SELECT to_jsonb(a),l.role FROM crm.media_links l JOIN crm.media_assets a ON a.id=l.media_id WHERE l.entity_type='message_event' AND l.entity_id=%s AND a.media_type LIKE 'image/%%' ORDER BY a.id", (mid,)).fetchall()
             best = None
             ranks = {'original': 5, 'high': 4, 'standard': 3, 'unknown': 2, 'thumbnail': 1}
-            for saved, role in existing:
+            proofs = [provenance_prefix + ':' + value for value in ranks]
+            existing = self.db.execute("SELECT to_jsonb(a),p.source_record_id FROM crm.media_links l JOIN crm.media_assets a ON a.id=l.media_id JOIN crm.media_provenance p ON p.media_id=a.id AND p.source='wechat' AND p.source_record_id=ANY(%s) WHERE l.entity_type='message_event' AND l.entity_id=%s AND a.media_type LIKE 'image/%%' ORDER BY a.id", (proofs, mid)).fetchall()
+            for saved, proof in existing:
                 try:
                     verify_asset(self.media, saved)
-                    saved_q = role.removeprefix('wechat-group-image:') if role.startswith('wechat-group-image:') else quality(saved.get('file_name') or '')[0]
-                    saved_q = saved_q if saved_q in ranks else 'unknown'
+                    saved_q = proof.rsplit(':', 1)[-1]
                     if best is None or ranks[saved_q] > ranks[best[1]]:
                         best = saved, saved_q
                 except (OSError, ValueError, KeyError):
@@ -336,7 +345,11 @@ class Worker:
                     if cached:
                         try:
                             verify_asset(self.media, json.loads(cached[0]))
-                        except FileNotFoundError:
+                        except (ValueError, OSError, KeyError, TypeError):
+                            # The receipt is derived state, not a reason to skip
+                            # a healthy source forever. Rebuild it with the codec.
+                            self.ledger.execute('DELETE FROM decoded WHERE path=?', (relative,))
+                            self.ledger.commit()
                             cached = None
                     if cached:
                         asset = json.loads(cached[0])
@@ -374,15 +387,20 @@ class Worker:
                 media_id, stored_bytes = self.db.execute('SELECT id,byte_length FROM crm.media_assets WHERE sha256=%s', (key,)).fetchone()
                 if stored_bytes != asset['byte_length']:
                     raise ValueError('registered image size differs')
-                self.db.execute("INSERT INTO crm.media_provenance(media_id,source,source_record_id) VALUES(%s,'wechat',%s) ON CONFLICT DO NOTHING", (media_id, 'group-image:' + str(mid)))
+                self.db.execute("INSERT INTO crm.media_provenance(media_id,source,source_record_id) VALUES(%s,'wechat',%s) ON CONFLICT DO NOTHING", (media_id, provenance_prefix + ':' + q))
+                # Only retire this feature's superseded public attachments.
+                # Immutable blobs/provenance and imported/manual links remain.
+                self.db.execute("DELETE FROM crm.media_links WHERE entity_type='message_event' AND entity_id=%s AND role LIKE 'wechat-group-image:%%' AND media_id<>%s", (mid, media_id))
                 self.db.execute("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) SELECT 'message_event',%s,%s,%s WHERE NOT EXISTS(SELECT 1 FROM crm.media_links WHERE entity_type='message_event' AND entity_id=%s AND media_id=%s) ON CONFLICT DO NOTHING", (mid, media_id, 'wechat-group-image:' + q, mid, media_id))
+            else:
+                self.db.execute("DELETE FROM crm.media_links WHERE entity_type='message_event' AND entity_id=%s AND role LIKE 'wechat-group-image:%%'", (mid,))
             self.db.execute('UPDATE crm.wechat_group_images SET state=%s,quality=%s,media_id=%s,attempts=attempts+1,updated_at=now() WHERE run_id=%s AND message_id=%s', (state, q, media_id, self.run_id, mid))
 
     def run(self):
         self.open()
         count = catalog(self.source, self.ledger, self.guard)
         if self.args.file_index:
-            metadata_aliases(self.source, self.ledger, self.args.file_index, self.args.account, self.guard)
+            metadata_aliases(self.source, self.ledger, self.args.file_index, self.source_owner, self.guard)
         self.db.execute('UPDATE crm.wechat_image_runs SET indexed_files=%s WHERE id=%s', (count, self.run_id))
         self.discover()
         if self.args.retry:
@@ -408,6 +426,7 @@ def main():
     parser.add_argument('--run', action='store_true', help='explicitly execute; otherwise print usage only')
     parser.add_argument('--retry', action='store_true', help='recheck all items, including thumbnail/unknown quality, with existing blobs reused')
     parser.add_argument('--file-index', type=Path, help='optional frozen Chatlog hardlink index; accepts aliases only for the selected account')
+    parser.add_argument('--source-owner', help='source WeChat wxid; required for a native target connection UUID and checked against its saved external_account')
     for name in ('source-root', 'media-root', 'state-root', 'decoder'):
         parser.add_argument('--' + name, type=Path)
     for name in ('account', 'expected-database', 'expected-system-id'):
