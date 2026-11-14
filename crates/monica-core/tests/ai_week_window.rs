@@ -236,7 +236,7 @@ async fn retained_observation_dates_recovery_and_stale_window_retry(pool: PgPool
         };
         monica_core::ingest(&pool, &record).await.unwrap();
         let id = monica_core::identity::object_id(account, "post", object);
-        if let Some(observed)=observed {
+        if let Some(observed) = observed {
             sqlx::query("INSERT INTO linkedin.revision_metadata(object_id,version,occurred_at,observed_at) VALUES($1,1,'2020-01-02T12:00:00Z',$2::text::timestamptz)")
                 .bind(id).bind(observed).execute(&pool).await.unwrap();
         }
