@@ -168,7 +168,7 @@ async fn authenticated_fake_ai_decisions_are_atomic_and_private_outputs_hide(poo
         object: "profile".into(),
         kind: "profile".into(),
         event: "1".into(),
-        payload: json!({"education":[{"school":"Synthetic University","degree":"MS"}]}),
+        payload: json!({"education":[{"school":"Synthetic University","degree":"MS"}],"experience":[{"company":"Former Company","title":"Engineer","end_date":"2022-01"}]}),
     };
     monica_core::ingest(&pool, &source).await.unwrap();
     while let Some(job) = monica_core::claim(&pool).await.unwrap() {
@@ -188,6 +188,8 @@ async fn authenticated_fake_ai_decisions_are_atomic_and_private_outputs_hide(poo
     .unwrap();
     sqlx::query("INSERT INTO crm.profile_suggestions(profile_id,fingerprint,kind,value,evidence,quote,confidence,input_hash) VALUES($1,'synthetic-existing-structured','school','合成大学','[{\"kind\":\"profile\"}]','Master of Science at Synthetic University','high',$2)")
         .bind(id).bind(&lease.input_hash).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.profile_suggestions(profile_id,fingerprint,kind,value,evidence,quote,confidence,input_hash) VALUES($1,'synthetic-returned-employer','company','Former Company','[{\"kind\":\"post\",\"text\":\"I rejoined Former Company today.\",\"at\":\"2026-11-14T12:00:00Z\"}]','I rejoined Former Company today.','high',$2)")
+        .bind(id).bind(&lease.input_hash).execute(&pool).await.unwrap();
     let structured = response(
         &app,
         "GET",
@@ -196,7 +198,11 @@ async fn authenticated_fake_ai_decisions_are_atomic_and_private_outputs_hide(poo
         StatusCode::OK,
     )
     .await;
-    assert_eq!(structured["items"], 0);
+    assert_eq!(structured["items"], 1);
+    assert_eq!(
+        structured["people"][0]["items"][0]["value"],
+        "Former Company"
+    );
     assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM crm.profile_suggestions WHERE profile_id=$1 AND fingerprint='synthetic-existing-structured'")
         .bind(id).fetch_one(&pool).await.unwrap(),1);
     sqlx::query("UPDATE crm.ai_settings SET include_messages=true")

@@ -40,7 +40,7 @@ async fn structured_linkedin_facts_do_not_become_generic_field_suggestions(pool:
         "profile",
         "profile",
         "1",
-        json!({"fields":{"linkedin.headline":"Engineer at Synthetic Company"},"experience":[{"company":"Synthetic Company","title":"Engineer","start_date":"2020-01"}],"education":[{"school":"Synthetic University","degree":"MS"}]}),
+        json!({"fields":{"linkedin.headline":"Engineer at Synthetic Company"},"experience":[{"company":"Synthetic Company","title":"Engineer","start_date":"2020-01","end_date":"2022-01"}],"education":[{"school":"Synthetic University","degree":"MS"}]}),
     );
     r.provider = Provider::Linkedin;
     monica_core::ingest(&pool, &r).await.unwrap();
@@ -63,6 +63,9 @@ async fn structured_linkedin_facts_do_not_become_generic_field_suggestions(pool:
     let post = Uuid::new_v4();
     sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,profile_id,event_type,external_id,occurred_at,content,content_hash,version) VALUES($1,'linkedin',$1,$2,'post','new-job',now(),'{\"text\":\"I joined New Startup today.\"}','new',1)")
         .bind(post).bind(profile).execute(&pool).await.unwrap();
+    let returned = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,profile_id,event_type,external_id,occurred_at,content,content_hash,version) VALUES($1,'linkedin',$1,$2,'post','returned-job',now(),'{\"text\":\"I rejoined Synthetic Company today.\"}','returned',1)")
+        .bind(returned).bind(profile).execute(&pool).await.unwrap();
     let mut tx = pool.begin().await.unwrap();
     let snapshot = ai::snapshot(&mut tx, "ai.profile", &profile.to_string())
         .await
@@ -98,11 +101,13 @@ async fn structured_linkedin_facts_do_not_become_generic_field_suggestions(pool:
         {"kind":"company","value":"Synthetic Company","evidence":[field],"quote":"Engineer at Synthetic Company","confidence":"high"},
         {"kind":"job","value":"工程师","evidence":[field],"quote":"Engineer at Synthetic Company","confidence":"high"},
         {"kind":"school","value":"合成大学","evidence":[field],"quote":"Synthetic University","confidence":"high"},
-        {"kind":"company","value":"New Startup","evidence":[post],"quote":"I joined New Startup today.","confidence":"high"}
+        {"kind":"company","value":"New Startup","evidence":[post],"quote":"I joined New Startup today.","confidence":"high"},
+        {"kind":"company","value":"Synthetic Company","evidence":[returned],"quote":"I rejoined Synthetic Company today.","confidence":"high"}
     ]})).unwrap();
     let items = output["items"].as_array().unwrap();
-    assert_eq!(items.len(), 1);
+    assert_eq!(items.len(), 2);
     assert_eq!(items[0]["value"], "New Startup");
+    assert_eq!(items[1]["value"], "Synthetic Company");
     // Imported historical suggestions can lack a provider/field key. Their
     // original English quote still identifies the already-recorded fact.
     assert!(ai::known::represented(

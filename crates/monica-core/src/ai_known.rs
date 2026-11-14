@@ -47,14 +47,18 @@ pub fn represented(item: &Value, known: &[Value]) -> bool {
                 Some("profile" | "field" | "structured" | "employment" | "education" | "address")
             )
         });
-    let linkedin_background = background_only
-        && evidence.iter().all(|e| {
-            e["provider"] == "linkedin"
-                || e["source_type"] == "linkedin"
-                || e["field_key"]
-                    .as_str()
-                    .is_some_and(|k| k.starts_with("linkedin."))
-        });
+    // A dated post, chat or note can explicitly describe returning to a former
+    // employer/place. Matching a historical value alone cannot dismiss it.
+    if !background_only {
+        return false;
+    }
+    let linkedin_background = evidence.iter().all(|e| {
+        e["provider"] == "linkedin"
+            || e["source_type"] == "linkedin"
+            || e["field_key"]
+                .as_str()
+                .is_some_and(|k| k.starts_with("linkedin."))
+    });
     let quote = normal(item["quote"].as_str().unwrap_or_default());
     known.iter().filter(|k| k["kind"] == fact).any(|k| {
         let recorded = normal(k[kind].as_str().unwrap_or_default());
@@ -64,8 +68,6 @@ pub fn represented(item: &Value, known: &[Value]) -> bool {
         value == recorded
             || (k["source_type"] == "linkedin"
                 && (linkedin_background
-                    || (background_only
-                        && recorded.chars().count() >= 3
-                        && quote.contains(&recorded))))
+                    || (recorded.chars().count() >= 3 && quote.contains(&recorded))))
     })
 }
