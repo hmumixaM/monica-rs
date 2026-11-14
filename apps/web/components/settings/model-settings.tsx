@@ -11,6 +11,7 @@ import styles from './settings.module.css';
 type Settings = {
   enabled: boolean; execution_enabled: boolean; qa_enabled: boolean; model: string; base_url: string | null; has_key: boolean;
   include_messages: boolean; include_private_notes: boolean; context_window: number; max_tokens: number;
+  model_routes: Record<string,string>; vision_model: string;
 };
 export function ModelSettings() {
   const client = useQueryClient();
@@ -28,8 +29,10 @@ export function ModelSettings() {
         const key = String(values.get('api_key') || '');
         try {
           await fetchJson('/api/v1/ai/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-            enabled: data.execution_enabled===false ? data.enabled : values.has('enabled'), qa_enabled: data.execution_enabled===false ? false : values.has('qa_enabled'),
+            enabled: data.execution_enabled===false ? data.enabled : values.has('enabled'), qa_enabled: data.execution_enabled===false ? data.qa_enabled : values.has('qa_enabled'),
             model: values.get('model'), ...(values.get('base_url') ? {base_url: values.get('base_url')} : {}),
+            model_routes: Object.fromEntries(['batch','person','writer','qa'].map(role=>[role,String(values.get(`model_${role}`)||'').trim()])),
+            vision_model: values.get('vision_model'),
             ...(key ? { api_key: key } : {}), clear_key: values.has('clear_key'),
             include_messages: values.has('include_messages'), include_private_notes: values.has('include_private_notes'),
             context_window: Number(values.get('context_window')), max_tokens: Number(values.get('max_tokens')),
@@ -41,6 +44,9 @@ export function ModelSettings() {
         <p><label><input type="checkbox" name="enabled" defaultChecked={data.enabled} disabled={data.execution_enabled===false} /> {data.execution_enabled===false ? '历史分析可见' : '启用模型服务'}</label></p>
         <p><label>服务地址<Input name="base_url" type="url" required={data.execution_enabled!==false} defaultValue={data.base_url || ''} placeholder="https://你的模型服务/v1" /></label></p>
         <p><label>模型名称<Input name="model" required maxLength={255} defaultValue={data.model} /></label></p>
+        <p>各任务共用上述连接和密钥。以下文字模型留空时沿用默认模型，问答留空时优先沿用写作模型。</p>
+        {Object.entries({batch:'批量处理与 Memory 分片',person:'人物 Memory 与近况',writer:'周报写作',qa:'问 Monica'}).map(([role,label])=><p key={role}><label>{label}<Input name={`model_${role}`} maxLength={255} defaultValue={data.model_routes?.[role]||''} placeholder={data.model}/></label></p>)}
+        <p><label>识图与 OCR 模型<Input name="vision_model" required maxLength={255} defaultValue={data.vision_model}/></label></p>
         <p><label>API Key<Input name="api_key" type="password" autoComplete="new-password" maxLength={8192} placeholder={data.has_key ? '已保存；留空保留现有密钥' : '填写此部署的 API Key'} /></label></p>
         {data.has_key && <p><label><input type="checkbox" name="clear_key" /> 删除已保存的密钥</label></p>}
         <p><label><input type="checkbox" name="qa_enabled" defaultChecked={data.qa_enabled} disabled={data.execution_enabled===false} /> 启用浏览器问答</label></p>

@@ -47,8 +47,11 @@ impl OpenAiProvider {
         ensure!(
             base.scheme() == "https"
                 || (base.scheme() == "http"
-                    && matches!(base.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))),
-            "model HTTP requires loopback; use HTTPS for remote providers"
+                    && matches!(
+                        base.host_str(),
+                        Some("localhost" | "127.0.0.1" | "[::1]" | "host.docker.internal")
+                    )),
+            "model HTTP requires a local host service; use HTTPS for remote providers"
         );
         ensure!(
             !api_key.is_empty() && !api_key.contains(['\r', '\n']),

@@ -15,11 +15,12 @@ pub(super) fn routes() -> Router<AppState> {
 }
 async fn read(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     user(&s, &h).await?;
-    let row = sqlx::query("SELECT enabled,execution_enabled,qa_enabled,model,base_url,include_messages,include_private_notes,context_window,max_tokens,credential_ciphertext IS NOT NULL AS has_key FROM crm.ai_settings WHERE id")
+    let row = sqlx::query("SELECT a.enabled,a.execution_enabled,a.qa_enabled,a.model,a.model_routes,o.model AS vision_model,a.base_url,a.include_messages,a.include_private_notes,a.context_window,a.max_tokens,a.credential_ciphertext IS NOT NULL AS has_key FROM crm.ai_settings a CROSS JOIN crm.image_ocr_settings o WHERE a.id AND o.id")
         .fetch_one(&s.pool).await?;
     Ok(Json(json!({
         "enabled":row.get::<bool,_>("enabled"),"execution_enabled":row.get::<bool,_>("execution_enabled"),"qa_enabled":row.get::<bool,_>("qa_enabled"),
         "model":row.get::<String,_>("model"),"base_url":row.get::<Option<String>,_>("base_url"),
+        "model_routes":row.get::<Value,_>("model_routes"),"vision_model":row.get::<String,_>("vision_model"),
         "include_messages":row.get::<bool,_>("include_messages"),"include_private_notes":row.get::<bool,_>("include_private_notes"),
         "context_window":row.get::<i32,_>("context_window"),"max_tokens":row.get::<i32,_>("max_tokens"),
         "has_key":row.get::<bool,_>("has_key") || std::env::var("MONICA_AI_API_KEY").is_ok_and(|key| !key.is_empty()),
@@ -31,6 +32,8 @@ struct Settings {
     enabled: Option<bool>,
     qa_enabled: Option<bool>,
     model: Option<String>,
+    model_routes: Option<Value>,
+    vision_model: Option<String>,
     base_url: Option<String>,
     api_key: Option<String>,
     #[serde(default)]
@@ -46,9 +49,34 @@ async fn save(
     Json(v): Json<Settings>,
 ) -> Result<Json<Value>> {
     let (actor, _) = user(&s, &h).await?;
+    let routes = v
+        .model_routes
+        .as_ref()
+        .map(|value| {
+            let object = value
+                .as_object()
+                .ok_or_else(|| invalid("模型分工需要是对象"))?;
+            if object.iter().any(|(k, v)| {
+                !monica_core::ai::models::ROLES.contains(&k.as_str())
+                    || v.as_str().is_none_or(|s| s.len() > 255)
+            }) {
+                return Err(invalid("模型分工无效"));
+            }
+            Ok(Value::Object(
+                object
+                    .iter()
+                    .filter(|(_, v)| v.as_str().is_some_and(|s| !s.trim().is_empty()))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+            ))
+        })
+        .transpose()?;
     if v.model
         .as_ref()
         .is_some_and(|s| s.trim().is_empty() || s.len() > 255)
+        || v.vision_model
+            .as_ref()
+            .is_some_and(|s| s.trim().is_empty() || s.len() > 255)
         || v.base_url.as_ref().is_some_and(|s| s.len() > 2048)
         || v.api_key
             .as_ref()
@@ -104,6 +132,18 @@ async fn save(
     sqlx::query("UPDATE crm.ai_settings SET enabled=coalesce($1,enabled),qa_enabled=coalesce($2,qa_enabled),provider='openai',model=coalesce($3,model),base_url=coalesce($4,base_url),credential_ciphertext=CASE WHEN $5 THEN NULL ELSE coalesce($6,credential_ciphertext) END,include_messages=coalesce($7,include_messages),include_private_notes=coalesce($8,include_private_notes),context_window=$9,max_tokens=$10,updated_at=now() WHERE id")
         .bind(v.enabled).bind(v.qa_enabled).bind(v.model).bind(v.base_url).bind(v.clear_key).bind(encrypted)
         .bind(v.include_messages).bind(v.include_private_notes).bind(context).bind(max).execute(&mut *tx).await?;
+    if let Some(routes) = routes {
+        sqlx::query("UPDATE crm.ai_settings SET model_routes=$1 WHERE id")
+            .bind(routes)
+            .execute(&mut *tx)
+            .await?;
+    }
+    if let Some(model) = v.vision_model {
+        sqlx::query("UPDATE crm.image_ocr_settings SET model=$1,updated_at=now() WHERE id")
+            .bind(model)
+            .execute(&mut *tx)
+            .await?;
+    }
     sqlx::query("INSERT INTO crm.audit_events(user_id,action,entity_type,metadata) VALUES($1,'ai.settings','settings',$2)")
         .bind(actor).bind(json!({"enabled":enabled,"key_changed":v.api_key.is_some() || v.clear_key})).execute(&mut *tx).await?;
     tx.commit().await?;

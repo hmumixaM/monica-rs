@@ -195,9 +195,11 @@ async fn model_settings_encrypt_keys_and_accept_large_agent_context(pool: sqlx::
     let app = crate::auth::routes(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v1", listener.local_addr().unwrap());
-    let value=response(&app,"PATCH","/api/v1/ai/settings",json!({"enabled":true,"base_url":base,"model":"synthetic-model","api_key":"synthetic-model-key","include_messages":true}),StatusCode::OK).await;
+    let value=response(&app,"PATCH","/api/v1/ai/settings",json!({"enabled":true,"base_url":base,"model":"synthetic-model","model_routes":{"batch":"saved-batch","person":"saved-person","writer":"saved-writer","qa":"saved-qa"},"vision_model":"saved-vision","api_key":"synthetic-model-key","include_messages":true}),StatusCode::OK).await;
     assert_eq!(value["has_key"], true);
     assert_eq!(value["qa_enabled"], true);
+    assert_eq!(value["model_routes"]["person"], "saved-person");
+    assert_eq!(value["vision_model"], "saved-vision");
     assert!(!value.to_string().contains("synthetic-model-key"));
     let encrypted: String =
         sqlx::query_scalar("SELECT credential_ciphertext FROM crm.ai_settings WHERE id")
@@ -244,6 +246,10 @@ async fn model_settings_encrypt_keys_and_accept_large_agent_context(pool: sqlx::
     )
     .await;
     assert_eq!(status["configured"], true);
+    assert_eq!(
+        status["models"],
+        json!({"batch":"saved-batch","person":"saved-person","writer":"saved-writer","qa":"saved-qa","vision":"saved-vision"})
+    );
     assert!(status["image_ocr"]["counts"].is_object());
     assert!(status["image_ocr"]["attempted_today"].is_number());
     assert!(status["image_ocr"]["include_chat"].is_boolean());
@@ -267,6 +273,7 @@ async fn model_settings_encrypt_keys_and_accept_large_agent_context(pool: sqlx::
                     assert!(headers.contains("authorization: bearer synthetic-model-key"));
                     let body: Value =
                         serde_json::from_slice(&bytes[end + 4..end + 4 + length]).unwrap();
+                    assert_eq!(body["model"], "saved-qa");
                     assert_eq!(
                         body["messages"][0]["content"].as_str().unwrap().len(),
                         70000

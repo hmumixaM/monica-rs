@@ -48,8 +48,9 @@ export function AiStatus() {
             {data.image_ocr && <li className={styles.row}>
               <span />
               <div className={styles.text}>
-                <strong>历史图片 OCR（从新到旧） · {data.image_ocr.enabled ? "已启用" : "已暂停"}</strong>
+                <strong>历史图片 OCR · {data.image_ocr.enabled ? "已启用" : "已暂停"}</strong>
                 <small>{data.image_ocr.model} · {data.image_ocr.include_chat ? "帖子、Story 和聊天图片，跳过头像" : "帖子与 Story 图片"}</small>
+                <label><input type="checkbox" checked={data.image_ocr.include_chat} disabled={ocr.isPending} onChange={event=>ocr.mutate({include_chat:event.target.checked})}/> 允许 OCR 读取聊天图片（不加入人物分析）</label>
                 <small>完成 {(data.image_ocr.counts.complete ?? 0).toLocaleString()} 张 · 待处理 {(data.image_ocr.counts.pending ?? 0).toLocaleString()} 张 · 失败 {data.image_ocr.counts.failed ?? 0} 张</small>
                 <small>今日已开始 {data.image_ocr.attempted_today.toLocaleString()} 张 · {data.image_ocr.unlimited ? "持续处理，未设置每日限额" : `每日限额 ${data.image_ocr.daily_limit.toLocaleString()} 张 · 按限额约剩 ${data.image_ocr.estimated_days_remaining} 天`}</small>
                 <form onSubmit={(event) => {
@@ -70,7 +71,7 @@ export function AiStatus() {
                 <small>{job.status ? `${STATUS[job.status] ?? job.status}${job.completed_at ? ` · ${formatDateTime(job.completed_at, true)}` : ""}` : "还没运行过"}
                   {job.status === "failed" && job.error ? ` · ${job.error.slice(0, 120)}` : ""}</small>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => start(job.job_type)} disabled={run.isPending || !data.configured}><Play size={13} />运行</Button>
+              <Button size="sm" variant="ghost" onClick={() => start(job.job_type)} disabled={run.isPending || !data.configured || data.execution_enabled===false}><Play size={13} />运行</Button>
             </li>)}
           </ul>}
   </Section>;

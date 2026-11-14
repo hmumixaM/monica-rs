@@ -18,6 +18,7 @@ export interface ImageOCRStatus {
 export interface AiStatus {
   image_ocr?: ImageOCRStatus;
   enabled: boolean;
+  execution_enabled?: boolean;
   reachable?: boolean;
   configured?: boolean;
   models?: { batch: string; writer: string; person: string; vision: string };
@@ -294,7 +295,7 @@ export function useRenameCommunity() {
 export function useUpdateImageOCR() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (data: { daily_limit?: number; enabled?: boolean }) => fetchJson<ImageOCRStatus>("/api/v1/ai/image-ocr", {
+    mutationFn: (data: { daily_limit?: number; enabled?: boolean; include_chat?: boolean }) => fetchJson<ImageOCRStatus>("/api/v1/ai/image-ocr", {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
     }),
     onSuccess: () => client.invalidateQueries({ queryKey: keys.status }),

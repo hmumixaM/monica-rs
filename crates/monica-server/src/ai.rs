@@ -70,7 +70,12 @@ async fn status(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> 
     if !enabled(&s).await? {
         return Ok(Json(json!({"enabled":false})));
     }
-    let model: String = sqlx::query_scalar("SELECT model FROM crm.ai_settings WHERE id")
+    let config = sqlx::query("SELECT model,model_routes,provider,execution_enabled,base_url,credential_ciphertext IS NOT NULL AS has_key FROM crm.ai_settings WHERE id")
+        .fetch_one(&s.pool)
+        .await?;
+    let model: String = config.get("model");
+    let routes: Value = config.get("model_routes");
+    let vision: String = sqlx::query_scalar("SELECT model FROM crm.image_ocr_settings WHERE id")
         .fetch_one(&s.pool)
         .await?;
     let mut rows = Vec::new();
@@ -81,15 +86,16 @@ async fn status(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> 
     // Reachability means a configured transport has completed, not a probe to a
     // paid/remote endpoint merely because a settings page was opened.
     let reachable: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.ai_jobs WHERE status='complete')")
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.ai_jobs WHERE status='complete' AND privacy->>'provider'='openai')")
             .fetch_one(&s.pool)
             .await?;
-    let configured = ai::configured_provider(&s.pool, Some(&s.credentials))
-        .await
-        .map_err(service)?
-        .is_some();
+    let configured = config.get::<String, _>("provider") == "openai"
+        && (config.get::<Option<String>, _>("base_url").is_some()
+            || std::env::var("MONICA_AI_BASE_URL").is_ok_and(|s| !s.is_empty()))
+        && (config.get::<bool, _>("has_key")
+            || std::env::var("MONICA_AI_API_KEY").is_ok_and(|s| !s.is_empty()));
     Ok(Json(
-        json!({"enabled":true,"configured":configured,"reachable":reachable,"image_ocr":ocr_progress(&s).await?,"models":{"batch":model,"writer":model,"person":model,"vision":model},"jobs":rows}),
+        json!({"enabled":true,"execution_enabled":config.get::<bool,_>("execution_enabled"),"configured":configured,"reachable":reachable,"image_ocr":ocr_progress(&s).await?,"models":{"batch":ai::models::resolve(&model,&routes,"ai.memory_chunk"),"writer":ai::models::resolve(&model,&routes,"ai.digest"),"person":ai::models::resolve(&model,&routes,"ai.profile"),"qa":ai::models::resolve(&model,&routes,"ai.qa"),"vision":vision},"jobs":rows}),
     ))
 }
 async fn jobs(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
@@ -107,6 +113,7 @@ async fn jobs(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
 struct OcrControls {
     daily_limit: Option<i32>,
     enabled: Option<bool>,
+    include_chat: Option<bool>,
 }
 async fn ocr_controls(
     State(s): State<AppState>,
@@ -121,8 +128,8 @@ async fn ocr_controls(
         return Err(invalid("invalid daily limit"));
     }
     let mut tx = s.pool.begin().await?;
-    sqlx::query("UPDATE crm.image_ocr_settings SET daily_limit=coalesce($1,daily_limit),enabled=coalesce($2,enabled),updated_at=now() WHERE id").bind(body.daily_limit).bind(body.enabled).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO crm.audit_events(user_id,action,entity_type,metadata) VALUES($1,'ai.ocr.controls','settings',$2)").bind(actor).bind(json!({"daily_limit":body.daily_limit,"enabled":body.enabled})).execute(&mut *tx).await?;
+    sqlx::query("UPDATE crm.image_ocr_settings SET daily_limit=coalesce($1,daily_limit),enabled=coalesce($2,enabled),include_chat=coalesce($3,include_chat),updated_at=now() WHERE id").bind(body.daily_limit).bind(body.enabled).bind(body.include_chat).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO crm.audit_events(user_id,action,entity_type,metadata) VALUES($1,'ai.ocr.controls','settings',$2)").bind(actor).bind(json!({"daily_limit":body.daily_limit,"enabled":body.enabled,"include_chat":body.include_chat})).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(ocr_progress(&s).await?))
 }
