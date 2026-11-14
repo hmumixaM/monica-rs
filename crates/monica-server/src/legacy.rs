@@ -26,6 +26,8 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v1/imports/migrations", get(list))
         .route("/api/v1/imports/migrations/{id}/history", get(history))
         .route("/api/v1/imports/chatlog/{id}/issues", get(chatlog_issues))
+        .route("/api/v1/imports/chatlog/{id}/tables", get(chatlog_tables))
+        .route("/api/v1/imports/chatlog/{id}/history", get(chatlog_history))
         .route("/api/v1/imports/legacy/messages/{id}", get(message))
         .route("/api/v1/imports/legacy/content/{id}", get(content))
         .route(
@@ -104,6 +106,52 @@ async fn list(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>, Ap
         json!({"records":rows,"chatlog":chatlog,"copies":copies.into_values().collect::<Vec<_>>()}),
     ))
 }
+#[derive(Deserialize)]
+struct CatalogPage {
+    after_file: Option<String>,
+    after_table: Option<String>,
+    limit: Option<i64>,
+}
+async fn chatlog_tables(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+    Query(q): Query<CatalogPage>,
+) -> Result<Json<Value>, ApiError> {
+    user(&s, &h).await?;
+    if q.after_file.is_some() != q.after_table.is_some() {
+        return Err(ApiError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Both table cursor fields are required",
+        ));
+    }
+    let records:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(t)-'snapshot_id'-'after_row' FROM crm.legacy_chatlog_tables t WHERE snapshot_id=$1 AND ($2::text IS NULL OR (file_name,table_name)>($2,$3)) ORDER BY file_name,table_name LIMIT $4")
+        .bind(id).bind(q.after_file).bind(q.after_table).bind(q.limit.unwrap_or(100).clamp(1,100)).fetch_all(&s.pool).await?;
+    let next = records
+        .last()
+        .map(|r| json!({"after_file":r["file_name"],"after_table":r["table_name"]}));
+    Ok(Json(json!({"records":records,"next":next})))
+}
+#[derive(Deserialize)]
+struct ChatlogHistoryPage {
+    file: String,
+    table: String,
+    after: Option<i64>,
+    limit: Option<i64>,
+}
+async fn chatlog_history(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+    Query(q): Query<ChatlogHistoryPage>,
+) -> Result<Json<Value>, ApiError> {
+    user(&s, &h).await?;
+    let records:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('key',row_key::text,'original',payload) FROM crm.legacy_chatlog_history WHERE snapshot_id=$1 AND file_name=$2 AND table_name=$3 AND ($4::bigint IS NULL OR row_key>$4) ORDER BY row_key LIMIT $5")
+        .bind(id).bind(q.file).bind(q.table).bind(q.after).bind(q.limit.unwrap_or(25).clamp(1,100)).fetch_all(&s.pool).await?;
+    let next = records.last().map(|r| r["key"].clone());
+    Ok(Json(json!({"records":records,"next":next})))
+}
+
 #[derive(Deserialize)]
 struct IssuePage {
     after: Option<String>,

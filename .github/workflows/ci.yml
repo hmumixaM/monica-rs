@@ -5,7 +5,8 @@ concurrency:
   cancel-in-progress: true
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # PostgreSQL 16 packages are part of the Ubuntu 24.04 test contract.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16-alpine

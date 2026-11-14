@@ -50,6 +50,11 @@ def check_pages(origin,dsn,control_token,native_root):
     ('{story}','wechat','{uuid.uuid4()}','{account}','{peer}','story','story',now(),'{{"text":"Synthetic story","coordinate_format":"chatlog_sns_xml","location":{{"latitude":"2.35","longitude":"48.85","name":"Synthetic Paris"}}}}','synthetic-story',1);
     INSERT INTO crm.social_interactions(id,post_id,provider,external_id,interaction_type,author_profile_id,occurred_at,content) VALUES('{interaction}','{post}','wechat','like','like','{peer}',now(),'{{}}');""")
     sql('INSERT INTO crm.message_months_utc SELECT * FROM crm.message_months')
+    chatlog=str(uuid.uuid4())
+    sql(f"""INSERT INTO crm.legacy_chatlog_snapshots(id,manifest,own_id,status) VALUES('{chatlog}','{{"files":[]}}','synthetic-pages','converted');
+    INSERT INTO crm.legacy_chatlog_tables(snapshot_id,file_name,table_name,mode,expected,processed,status,reason)
+    SELECT '{chatlog}','synthetic.db','history_'||lpad(n::text,3,'0'),'history',CASE WHEN n=0 THEN 26 ELSE 0 END,CASE WHEN n=0 THEN 26 ELSE 0 END,'complete','synthetic archive' FROM generate_series(0,100) n;
+    INSERT INTO crm.legacy_chatlog_history SELECT '{chatlog}','synthetic.db','history_000',9007199254740992+n,jsonb_build_object('text','Synthetic archived evidence '||n) FROM generate_series(1,26)n;""")
     # Dedicated source-owned structured facts; arbitrary manual JSON is not a typed fact.
     import hashlib
     linkedin=str(uuid.uuid4())
