@@ -16,6 +16,8 @@ pub mod models;
 pub mod provider;
 #[path = "ai_slots.rs"]
 pub mod slots;
+#[path = "ai_visual.rs"]
+pub mod visual;
 #[path = "ai_weekly.rs"]
 pub mod weekly;
 
