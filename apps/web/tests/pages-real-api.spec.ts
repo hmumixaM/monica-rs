@@ -9,6 +9,24 @@ test('real Rust populated directory, calendar, orbit, map and profile overview',
  await page.getByRole('searchbox',{name:'筛选联系人'}).fill('hecheng');await expect(page.getByText('Synthetic Alice Updated',{exact:true}).first()).toBeVisible();
  await page.getByText('Synthetic Alice Updated',{exact:true}).first().click();await expect(page.getByRole('heading',{level:1,name:'Synthetic Alice Updated'})).toBeVisible();
  await expect(page.getByText(/45 条/)).toBeVisible();const olderEvidence=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/v1/evidence'&&new URL(r.url()).searchParams.has('before_id'));await page.getByRole('button',{name:'读取更早的往来',exact:true}).click();expect((await (await olderEvidence).json()).length).toBe(5);
+ const coverage=page.locator('section').filter({has:page.getByRole('heading',{name:'来源与关联账号',exact:true})});
+ const timeline=page.locator('section').filter({has:page.getByRole('heading',{name:'跨来源往来',exact:true})});
+ const left=await coverage.boundingBox();const right=await timeline.boundingBox();expect(right!.x).toBeGreaterThan(left!.x+left!.width);
+ await page.screenshot({path:'../../.local-validation/frontend-profile-populated-desktop.png',fullPage:true});
+ await page.goto('/suggestions');await expect(page.getByText('模型功能没有开启',{exact:true})).toBeVisible();
+ await page.goto('/profiles');await page.getByRole('button',{name:'新建',exact:true}).click();
+ const create=page.getByRole('dialog',{name:'新建联系人',exact:true});await create.getByLabel('名称',{exact:true}).fill('Synthetic empty profile');await create.getByRole('button',{name:'创建',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'Synthetic empty profile',exact:true})).toBeVisible();
+ await expect(page.getByText('还没有关联的来源记录。',{exact:true})).toBeVisible();
+ const emptyProfile=page.url();
+ for(const width of [1440,390]){await page.setViewportSize({width,height:1000});for(const theme of ['light','dark']){
+  await page.evaluate(t=>{document.documentElement.dataset.theme=t;window.scrollTo(0,0);},theme);
+  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  const form=await page.getByLabel('关联邮箱或手机号',{exact:true}).boundingBox();expect(form!.width).toBeLessThan(400);
+  await page.screenshot({path:`../../.local-validation/frontend-profile-empty-${width}-${theme}.png`,fullPage:true});
+ }}
+ await page.goto(emptyProfile+'?tab=messages');await expect(page.getByRole('heading',{name:'跨来源往来',exact:true})).toHaveCount(0);
+ await page.setViewportSize({width:1440,height:1000});
  await page.goto('/insights');await expect(page.getByRole('heading',{name:'联系日历',exact:true})).toBeVisible();await expect(page.getByText('Synthetic Company',{exact:true}).first()).toBeVisible();await page.screenshot({path:'../../.local-validation/frontend-real-insights.png',fullPage:true});
  await page.goto('/relationships');await expect(page.getByRole('img',{name:/亲疏圈/})).toBeVisible();await expect(page.getByText('Synthetic Group',{exact:true}).first()).toBeVisible();await page.screenshot({path:'../../.local-validation/frontend-real-orbit.png',fullPage:true});
  await page.route('https://tiles.openfreemap.org/**',route=>route.abort());await page.goto('/relationships?view=map');await expect(page.locator('[data-map-ready]')).toBeVisible({timeout:15000});await expect(page.getByText('详细底图暂时无法连接，正在显示本地世界轮廓。')).toBeVisible();await expect(page.getByRole('heading',{name:'关系与足迹',exact:true})).toBeVisible();await page.getByText(/尚未精确定位的资料地点/).click();await expect(page.getByText('Springfield',{exact:true})).toBeVisible();await page.screenshot({path:'../../.local-validation/frontend-real-map.png',fullPage:true});

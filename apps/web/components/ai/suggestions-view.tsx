@@ -22,7 +22,7 @@ export function SuggestionsView() {
   const page = useSuggestionPage(kind);
   const data = page.data?.pages[0];
   const people = (page.data?.pages.flatMap((part) => part.people) ?? []).filter((person) => person.items.length);
-  const kinds = (Object.keys(KIND_LABELS) as SuggestionKind[]).filter((key) => data?.kinds[key]);
+  const kinds = (Object.keys(KIND_LABELS) as SuggestionKind[]).filter((key) => data?.kinds?.[key]);
   const all = Object.values(data?.kinds ?? {}).reduce((sum, count) => sum + (count ?? 0), 0);
 
   return <Page width="narrow">
@@ -31,7 +31,7 @@ export function SuggestionsView() {
     {kinds.length > 1 && <Segmented className={styles.filters} label="按类型筛选" size="sm" value={kind ?? "all"}
       onChange={(next) => { setKind(next === "all" ? null : next); }}
       options={[{ value: "all" as const, label: "全部", count: all },
-        ...kinds.map((key) => ({ value: key, label: KIND_LABELS[key], count: data?.kinds[key] }))]} />}
+        ...kinds.map((key) => ({ value: key, label: KIND_LABELS[key], count: data?.kinds?.[key] }))]} />}
     {page.isPending && <Skeleton height={240} />}
     {page.isError && <Failure onRetry={() => void page.refetch()}>没能读取建议。</Failure>}
     {data && !data.enabled && <EmptyState icon={<Sparkles size={28} aria-hidden="true" />} title="模型功能没有开启" />}

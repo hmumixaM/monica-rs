@@ -13,6 +13,8 @@ import { GroupOverview, GroupsBlock, OwnersBlock, RelationshipsBlock } from "./p
 import { ManualDetails } from "./manual-details";
 import { LocationSummary } from "./places";
 import { ProfileTags } from "./profile-tags";
+import { SourceCoverage } from "./source-coverage";
+import { EvidenceTimeline } from "./evidence-timeline";
 import styles from "./profile.module.css";
 import type { Profile } from "./types";
 
@@ -43,9 +45,11 @@ export function ProfileOverview({ profile, hasPosts = false }: { profile: Profil
       <Deferred><ContactEventSidebar profileId={profile.id} /></Deferred>
       <Deferred><RelationshipsBlock profileId={profile.id} /></Deferred>
       <GroupsBlock profile={profile} />
+      <SourceCoverage profileId={profile.id} />
     </div>
     <div className={styles.activityColumn}>
       <Deferred><ProfileAi profileId={profile.id} /></Deferred>
+      <EvidenceTimeline profileId={profile.id} />
       {hasPosts && <div className={styles.feedPanel}><SocialFeed profileId={profile.id} preview={4} title="近况" /></div>}
       <Deferred><SocialAnalytics profileId={profile.id} /></Deferred>
       <Deferred><LocationSummary profileId={profile.id} /></Deferred>

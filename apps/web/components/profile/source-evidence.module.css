@@ -1,0 +1,19 @@
+.coverage, .timeline { font-size: var(--text-sm); overflow-wrap: anywhere; }
+.hint { color: var(--color-text-soft); font-size: var(--text-xs); line-height: 1.65; }
+.sources, .identifiers { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.sources > li { display: flex; align-items: start; gap: var(--space-2); min-inline-size: 0; }
+.sources > li > div { display: grid; gap: 2px; min-inline-size: 0; }
+.sources strong { font-weight: 600; }
+.sources span, .sources small { color: var(--color-text-soft); font-size: var(--text-xs); }
+.identifiers > li { display: flex; align-items: baseline; gap: var(--space-2); }
+.identifiers span { min-inline-size: 0; }
+.identifiers small { flex: none; color: var(--color-text-faint); font-size: var(--text-xs); }
+.form { display: grid; gap: var(--space-3); padding-block-start: var(--space-3); border-block-start: 1px solid var(--color-rule); }
+.form > button { justify-self: start; }
+.entry { display: grid; gap: var(--space-2); padding-block: var(--space-4); border-block-start: 1px solid var(--color-rule); }
+.entry a { justify-self: start; text-underline-offset: 3px; }
+.entry a:hover { text-decoration: underline; }
+.body { white-space: pre-wrap; line-height: 1.65; }
+@media (max-width: 720px) {
+  .coverage button, .timeline button, .form > label:has(input[type="checkbox"]) { min-block-size: 44px; }
+}
