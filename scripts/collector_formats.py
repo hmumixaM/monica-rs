@@ -95,13 +95,25 @@ def normalize_post(node, relationships=None):
     location=node.get('location') or phone.get('location')
     if isinstance(location,dict):location={k:v for k,v in location.items() if v is not None and k!='profile_pic_url'}
     else:location=None
+    unique={}
+    for interaction in interactions:
+        key=(interaction['interaction_type'],interaction['external_id'])
+        previous=unique.get(key)
+        if previous is None:unique[key]=interaction;continue
+        # Relationship previews contain identities and timestamps, but omit
+        # text. Enrich missing values without erasing the original comment.
+        for field,value in interaction.items():
+            if field=='content':
+                for name,item in value.items():
+                    if previous['content'].get(name) is None:previous['content'][name]=item
+            elif previous.get(field) is None:previous[field]=value
     return {'post_id':str(node.get('id') or node.get('pk') or ''),'shortcode':code,'permalink':f'https://www.instagram.com/p/{code}/' if code else None,
         'published_at':timestamp(node.get('date') or node.get('taken_at_timestamp') or node.get('taken_at') or phone.get('taken_at')),
         'text':caption,'media_type':'carousel' if len(raw_media)>1 or node.get('__typename')=='GraphSidecar' else ('video' if media and media[0]['media_type']=='video' else 'image'),
         'media':media,'location':location,'tagged_users':tagged,'caption_mentions':[{'username':name,'url':f'https://www.instagram.com/{name}/'} for name in mentions],
         'like_count':like_data.get('count',node.get('likes') if isinstance(node.get('likes'),int) else phone.get('like_count')),
         'comment_count':comments.get('count',node.get('comments') if isinstance(node.get('comments'),int) else phone.get('comment_count')),
-        'interactions':list({(i['interaction_type'],i['external_id']):i for i in interactions}.values()),'people_preview':previews,'people_preview_is_complete':False,
+        'interactions':list(unique.values()),'people_preview':previews,'people_preview_is_complete':False,
         'interaction_collection':{key:{'policy':(relationships.get(key) or {}).get('policy'),'count':(relationships.get(key) or {}).get('count')} for key in ('comments','likes')}}
 
 

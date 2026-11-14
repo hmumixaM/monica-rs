@@ -241,7 +241,8 @@ def instagram_records(snapshot,kind):
             external=node.get('id') or node.get('pk') or code
             if not account or not external:raise ValueError('Instagram post lacks stable owner/identity')
             if path.name.endswith('.raw-node.json') and (str(account),str(external)) in seen_posts:continue
-            if relationships.get('owner_username') and owner.get('username') and relationships['owner_username'].casefold()!=owner['username'].casefold():raise ValueError('Instagram relationship owner mismatch')
+            # A post's global shortcode binds the sidecar. Its captured owner
+            # username is historical evidence and can predate an account rename.
             normalized=formats.normalize_post(node,relationships)
             files=[p for p in sorted(path.parent.glob(path.stem+'*')) if p.suffix.lower() in {'.jpg','.jpeg','.png','.webp','.mp4'} and not p.is_symlink()]
             attachments=[]
@@ -255,17 +256,29 @@ def instagram_records(snapshot,kind):
             yield 'posts',record(external,account,'post',content,normalized.get('published_at'),attachments)
             seen_posts.add((str(account),str(external)))
         elif typename in ('GraphUser','Profile') or node.get('username'):
+            raw_profile=None
+            raw_path=path.parent/'profile.raw-node.json'
+            if raw_path.is_file():
+                raw_profile=raw if raw_path==path else load_json(raw_path)
+                extra=raw_profile.get('node') or {}
+                original_id=node.get('id') or node.get('userid')
+                extra_id=extra.get('id') or extra.get('userid')
+                if original_id and extra_id and str(original_id)!=str(extra_id):raise ValueError('Instagram raw profile identity mismatch')
+                if not (original_id and extra_id) and node.get('username') and extra.get('username') and node['username'].casefold()!=extra['username'].casefold():raise ValueError('Instagram raw profile owner mismatch')
+                node={**extra,**node}
             account=node.get('id') or node.get('userid') or node.get('username')
             if not account:raise ValueError('Instagram profile lacks stable identity')
             if path.name.endswith('.raw-node.json') and str(account) in seen_profiles:continue
             pictures=[p for p in sorted(path.parent.glob('*profile_pic*')) if p.suffix.lower() in {'.jpg','.jpeg','.png','.webp'} and not p.is_symlink()]
             attachments=[media(p,'source_account',account,'instagram_avatar') for p in pictures[-1:]]
             content=dict(node,display_name=node.get('full_name') or node.get('username') or str(account))
+            content['archive_document']=raw
+            if raw_profile is not None:content['archive_raw_node']=raw_profile
             relationships_path=path.parent/'profile.relationships.json'
             if relationships_path.is_file():
                 relationships=load_json(relationships_path);identity=relationships.get('profile') or {}
                 if identity.get('userid') and node.get('id') and str(identity['userid'])!=str(node['id']):raise ValueError('Instagram profile sidecar identity mismatch')
-                if identity.get('username') and node.get('username') and identity['username'].casefold()!=node['username'].casefold():raise ValueError('Instagram profile sidecar owner mismatch')
+                if not (identity.get('userid') and node.get('id')) and identity.get('username') and node.get('username') and identity['username'].casefold()!=node['username'].casefold():raise ValueError('Instagram profile sidecar owner mismatch')
                 content['archive_relationships']=relationships
             yield 'profiles',record(account,account,'profile',content,manifest=attachments)
             seen_profiles.add(str(account))
