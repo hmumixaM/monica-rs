@@ -9,6 +9,8 @@
   @media (max-width: 600px) { & dd { grid-template-columns: minmax(0,1fr); } } }
 .note { margin: 0; color: var(--color-text-soft); font-size: var(--text-xs); }
 .none { margin: 0; color: var(--color-text-faint); font-size: var(--text-sm); }
+.imageControls { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin-block: var(--space-3); }
+.imageId { overflow-wrap: anywhere; font-size: var(--text-xs); }
 .failed { color: var(--color-danger); }
 
 .sources, .batches { display: grid; margin: 0; padding: 0; list-style: none; }

@@ -12,6 +12,7 @@ import {CollectorTokens} from "./collector-tokens";
 import {IdentityReview} from "./identity-review";
 import {RawData} from "./raw-data";
 import {HistoryChanges} from "./history-changes";
+import {WechatImages} from "./wechat-images";
 import styles from "./imports.module.css";
 
 type Batch = {
@@ -60,6 +61,7 @@ export function ImportsView() {
     {error && <Failure onRetry={() => void load()}>{error}</Failure>}
     <ImportProgress />
     <LegacyMigrations />
+    <WechatImages />
     <IdentityReview />
     <HistoryChanges />
 
