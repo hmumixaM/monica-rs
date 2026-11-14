@@ -6,6 +6,8 @@
 !scripts/
 !scripts/collector-bridge.py
 !scripts/collector-chatlog.py
+!scripts/chatlog_moments.py
+!scripts/collector_formats.py
 !infra/
 !infra/collector-supervisor.py
 **/.env

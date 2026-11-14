@@ -57,7 +57,7 @@ def main():
     if not collector_manifest.get('collector_files'): p.error('Collector source inventory is missing; run macos-refresh-collectors.py')
     for name,expected in collector_manifest['collector_files'].items():
         if digest(a.collectors/'app'/name)!=expected or digest(ROOT/'apps/desktop/collectors'/name)!=expected: p.error('Collector source is stale; run macos-refresh-collectors.py: '+name)
-    for name in ['collector-bridge.py','collector-chatlog.py','chatlog_moments.py']:
+    for name in ['collector-bridge.py','collector-chatlog.py','chatlog_moments.py','collector_formats.py']:
         expected=collector_manifest.get('bridge_modules',{}).get(name)
         if not expected or digest(a.collectors/name)!=expected or digest(ROOT/'scripts'/name)!=expected: p.error('Collector module is stale; run macos-refresh-collectors.py: '+name)
     if a.output.exists(): p.error('Output must be absent. Keep prior artifacts and select a fresh --output directory.')

@@ -8,7 +8,7 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/monica/browsers PYTHONNOUSERSITE=1 PYTHONDONTW
 RUN .venv/bin/python -m playwright install --with-deps chromium \
     && useradd --create-home --uid 10001 monica \
     && mkdir -p /data/collectors && chown -R monica:monica /data
-COPY scripts/collector-bridge.py scripts/collector-chatlog.py scripts/chatlog_moments.py /opt/monica/
+COPY scripts/collector-bridge.py scripts/collector-chatlog.py scripts/chatlog_moments.py scripts/collector_formats.py /opt/monica/
 COPY infra/collector-supervisor.py /opt/monica/collector-supervisor.py
 USER monica
 # Explicit one-shot execution only; no accounts or collection start by default.

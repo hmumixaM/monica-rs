@@ -38,7 +38,7 @@ python=output/'python/bin/python3.12'
 requirements=output/'requirements.txt'
 run('uv','export','--frozen','--no-dev','--no-emit-project','--project',app,'--output-file',requirements,stdout=subprocess.DEVNULL)
 run('uv','pip','install','--python',python,'--break-system-packages','--no-deps','-r',requirements,cwd=app)
-for module in ['collector-bridge.py','collector-chatlog.py','chatlog_moments.py']:
+for module in ['collector-bridge.py','collector-chatlog.py','chatlog_moments.py','collector_formats.py']:
     shutil.copy2(ROOT/'scripts'/module,output/module)
 (output/'infra').mkdir()
 # Source pin is committed; never read an existing personal runtime checkout.
@@ -61,7 +61,7 @@ for package in packages:
     for filename in package.pop('files'):
         file=Path(filename)
         if file.is_file():shutil.copy2(file,destination/file.name)
-manifest={'schema':1,'python':subprocess.check_output([str(python),'--version'],text=True).strip(),'python_executable_sha256':sha(python.resolve()),'collector_lock_sha256':sha(app/'uv.lock'),'collector_source_commit':'1a6e40e20c6ac12aca434b61244059d067847473','publisher_sha256':sha(output/'infra/snapshot_publish.py'),'collector_files':{name:sha(app/name) for name in sorted(files)},'bridge_sha256':sha(output/'collector-bridge.py'),'bridge_modules':{name:sha(output/name) for name in ['collector-bridge.py','collector-chatlog.py','chatlog_moments.py']},'packages':packages,'browsers':json.loads((output/'python/lib/python3.12/site-packages/playwright/driver/package/browsers.json').read_text())}
+manifest={'schema':1,'python':subprocess.check_output([str(python),'--version'],text=True).strip(),'python_executable_sha256':sha(python.resolve()),'collector_lock_sha256':sha(app/'uv.lock'),'collector_source_commit':'1a6e40e20c6ac12aca434b61244059d067847473','publisher_sha256':sha(output/'infra/snapshot_publish.py'),'collector_files':{name:sha(app/name) for name in sorted(files)},'bridge_sha256':sha(output/'collector-bridge.py'),'bridge_modules':{name:sha(output/name) for name in ['collector-bridge.py','collector-chatlog.py','chatlog_moments.py','collector_formats.py']},'packages':packages,'browsers':json.loads((output/'python/lib/python3.12/site-packages/playwright/driver/package/browsers.json').read_text())}
 (output/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 run(python,'-I','-c','import instaloader,playwright,pydantic,linkedin_scraper,linkedin_cli; print("Pinned collector imports passed")',env=env)
 run(output/'run-bridge','--help',stdout=subprocess.DEVNULL)

@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -22,8 +23,12 @@ import uuid
 
 MAX_FILE = 4 * 1024 * 1024
 MAX_FRAME = MAX_FILE - 1024
+MAX_SNAPSHOT_JSON = 128 * 1024 * 1024
 MEDIA_CACHE={}
 SPOOL=None
+_formats_spec=importlib.util.spec_from_file_location('monica_collector_formats',Path(__file__).with_name('collector_formats.py'))
+formats=importlib.util.module_from_spec(_formats_spec)
+_formats_spec.loader.exec_module(formats)
 
 class SpoolWriter:
     """Atomic, immutable IPC pages. A reader acknowledges only after DB commit."""
@@ -76,8 +81,8 @@ def emit(frame):
     if SPOOL is None:print(data,flush=True)
     else:SPOOL.emit(frame)
 
-def load_json(path):
-    if path.is_symlink() or not path.is_file() or path.stat().st_size>MAX_FILE:
+def load_json(path,max_bytes=MAX_FILE):
+    if path.is_symlink() or not path.is_file() or path.stat().st_size>max_bytes:
         raise ValueError('invalid or oversized snapshot JSON')
     before=path.stat()
     document=json.loads(path.read_text(encoding='utf-8'))
@@ -137,15 +142,14 @@ def strings(value):
         for v in value:yield from strings(v)
 
 def linkedin_records(snapshot,owner_account=None):
-    document=load_json(snapshot/'linkedin_enrichment.incoming.json')
+    document=load_json(snapshot/'linkedin_enrichment.incoming.json',MAX_SNAPSHOT_JSON)
     assets={item['source_url']:item for item in document.get('local_assets',[]) if item.get('source_url')}
-    def manifests(value,entity,external):
+    def manifests(slots,entity,external):
         found=[];seen=set()
-        for url in strings(value):
-            if url in assets and url not in seen:
-                seen.add(url);asset=assets[url];name=asset['local_path']
+        for role,url in slots:
+            if isinstance(url,str) and url in assets and (role,url) not in seen:
+                seen.add((role,url));asset=assets[url];name=asset['local_path']
                 if Path(name).name!=name:raise ValueError('invalid LinkedIn media path')
-                role='linkedin_avatar' if entity=='source_account' and not found else 'media-'+str(len(found))
                 item=media(snapshot/'assets'/name,entity,external,role,asset.get('content_hash'))
                 item['source_url']=url;found.append(item)
         return found
@@ -155,12 +159,17 @@ def linkedin_records(snapshot,owner_account=None):
         profile=item.get('profile') or {}
         content=dict(profile,profile_url=item.get('profile_url'),username=account,
                      display_name=profile.get('name') or profile.get('full_name') or account)
-        yield 'profiles',record(account,account,'profile',content,item.get('captured_at'),manifests(profile,'source_account',account))
+        profile_slots=[('linkedin_avatar',profile.get('avatar_url')),('linkedin_cover',profile.get('background_url'))]
+        yield 'profiles',record(account,account,'profile',content,item.get('captured_at'),manifests(profile_slots,'source_account',account))
         for post in item.get('posts',[]):
-            external=post.get('id') or post.get('urn') or post.get('external_id') or post.get('url')
+            external=post.get('provider_post_id') or post.get('urn') or post.get('external_id') or post.get('id') or post.get('source_key') or post.get('url')
             if not external:raise ValueError('LinkedIn post has no stable identity')
-            body=dict(post,text=post.get('text') or post.get('content') or '',source_url=post.get('url'))
-            yield 'posts',record(external,account,'post',body,post.get('posted_at') or post.get('occurred_at'),manifests(post,'social_post',external))
+            post_media=formats.linkedin_media(post)
+            slots=[(m['role'],m['source_url']) for m in post_media]
+            slots += [('thumbnail-'+m['role'],m['thumbnail_url']) for m in post_media if m.get('thumbnail_url')!=m['source_url']]
+            if not slots:slots=[('media-'+str(i+1),url) for i,url in enumerate(dict.fromkeys(url for url in (post.get('image'),post.get('image_url')) if isinstance(url,str) and url in assets))]
+            body=dict(post,text=post.get('text') or post.get('content') or '',source_url=post.get('url'),media=post_media)
+            yield 'posts',record(external,account,'post',body,post.get('posted_at') or post.get('occurred_at'),manifests(slots,'social_post',external))
     for conversation in document.get('conversations',[]):
         account=conversation.get('account') or conversation.get('owner_id') or owner_account
         external=conversation.get('id') or conversation.get('external_id') or conversation.get('conversation_id') or conversation.get('conversation_urn')
@@ -184,9 +193,14 @@ def linkedin_records(snapshot,owner_account=None):
 def instagram_records(snapshot,kind):
     # The bundled Instaloader writer publishes plain .json profile/post nodes and
     # schema1 story/highlight manifests only after all listed media files exist.
-    for path in sorted(snapshot.rglob('*.json')):
+    seen_posts=set();seen_profiles=set()
+    # Primary Instaloader documents are authoritative. Raw-node files enrich
+    # them and provide a fallback only when their primary document is absent.
+    paths=sorted(snapshot.rglob('*.json'),key=lambda p:(p.name.endswith('.raw-node.json'),str(p)))
+    for path in paths:
         if path.name.startswith('.') or any(p.is_symlink() for p in path.parents if p!=snapshot):
             continue
+        if path.name.endswith('.relationships.json'):continue
         raw=load_json(path)
         if path.name.endswith('.manifest.json'):
             if raw.get('schema_version')!=1 or not raw.get('owner_id') or not raw.get('mediaid'):
@@ -194,28 +208,67 @@ def instagram_records(snapshot,kind):
             files=raw.get('files') or []
             if not files or any(Path(name).name!=name or not (path.parent/name).is_file() or (path.parent/name).is_symlink() for name in files):
                 raise ValueError('incomplete story media')
-            attachments=[media(path.parent/name,'social_story',raw['mediaid'],'media-'+str(i)) for i,name in enumerate(files) if Path(name).suffix.lower() in {'.jpg','.jpeg','.png','.webp','.mp4'}]
-            yield 'stories',record(raw['mediaid'],raw['owner_id'],'story',raw,raw.get('date_utc') or raw.get('taken_at'),attachments)
+            content=formats.normalize_story(raw)
+            supported=[name for name in files if Path(name).suffix.lower() in {'.jpg','.jpeg','.png','.webp','.mp4'}]
+            if not supported or raw.get('is_video') and not any(Path(name).suffix.lower()=='.mp4' for name in supported):raise ValueError('incomplete story media types')
+            attachments=[]
+            for name in supported:
+                thumbnail=raw.get('is_video') and Path(name).suffix.lower()!='.mp4'
+                attachment=media(path.parent/name,'social_story',raw['mediaid'],'thumbnail-1' if thumbnail else 'media-1')
+                attachment['source_url']=content['media'][0]['thumbnail_url' if thumbnail else 'source_url']
+                attachments.append(attachment)
+            yield 'stories',record(raw['mediaid'],raw['owner_id'],'story',content,formats.timestamp(raw.get('date_utc') or raw.get('taken_at')),attachments)
             continue
         node=raw.get('node',raw)
         typename=node.get('__typename') or (raw.get('instaloader') or {}).get('node_type')
-        if typename in ('GraphImage','GraphVideo','GraphSidecar','Post') or node.get('shortcode'):
-            account=(node.get('owner') or {}).get('id') or (node.get('owner') or {}).get('username')
-            external=node.get('id') or node.get('shortcode')
+        if typename in ('GraphImage','GraphVideo','GraphSidecar','Post') or node.get('shortcode') or node.get('code'):
+            code=node.get('shortcode') or node.get('code') or (node.get('iphone_struct') or {}).get('code')
+            raw_node=None;relationships={}
+            if code:
+                if not isinstance(code,str) or not re.fullmatch(r'[A-Za-z0-9_-]+',code):raise ValueError('invalid Instagram shortcode')
+                raw_path=path.with_name('post-'+code+'.raw-node.json')
+                if raw_path.is_file():
+                    raw_node=raw if raw_path==path else load_json(raw_path)
+                    extra=raw_node.get('node') or {}
+                    if raw_node.get('shortcode')!=code or extra.get('shortcode',code)!=code or extra.get('id') and node.get('id') and str(extra['id'])!=str(node['id']):raise ValueError('Instagram raw sidecar identity mismatch')
+                    node={**extra,**node}
+                relationship_path=path.with_name('post-'+code+'.relationships.json')
+                if relationship_path.is_file():
+                    relationships=load_json(relationship_path)
+                    if relationships.get('shortcode')!=code:raise ValueError('Instagram relationship sidecar identity mismatch')
+            owner=node.get('owner') or node.get('user') or (node.get('iphone_struct') or {}).get('user') or {}
+            account=owner.get('id') or owner.get('pk') or owner.get('username')
+            external=node.get('id') or node.get('pk') or code
             if not account or not external:raise ValueError('Instagram post lacks stable owner/identity')
-            edges=(node.get('edge_media_to_caption') or {}).get('edges') or []
-            text='\n'.join((item.get('node') or {}).get('text','') for item in edges)
-            timestamp=node.get('taken_at_timestamp')
-            occurred=datetime.fromtimestamp(timestamp,timezone.utc).isoformat() if isinstance(timestamp,(int,float)) else None
+            if path.name.endswith('.raw-node.json') and (str(account),str(external)) in seen_posts:continue
+            if relationships.get('owner_username') and owner.get('username') and relationships['owner_username'].casefold()!=owner['username'].casefold():raise ValueError('Instagram relationship owner mismatch')
+            normalized=formats.normalize_post(node,relationships)
             files=[p for p in sorted(path.parent.glob(path.stem+'*')) if p.suffix.lower() in {'.jpg','.jpeg','.png','.webp','.mp4'} and not p.is_symlink()]
-            attachments=[media(p,'social_post',external,'media-'+str(i)) for i,p in enumerate(files)]
-            yield 'posts',record(external,account,'post',dict(node,text=text),occurred,attachments)
+            attachments=[]
+            for file,role,url in formats.instagram_file_slots(path,node,files,normalized):
+                if role is None:continue
+                attachment=media(file,'social_post',external,role)
+                if url:attachment['source_url']=url
+                attachments.append(attachment)
+            content=dict(normalized,owner=owner,archive_document=raw,archive_node=node,archive_relationships=relationships)
+            if raw_node is not None:content['archive_raw_node']=raw_node
+            yield 'posts',record(external,account,'post',content,normalized.get('published_at'),attachments)
+            seen_posts.add((str(account),str(external)))
         elif typename in ('GraphUser','Profile') or node.get('username'):
             account=node.get('id') or node.get('userid') or node.get('username')
             if not account:raise ValueError('Instagram profile lacks stable identity')
+            if path.name.endswith('.raw-node.json') and str(account) in seen_profiles:continue
             pictures=[p for p in sorted(path.parent.glob('*profile_pic*')) if p.suffix.lower() in {'.jpg','.jpeg','.png','.webp'} and not p.is_symlink()]
             attachments=[media(p,'source_account',account,'instagram_avatar') for p in pictures[-1:]]
-            yield 'profiles',record(account,account,'profile',dict(node,display_name=node.get('full_name') or node.get('username') or str(account)),manifest=attachments)
+            content=dict(node,display_name=node.get('full_name') or node.get('username') or str(account))
+            relationships_path=path.parent/'profile.relationships.json'
+            if relationships_path.is_file():
+                relationships=load_json(relationships_path);identity=relationships.get('profile') or {}
+                if identity.get('userid') and node.get('id') and str(identity['userid'])!=str(node['id']):raise ValueError('Instagram profile sidecar identity mismatch')
+                if identity.get('username') and node.get('username') and identity['username'].casefold()!=node['username'].casefold():raise ValueError('Instagram profile sidecar owner mismatch')
+                content['archive_relationships']=relationships
+            yield 'profiles',record(account,account,'profile',content,manifest=attachments)
+            seen_profiles.add(str(account))
 
 def batches(provider,root,owner_account=None):
     destinations=[('linkedin',root/'raw/linkedin')] if provider=='linkedin' else [(kind,root/'staging'/('instagram-'+kind)) for kind in ('current','stories','highlights')]
