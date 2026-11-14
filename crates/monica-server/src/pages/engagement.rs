@@ -211,7 +211,7 @@ async fn orbit(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
             }
         }
     }
-    let edges:Vec<(Uuid,Uuid)>=sqlx::query_as("SELECT from_profile_id,to_profile_id FROM crm.relationship_edges WHERE from_profile_id=ANY($1) AND to_profile_id=ANY($1) AND (valid_to IS NULL OR valid_to>now())").bind(&ids).fetch_all(&mut *tx).await?;
+    let edges:Vec<(Uuid,Uuid)>=sqlx::query_as("SELECT from_profile_id,to_profile_id FROM crm.presented_relationship_edges WHERE from_profile_id=ANY($1) AND to_profile_id=ANY($1) AND (valid_to IS NULL OR valid_to>now())").bind(&ids).fetch_all(&mut *tx).await?;
     for (a, b) in edges {
         graph[index[&a]][index[&b]] += 2.;
         graph[index[&b]][index[&a]] += 2.;

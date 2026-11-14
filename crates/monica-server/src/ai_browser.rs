@@ -23,12 +23,12 @@ pub(super) fn routes() -> Router<AppState> {
 async fn model(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     user(&s, &h).await?;
     let row = sqlx::query(
-        "SELECT enabled,qa_enabled,model,context_window,max_tokens FROM crm.ai_settings WHERE id",
+        "SELECT enabled,execution_enabled,qa_enabled,model,context_window,max_tokens FROM crm.ai_settings WHERE id",
     )
     .fetch_one(&s.pool)
     .await?;
     Ok(Json(
-        json!({"enabled":row.get::<bool,_>("enabled")&&row.get::<bool,_>("qa_enabled"),"model":row.get::<String,_>("model"),"context_window":row.get::<i32,_>("context_window"),"max_tokens":row.get::<i32,_>("max_tokens")}),
+        json!({"enabled":row.get::<bool,_>("enabled")&&row.get::<bool,_>("execution_enabled")&&row.get::<bool,_>("qa_enabled"),"model":row.get::<String,_>("model"),"context_window":row.get::<i32,_>("context_window"),"max_tokens":row.get::<i32,_>("max_tokens")}),
     ))
 }
 #[derive(Deserialize)]
@@ -90,11 +90,14 @@ async fn completion(
 ) -> Result<Response> {
     user(&s, &h).await?;
     let row = sqlx::query(
-        "SELECT enabled,qa_enabled,model,base_url,max_tokens FROM crm.ai_settings WHERE id",
+        "SELECT enabled,execution_enabled,qa_enabled,model,base_url,max_tokens FROM crm.ai_settings WHERE id",
     )
     .fetch_one(&s.pool)
     .await?;
-    if !row.get::<bool, _>("enabled") || !row.get::<bool, _>("qa_enabled") {
+    if !row.get::<bool, _>("enabled")
+        || !row.get::<bool, _>("execution_enabled")
+        || !row.get::<bool, _>("qa_enabled")
+    {
         return Err(ApiError(
             StatusCode::CONFLICT,
             "请先在 Monica 设置中启用模型服务",

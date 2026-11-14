@@ -133,7 +133,7 @@ async fn add_relationship(
         ));
     }
     times(&mut tx, &p.valid_from, &p.valid_to).await?;
-    let edge:Option<Uuid>=sqlx::query_scalar("INSERT INTO crm.relationship_edges(id,from_profile_id,to_profile_id,relationship_type,note,valid_from,valid_to) VALUES($1,$2,$3,$4,$5,$6::timestamptz,$7::timestamptz) ON CONFLICT(from_profile_id,to_profile_id,relationship_type) DO UPDATE SET note=excluded.note,valid_from=excluded.valid_from,valid_to=excluded.valid_to,updated_at=now() WHERE (relationship_edges.note,relationship_edges.valid_from,relationship_edges.valid_to) IS DISTINCT FROM (excluded.note,excluded.valid_from,excluded.valid_to) RETURNING id")
+    let edge:Option<Uuid>=sqlx::query_scalar("INSERT INTO crm.relationship_edges(id,from_profile_id,to_profile_id,relationship_type,note,valid_from,valid_to) VALUES($1,$2,$3,$4,$5,$6::timestamptz,$7::timestamptz) ON CONFLICT(from_profile_id,to_profile_id,relationship_type) WHERE NOT legacy_source_owned DO UPDATE SET note=excluded.note,valid_from=excluded.valid_from,valid_to=excluded.valid_to,updated_at=now() WHERE (relationship_edges.note,relationship_edges.valid_from,relationship_edges.valid_to) IS DISTINCT FROM (excluded.note,excluded.valid_from,excluded.valid_to) RETURNING id")
         .bind(Uuid::new_v4()).bind(id).bind(p.to_profile_id).bind(&p.relationship_type).bind(&p.note).bind(&p.valid_from).bind(&p.valid_to).fetch_optional(&mut *tx).await?;
     let edge = if let Some(edge) = edge {
         let payload = json!({"to_profile_id":p.to_profile_id,"relationship_type":p.relationship_type,"note":p.note,"valid_from":p.valid_from,"valid_to":p.valid_to});
@@ -145,7 +145,7 @@ async fn add_relationship(
             .await?;
         edge
     } else {
-        sqlx::query_scalar("SELECT id FROM crm.relationship_edges WHERE from_profile_id=$1 AND to_profile_id=$2 AND relationship_type=$3").bind(id).bind(p.to_profile_id).bind(p.relationship_type).fetch_one(&mut *tx).await?
+        sqlx::query_scalar("SELECT id FROM crm.relationship_edges WHERE from_profile_id=$1 AND to_profile_id=$2 AND relationship_type=$3 AND NOT legacy_source_owned").bind(id).bind(p.to_profile_id).bind(p.relationship_type).fetch_one(&mut *tx).await?
     };
     tx.commit().await?;
     Ok((
@@ -160,7 +160,7 @@ async fn relationships(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
     user(&s, &h).await?;
-    let mut rows:Vec<Value>=sqlx::query_scalar("SELECT (to_jsonb(e)-'created_at'-'updated_at')||jsonb_build_object('avatar_media_id',CASE WHEN e.from_profile_id=$1 THEN b.avatar_media_id ELSE a.avatar_media_id END,'from_display_name',a.display_name,'to_display_name',b.display_name,'direction',CASE WHEN e.from_profile_id=$1 THEN 'outgoing' ELSE 'incoming' END,'related_profile_id',CASE WHEN e.from_profile_id=$1 THEN b.id ELSE a.id END,'related_display_name',CASE WHEN e.from_profile_id=$1 THEN b.display_name ELSE a.display_name END,'related_profile_type','person') FROM crm.relationship_edges e JOIN crm.profiles a ON a.id=e.from_profile_id AND a.profile_type='person' AND a.archived_at IS NULL JOIN crm.profiles b ON b.id=e.to_profile_id AND b.profile_type='person' AND b.archived_at IS NULL WHERE e.from_profile_id=$1 OR e.to_profile_id=$1 ORDER BY e.relationship_type,e.created_at DESC")
+    let mut rows:Vec<Value>=sqlx::query_scalar("SELECT (to_jsonb(e)-'created_at'-'updated_at')||jsonb_build_object('avatar_media_id',CASE WHEN e.from_profile_id=$1 THEN b.avatar_media_id ELSE a.avatar_media_id END,'from_display_name',a.display_name,'to_display_name',b.display_name,'direction',CASE WHEN e.from_profile_id=$1 THEN 'outgoing' ELSE 'incoming' END,'related_profile_id',CASE WHEN e.from_profile_id=$1 THEN b.id ELSE a.id END,'related_display_name',CASE WHEN e.from_profile_id=$1 THEN b.display_name ELSE a.display_name END,'related_profile_type','person') FROM crm.presented_relationship_edges e JOIN crm.profiles a ON a.id=e.from_profile_id AND a.profile_type='person' AND a.archived_at IS NULL JOIN crm.profiles b ON b.id=e.to_profile_id AND b.profile_type='person' AND b.archived_at IS NULL WHERE e.from_profile_id=$1 OR e.to_profile_id=$1 ORDER BY e.relationship_type,e.created_at DESC")
         .bind(id).fetch_all(&s.pool).await?;
     let memberships:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id','membership:'||m.group_profile_id::text||':'||m.person_profile_id::text,'from_profile_id',g.id,'to_profile_id',p.id,'relationship_type',CASE lower(m.role) WHEN 'owner' THEN '群主' WHEN 'admin' THEN '管理员' WHEN 'member' THEN '群成员' ELSE coalesce(m.role,CASE WHEN m.group_profile_id=$1 THEN '群成员' ELSE '微信群' END) END,'from_display_name',g.display_name,'to_display_name',p.display_name,'direction',CASE WHEN m.group_profile_id=$1 THEN 'outgoing' ELSE 'incoming' END,'related_profile_id',CASE WHEN m.group_profile_id=$1 THEN p.id ELSE g.id END,'related_display_name',CASE WHEN m.group_profile_id=$1 THEN p.display_name ELSE g.display_name END,'related_profile_type',CASE WHEN m.group_profile_id=$1 THEN 'person' ELSE 'group' END,'source_type',m.source_type,'note',NULL,'confidence',NULL,'valid_from',m.joined_at,'valid_to',m.left_at) FROM crm.current_group_memberships m JOIN crm.profiles g ON g.id=m.group_profile_id AND g.profile_type='group' AND g.archived_at IS NULL JOIN crm.profiles p ON p.id=m.person_profile_id AND p.profile_type='person' AND p.archived_at IS NULL WHERE (m.group_profile_id=$1 OR m.person_profile_id=$1) AND m.left_at IS NULL ORDER BY m.observed_at DESC")
         .bind(id).fetch_all(&s.pool).await?;
@@ -174,7 +174,7 @@ async fn recent(
     Query(q): Query<Page>,
 ) -> Result<Json<Value>> {
     user(&s, &h).await?;
-    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',e.id,'from_profile_id',e.from_profile_id,'to_profile_id',e.to_profile_id,'from_display_name',a.display_name,'to_display_name',b.display_name,'relationship_type',e.relationship_type,'source_type',e.source_type,'confidence',e.confidence,'created_at',e.created_at) FROM crm.relationship_edges e JOIN crm.profiles a ON a.id=e.from_profile_id JOIN crm.profiles b ON b.id=e.to_profile_id ORDER BY e.created_at DESC,e.id DESC LIMIT $1")
+    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',e.id,'from_profile_id',e.from_profile_id,'to_profile_id',e.to_profile_id,'from_display_name',a.display_name,'to_display_name',b.display_name,'relationship_type',e.relationship_type,'source_type',e.source_type,'confidence',e.confidence,'created_at',e.created_at) FROM crm.presented_relationship_edges e JOIN crm.profiles a ON a.id=e.from_profile_id JOIN crm.profiles b ON b.id=e.to_profile_id ORDER BY e.created_at DESC,e.id DESC LIMIT $1")
         .bind(q.limit.unwrap_or(10).clamp(1,50)).fetch_all(&s.pool).await?;
     Ok(Json(json!(rows)))
 }

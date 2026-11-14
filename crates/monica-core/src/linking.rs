@@ -350,7 +350,7 @@ pub async fn retirement_candidate(tx: &mut Transaction<'_, Postgres>, id: Uuid) 
         ),
         (
             "relationships",
-            "SELECT 1 FROM crm.relationship_edges WHERE from_profile_id=$1 OR to_profile_id=$1",
+            "SELECT 1 FROM crm.presented_relationship_edges WHERE from_profile_id=$1 OR to_profile_id=$1",
         ),
         (
             "groups",
@@ -484,7 +484,7 @@ pub async fn link_blockers(
  WHEN EXISTS(SELECT 1 FROM crm.identities i WHERE i.source_account_id=a.id GROUP BY i.source_account_id HAVING bool_or(i.status='invalid') AND bool_and(i.status IN ('invalid','merged'))) THEN 'quarantined'
  WHEN EXISTS(SELECT 1 FROM crm.media_links m WHERE m.entity_type='profile' AND m.entity_id=l.profile_id AND m.source_account_id IS NULL AND m.role IN ('cover','wechat_avatar','instagram_avatar','linkedin_avatar') AND CASE m.role WHEN 'instagram_avatar' THEN 'instagram' WHEN 'linkedin_avatar' THEN 'linkedin' ELSE 'wechat' END=a.provider) THEN 'unowned_media'
  WHEN EXISTS(SELECT 1 FROM crm.tag_memberships t WHERE t.profile_id=l.profile_id AND t.source_type=a.provider) THEN 'unowned_tags'
- WHEN EXISTS(SELECT 1 FROM crm.relationship_edges e WHERE (e.from_profile_id=l.profile_id OR e.to_profile_id=l.profile_id) AND e.source_type=a.provider) THEN 'unowned_relationships'
+ WHEN EXISTS(SELECT 1 FROM crm.relationship_edges e WHERE (e.from_profile_id=l.profile_id OR e.to_profile_id=l.profile_id) AND e.source_type=a.provider AND NOT EXISTS(SELECT 1 FROM crm.legacy_relationship_owners o WHERE o.edge_id=e.id)) THEN 'unowned_relationships'
  END reason FROM crm.source_accounts a LEFT JOIN crm.source_account_links l ON l.account_id=a.id WHERE a.id=ANY($1)"#).bind(ids).fetch_all(&mut **tx).await?.into_iter().filter_map(|(id,reason):(Uuid,Option<String>)|reason.map(|reason|(id,reason))).collect();
     Ok(rows.into_iter().collect())
 }

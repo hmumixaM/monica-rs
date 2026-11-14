@@ -1,4 +1,5 @@
 "use client";
+import {LegacyMigrations} from "../imports/legacy-migrations";
 import {Page, PageHeader} from "../ui/primitives";
 import {Button} from "../ui/button";
 import {Input,Select} from "../ui/field";
@@ -14,7 +15,7 @@ import { VirtualList } from '../ui/virtual-list';
 
 type Connection = { provider: string; records?: number; earliest_at?: string; latest_at?: string; sync_pending?: boolean; pending_records?: number; progress?: string; coverage?: string; id: string; display_name: string; external_account: string; state: string; enabled: boolean; error: string | null; last_success_at: string | null };
 type SourceFile = { blob?: string; filename?: string; size?: number };
-type Evidence = { id: string; connection_id: string; external_id: string; title: string; body: string; raw_body?: string; events?: { kind: string; title: string; date_text?: string; organization?: string; location?: string; reference?: string; quote: string }[]; copies?: { id: string; revision: number; account_name: string }[]; category: string; occurred_at: string | null; account_name: string; provider: string; revision: number; metadata: { original?: SourceFile; attachments?: SourceFile[]; participants?: { id: string; role: string }[] } };
+type Evidence = { versions?: { revision: number; recorded_at: string }[]; id: string; connection_id: string; external_id: string; title: string; body: string; raw_body?: string; events?: { kind: string; title: string; date_text?: string; organization?: string; location?: string; reference?: string; quote: string }[]; copies?: { id: string; revision: number; account_name: string }[]; category: string; occurred_at: string | null; account_name: string; provider: string; revision: number; metadata: { original_content_url?: string; original?: SourceFile; attachments?: SourceFile[]; participants?: { id: string; role: string }[] } };
 async function request(path: string, body?: unknown) {
   const response = await apiFetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
   if (!response.ok) { const error = await response.json(); throw new Error(error.detail || `请求失败 (${response.status})`); }
@@ -77,6 +78,7 @@ export function SourcesView() {
   return <Page width="wide" className={styles.page}>
     <PageHeader title="来源" description="把不同账号的往来汇入同一份关系档案。每个来源单独授权、同步和暂停。" />
     <ImportProgress compact />
+    <LegacyMigrations compact />
     <div className={styles.catalogue} aria-label="来源类型">{providers.map(source=><article key={source.id} className={`${styles.sourceCard} ${provider===source.id?styles.selected:''}`}>
       <div className={styles.cardHeading}><source.icon size={23} aria-hidden="true"/><h2>{source.name}</h2><span>{connections.filter(c=>c.provider===source.id).length} 个账号</span></div><p>{source.detail}</p>
       {source.id==='mail'?<div className={styles.row}>{[['gmail','Gmail'],['outlook','Outlook'],['imap','IMAP']].map(([value,label])=><Button key={value} onClick={()=>{setProvider('mail');setMethod(value);document.getElementById('source-details')?.scrollIntoView({block:'start'});}}>添加 {label}</Button>)}</div>:null}
@@ -159,8 +161,10 @@ export function EvidenceView({ id, revision }: { id: string; revision?: string }
   useEffect(() => { void request('/api/v1/evidence/' + id + (revision ? '?revision=' + encodeURIComponent(revision) : '')).then(setRecord).catch(e => setError(String(e))); }, [id, revision]);
   return <Page width="wide" className={styles.page}><Link href="/sources">返回来源</Link>{error && <p role="alert">{error}</p>}{record ? <>
     <PageHeader title={record.title || '原始证据'} /><p>{record.provider} · {record.account_name} · 版本 {record.revision}</p><p>{record.occurred_at ? new Date(record.occurred_at).toLocaleString() : '时间未知'}</p>
+    {!!record.versions?.length && <nav className={styles.row} aria-label="历史修订"><Link href={`/evidence/${record.id}?revision=1`} aria-current={record.revision===1?'page':undefined}>原始版本</Link>{record.versions.map(version=><Link key={version.revision} href={`/evidence/${record.id}?revision=${version.revision}`} aria-current={record.revision===version.revision?'page':undefined}>版本 {version.revision}</Link>)}</nav>}
     <p>{record.metadata.participants?.map(p => `${p.role}: ${p.id}`).join(' · ')}</p><div className={styles.row}><Button onClick={() => setOriginal(!original)}>{original ? '查看检索正文' : '查看完整原文'}</Button></div>
     <pre className={styles.body}>{(original ? record.raw_body : record.body) || '此记录尚未收录完整正文。'}</pre>
+    {record.metadata.original_content_url && /^\/api\/v1\/imports\/legacy\/content\/[0-9a-f-]{36}$/i.test(record.metadata.original_content_url) && <p><a href={record.metadata.original_content_url} download>下载原始记录</a></p>}
     {[...(record.metadata.original ? [record.metadata.original] : []), ...(record.metadata.attachments || [])].map((file, index) => file.blob ? <p key={file.blob + index}><a href={`/api/v1/evidence/${record.id}/files/${file.blob}?revision=${record.revision}`}>{file.filename || '附件'}{file.size !== undefined ? ` (${Math.ceil(file.size / 1024)} KB)` : ''}</a></p> : <p key={index}>{file.filename || '附件'} · 尚未下载</p>)}
     {record.events && record.events.length > 0 && <section><h2>事务与事件候选</h2>{record.events.map((event, index) => <article key={index}><h3>{event.title}</h3><p>{[event.date_text, event.organization, event.location, event.reference].filter(Boolean).join(' · ')}</p><blockquote>{event.quote}</blockquote><small>来自此版本邮件的候选信息</small></article>)}</section>}
     {record.copies && record.copies.length > 1 && <p>此邮件的账号副本：{record.copies.map(copy => <Link key={copy.id} href={`/evidence/${copy.id}?revision=${copy.revision}`}>{copy.account_name} </Link>)}</p>}

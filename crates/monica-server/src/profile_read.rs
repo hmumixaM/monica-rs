@@ -36,7 +36,7 @@ pub(super) async fn load(tx: &mut Transaction<'_, Postgres>, requested: Uuid) ->
         .bind(id).fetch_all(&mut **tx).await?;
     let identities:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(i)-'profile_id'-'source_account_id' FROM crm.identities i WHERE profile_id=$1 AND status NOT IN ('invalid','merged') ORDER BY provider,username NULLS LAST,id")
         .bind(id).fetch_all(&mut **tx).await?;
-    let tags:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',t.id,'name',t.name,'source_type',m.source_type) FROM crm.tag_memberships m JOIN crm.tags t ON t.id=m.tag_id WHERE m.profile_id=$1 ORDER BY t.name")
+    let tags:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',t.id,'name',t.name,'source_type',m.source_type) FROM crm.presented_tag_memberships m JOIN crm.tags t ON t.id=m.tag_id WHERE m.profile_id=$1 ORDER BY t.name")
         .bind(id).fetch_all(&mut **tx).await?;
     let dates:Vec<Value>=sqlx::query_scalar("SELECT value FROM crm.profile_dates_presented WHERE profile_id=$1 ORDER BY kind='birthday' DESC,month NULLS LAST,day NULLS LAST,created_at")
         .bind(id).fetch_all(&mut **tx).await?;

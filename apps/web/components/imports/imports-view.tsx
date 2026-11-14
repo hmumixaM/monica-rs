@@ -1,4 +1,5 @@
 "use client";
+import {LegacyMigrations} from "./legacy-migrations";
 
 import {RefreshCw} from "lucide-react";
 import {useCallback, useEffect, useState} from "react";
@@ -58,6 +59,7 @@ export function ImportsView() {
       actions={<Button size="sm" onClick={() => void load()} disabled={loading}><RefreshCw size={14} />刷新</Button>} />
     {error && <Failure onRetry={() => void load()}>{error}</Failure>}
     <ImportProgress />
+    <LegacyMigrations />
     <IdentityReview />
     <HistoryChanges />
 

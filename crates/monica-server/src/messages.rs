@@ -121,8 +121,30 @@ async fn read(s: &AppState, profile: Option<Uuid>, q: Params) -> Result<Json<Val
     {
         return Err(invalid());
     }
-    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',m.message_id,'occurred_at',m.occurred_at,'message_type',m.message_type,'sender_profile_id',coalesce(m.sender_profile_id,l.profile_id),'sender_name',coalesce(p.display_name,a.display_name,nullif(m.sender,'')),'conversation_id',c.id,'conversation_type',c.conversation_type,'text',m.body) FROM crm.conversations c JOIN LATERAL(SELECT * FROM crm.message_search m WHERE m.conversation_id=c.id AND NOT m.tombstone AND ($3::timestamptz IS NULL OR (m.occurred_at,m.message_id)<($3::timestamptz,coalesce($4::uuid,'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid))) AND ($5::text IS NULL OR position(lower($5) in lower(m.body))>0) AND ($6::text IS NULL OR (m.occurred_at>=($6||'-01')::timestamp AT TIME ZONE $7 AND m.occurred_at<(($6||'-01')::timestamp+interval '1 month') AT TIME ZONE $7)) AND ($8::uuid IS NULL OR $3::text IS NOT NULL OR (m.occurred_at,m.message_id)<=(SELECT anchor.occurred_at,anchor.message_id FROM crm.message_search anchor WHERE anchor.message_id=$8 AND anchor.conversation_id=c.id)) ORDER BY m.occurred_at DESC,m.message_id DESC LIMIT $10) m ON true LEFT JOIN crm.source_account_links l ON l.account_id=m.sender_account_id LEFT JOIN crm.profiles p ON p.id=coalesce(m.sender_profile_id,l.profile_id) LEFT JOIN crm.source_accounts a ON a.id=m.sender_account_id WHERE ($1::uuid IS NULL OR c.profile_id=$1) AND ($2::uuid IS NULL OR c.id=$2) AND ($9::text IS NULL OR c.conversation_type=$9) ORDER BY m.occurred_at DESC,m.message_id DESC LIMIT $10")
+    let mut rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',m.message_id,'occurred_at',m.occurred_at,'message_type',m.message_type,'sender_profile_id',coalesce(m.sender_profile_id,l.profile_id),'sender_name',coalesce(p.display_name,a.display_name,nullif(m.sender,'')),'conversation_id',c.id,'conversation_type',c.conversation_type,'text',m.body,'direction',m.direction) FROM crm.conversations c JOIN LATERAL(SELECT * FROM crm.message_search m WHERE m.conversation_id=c.id AND NOT m.tombstone AND ($3::timestamptz IS NULL OR (m.occurred_at,m.message_id)<($3::timestamptz,coalesce($4::uuid,'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid))) AND ($5::text IS NULL OR position(lower($5) in lower(m.body))>0) AND ($6::text IS NULL OR (m.occurred_at>=($6||'-01')::timestamp AT TIME ZONE $7 AND m.occurred_at<(($6||'-01')::timestamp+interval '1 month') AT TIME ZONE $7)) AND ($8::uuid IS NULL OR $3::text IS NOT NULL OR (m.occurred_at,m.message_id)<=(SELECT anchor.occurred_at,anchor.message_id FROM crm.message_search anchor WHERE anchor.message_id=$8 AND anchor.conversation_id=c.id)) ORDER BY m.occurred_at DESC,m.message_id DESC LIMIT $10) m ON true LEFT JOIN crm.source_account_links l ON l.account_id=m.sender_account_id LEFT JOIN crm.profiles p ON p.id=coalesce(m.sender_profile_id,l.profile_id) LEFT JOIN crm.source_accounts a ON a.id=m.sender_account_id WHERE ($1::uuid IS NULL OR c.profile_id=$1) AND ($2::uuid IS NULL OR c.id=$2) AND ($9::text IS NULL OR c.conversation_type=$9) ORDER BY m.occurred_at DESC,m.message_id DESC LIMIT $10")
  .bind(profile).bind(q.conversation_id).bind(q.before).bind(q.before_id).bind(q.q).bind(q.month).bind(timezone).bind(q.message).bind(q.conversation_type).bind(q.limit.unwrap_or(50).clamp(1,100)).fetch_all(&s.pool).await?;
+    // Resolve attachments only after the global message page is bounded.
+    let ids: Vec<Uuid> = rows
+        .iter()
+        .filter_map(|r| r["id"].as_str()?.parse().ok())
+        .collect();
+    let media: Vec<(Uuid,Value)> = sqlx::query_as("SELECT l.entity_id,jsonb_agg(jsonb_build_object('id',a.id,'media_type',a.media_type,'file_name',a.file_name,'byte_length',a.byte_length) ORDER BY l.role,a.id) FROM crm.media_links l JOIN crm.media_assets a ON a.id=l.media_id WHERE l.entity_type='message_event' AND l.entity_id=ANY($1) GROUP BY l.entity_id")
+        .bind(&ids).fetch_all(&s.pool).await?;
+    let media: std::collections::HashMap<_, _> = media.into_iter().collect();
+    let originals: Vec<(Uuid,i64)> = sqlx::query_as(
+        "SELECT e.message_id,coalesce(p.revision,1) FROM crm.legacy_message_evidence e LEFT JOIN crm.legacy_chatlog_projection p ON p.entity_type='message' AND p.entity_id=e.message_id WHERE e.message_id=ANY($1)",
+    )
+    .bind(&ids)
+    .fetch_all(&s.pool)
+    .await?;
+    let originals: std::collections::HashMap<_, _> = originals.into_iter().collect();
+    for row in &mut rows {
+        let id: Uuid = row["id"].as_str().unwrap().parse().unwrap();
+        row["media"] = media.get(&id).cloned().unwrap_or(json!([]));
+        if let Some(revision) = originals.get(&id) {
+            row["citation"] = json!(format!("/evidence/{id}?revision={revision}"));
+        }
+    }
     Ok(Json(json!(rows)))
 }
 async fn months(

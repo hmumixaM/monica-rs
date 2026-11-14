@@ -1,19 +1,12 @@
 "use client";
 
-function readCookie(name: string) {
-  return document.cookie
-    .split("; ")
-    .find((part) => part.startsWith(`${name}=`))
-    ?.slice(name.length + 1);
-}
-
 async function csrfToken() {
-  const existing = readCookie("crm_csrf");
-  if (existing) return existing;
+  // The server selects the installation's cookie namespace. Cookies are shared
+  // across ports, so reading a fixed name can pick up another Monica instance.
   const response = await fetch("/api/v1/auth/csrf", { credentials: "same-origin" });
   if (!response.ok) return "";
   const body = (await response.json()) as { csrf_token?: string };
-  return body.csrf_token ?? readCookie("crm_csrf") ?? "";
+  return body.csrf_token ?? "";
 }
 
 export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {

@@ -15,6 +15,7 @@ export type FeedEvent = {
   provider: string; title: string; occurred_at?: string; summary?: string; cursor: string; media: FeedMedia[]; like_count?: number; comment_count?: number;
 };
 export type EventDetail = {
+  legacy_version_count?: number;
   event_metadata?: EventMetadata; content?: unknown; summary?: string; participants?: { id: string; display_name: string }[]; media?: FeedMedia[];
   interactions?: { id: string; interaction_type: string; author_name?: string; author_profile_id?: string; content?: { text?: string }; media?: FeedMedia[] }[];
   media_reading?: MediaReading | null;

@@ -1,0 +1,41 @@
+# Monica Rust 独立 NAS 部署
+
+本流程只操作新项目 `monica-rs`。旧版 Monica Next 的数据库、运行目录、容器、代理、采集器、授权和调度配置继续保持原样。当前文档描述部署流程；实际验收记录尚未完成。
+
+新配置目录为 `~/docker/monica-rs`，新数据根目录为 `/volume1/docker/monica-rs`。HTTPS 入口为 `https://nas.tailfb022c.ts.net:9444`。数据库不发布主机端口，数据库和服务使用独立内部网络；只有 TLS 代理额外加入本项目的入口网络，以便发布 Tailscale 地址上的 9444 端口。运行容器只挂载新目录。
+
+`infra/nas.compose.yaml` 要求明确提供 Rust、PostgreSQL 和 Caddy 的不可变镜像引用。Rust 镜像从已完成本地技能审查并合并的 main 提交构建。交付记录同时保存源码提交、多架构镜像摘要和 amd64 实际镜像摘要。
+
+NAS 当前内核支持 cpuset 和 CPU shares，不支持 CFS 配额及 pids controller。新服务统一固定在四核中的一个核心，降低调度权重。PostgreSQL、Rust 服务、代理分别限制为 384、384、64 MiB。采集器不部署，模型执行及 OCR 关闭，MCP 初始关闭。安装秘密、控制 token、导入凭据和数据库密码均独立生成。
+
+开始启动服务前，再检查 9444 端口空闲，以及当前内存、磁盘等待和旧版健康状态。用户后续明确取消固定的 1.5 GiB / 五分钟启动条件，要求以 NAS 稳定为准，并允许必要时暂时停止 Monica Next 进行 Rust 测试。先暂停新增复制工作，再逐项启动受内存限制的新服务；出现压力时只停止本次新增任务。若临时停旧版，应记录准确容器 ID 和原运行状态，并在测试后恢复。复制仍使用保守的 768 MiB 保护值，可根据实测资源情况调整。
+
+## 取得和转换副本
+
+1. 记录旧版入口、运行镜像、容器 ID、启动时间、挂载、健康检查及延迟基线。四个数据库逐个运行 `scripts/nas-migration-export.py`，从在线只读事务逻辑备份直接写到 Mac 专用目录。每个库独立记录时间及 SHA-256，分别取得的快照具有不同采样时间。
+2. 在 Mac 专用 PostgreSQL 实例恢复四库。不要复用 Mac 应用的数据库、端口、数据目录或安装秘密。迁移源连接采用只读模式；转换工具要求本机 Unix socket，并核对目标的系统标识、数据库身份及空目标。
+3. 使用 `scripts/legacy-import.py inspect/apply/verify --manifest PATH`。四个源连接放在 `MONICA_LEGACY_{CRM,WECHAT,INSTAGRAM,LINKEDIN}_URL`，目标放在 `MONICA_DATABASE_URL`。安装秘密使用 `MONICA_SESSION_SECRET`；只有源账号存在 TOTP 时才需要临时提供旧安装秘密。不要将秘密放入命令参数或日志。
+4. `monica-server legacy-finalize MIGRATION_UUID` 重建会话统计、月份、摘要侧栏、来源投影基线、人物资料及确定性 Memory 输入。它使用独立管理连接和有界语句期限；原始历史任务保持历史状态。再次运行验证，确认每张表的内容、映射与当前值。
+5. Chatlog 活跃 SQLite 使用 `scripts/nas-migration-copy.py chatlog-db` 创建一致性备份和 SHA-256。源挂载只读，复制后立即释放 WAL 读快照。使用 `scripts/nas-migration-download.py` 取回新目录中的快照，在 Mac 使用 `legacy-chatlog-import.py inspect` 执行完整性检查，然后执行 `apply` 和只读 `verify`。已提交批次需要按修复后的规则重新对账时，使用显式 `reconcile`；它完整扫描冻结副本、保留旧收据和修订，并在独立的小型扫描状态中断点继续。Chatlog 应用完毕还会强制执行第二次确定性结算；会话统计和 Memory 输入未就绪时，不会标记转换完成。不得将一次普通文件复制视作活跃 SQLite 的有效备份。所有 SQLite 表通过固定规则分类；未知文件和表会阻止迁移完成。业务表核对完整扫描数量，历史表在 Rust 中分页归档并逐行复核，授权和可执行运行状态不会安装为有效凭据或队列。
+
+迁移覆盖清单见 [NAS_MIGRATION_COVERAGE.md](NAS_MIGRATION_COVERAGE.md)。未分类表、未解析引用、正文或内容哈希差异会中止转换或验收。Chatlog 的修订保留原消息 ID、原始正文和独立版本；验证既检查原始 CRM 基线，也检查最新快照对应的当前投影。
+
+## 文件及运行隔离
+
+`scripts/nas-migration-copy.py` 只接受明确列出的旧版业务目录。源通过只读 bind mount 进入无网络的临时工作容器。目标、日志、SQLite 进度账本、临时文件和暂停记录全部位于新目录。目录校验拒绝源目标重叠和指向其他目录的符号链接。读取旧目录的临时容器仅获得 DAC_READ_SEARCH 读能力；源挂载仍强制只读。新数据外层根目录保持 root:root、0700；只读 bind mount 内的档案和遥测目录使用可供 UID 10001 读取的权限。下载器通过受限 sudo 命令只读取新目录。
+
+同一时刻只运行一个 NAS 批量任务，初始限速 2 MiB/s。旧版连续健康失败、明显延迟恶化或可用内存跌破门槛时，只停止新增工作。数据库导出只取消独立应用名称对应的导出事务；文件复制只停止具有完全匹配标签的新工作容器。`--resume` 重新检查健康和内存，并保留原暂停记录。
+
+媒体、原始档案、暂存、导出及备份先复制到 `snapshots/monica-next`。Chatlog 数据库独立保存在 `snapshots/chatlog`。运行时媒体目录只放入已登记的内容寻址文件，完整归档位于运行时垃圾回收范围外。禁止从旧目录建立硬链接；新归档到新运行目录可使用独立 inode 的 Btrfs reflink。
+
+`MONICA_COOKIE_PREFIX=monica_rs` 覆盖登录、退出、CSRF、会话管理和 OAuth 会话读取。旧版的 `crm_*` Cookie 保持原样。前端从本服务的 CSRF 接口取得自己的 token。旧会话和采集器令牌只作为脱敏历史保存，不安装为 Rust 的有效凭据。
+
+## 备份与恢复
+
+最终验收通过后，对新 PostgreSQL 做完整逻辑备份，将配置、镜像引用、源码提交和媒体校验清单另存到新备份目录。备份时不包含临时服务凭据、浏览器会话或 Chatlog 全局解密密钥。业务账号的密码哈希保留；TOTP 使用新安装秘密重新加密，因此恢复时应保留 Rust 自己的安装秘密。
+
+恢复到另一个新的 `monica-rs` 数据根目录和独立数据库，将完整逻辑备份恢复到空数据库（备份中已含结构和迁移记录），再使用同一源码版本运行迁移校验，随后恢复文件。核对镜像、迁移校验值、文件哈希和业务对账结果。保持采集及模型执行关闭，完成恢复验收后再开放入口。
+
+回退仅停止新项目，例如在新配置目录使用 `docker-compose -p monica-rs stop`。保留新数据与迁移证据。不要使用 `down -v`，不要清理旧目录或操作旧版 Compose 项目。
+
+SQLite 一致性备份的行为依据其[官方 Online Backup API 文档](https://www.sqlite.org/c3ref/backup_finish.html)。NAS 上的备份负责一致性和字节记录；完整 `quick_check` 在独立 Mac 副本完成后，才能进入业务导入。

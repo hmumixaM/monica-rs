@@ -7,6 +7,7 @@ mod connections;
 mod faces;
 mod import_status;
 mod imports;
+mod legacy;
 mod linking;
 mod mcp;
 mod media;
@@ -49,28 +50,7 @@ enum Command {
     },
     /// Explicitly initialize optional WAL audit (requires wal_level=logical).
     CdcInitialize,
-    Serve {
-        #[arg(long, default_value = "127.0.0.1:17494")]
-        listen: SocketAddr,
-        #[arg(long, env = "MONICA_SESSION_SECRET", hide_env_values = true)]
-        session_secret: String,
-        #[arg(long, env = "MONICA_ORIGIN")]
-        origin: Option<String>,
-        #[arg(
-            long,
-            env = "MONICA_MEDIA_ROOT",
-            default_value = ".local-validation/media"
-        )]
-        media_root: PathBuf,
-        #[arg(long, env = "MONICA_WEB_ROOT")]
-        web_root: Option<PathBuf>,
-        #[arg(long, env = "MONICA_IMPORT_HMAC_SECRET", hide_env_values = true)]
-        import_hmac_secret: Option<String>,
-        #[arg(long, env = "MONICA_CONTROL_TOKEN", hide_env_values = true)]
-        control_token: Option<String>,
-        #[arg(long, env = "MONICA_START_PAUSED", default_value_t = false)]
-        start_paused: bool,
-    },
+    Serve(Box<ServeArgs>),
     Ingest {
         file: PathBuf,
     },
@@ -79,6 +59,42 @@ enum Command {
         file: PathBuf,
     },
     Drain,
+    /// Settle deterministic projections in a dedicated offline migration database.
+    LegacyFinalize {
+        migration_id: uuid::Uuid,
+        #[arg(long, env = "MONICA_MIGRATION_STATEMENT_TIMEOUT_SECONDS", default_value_t = 1800,
+            value_parser = clap::value_parser!(u32).range(1..=86_400))]
+        statement_timeout_seconds: u32,
+    },
+}
+#[derive(clap::Args)]
+struct ServeArgs {
+    #[arg(long, default_value = "127.0.0.1:17494")]
+    listen: SocketAddr,
+    #[arg(long, env = "MONICA_SESSION_SECRET", hide_env_values = true)]
+    session_secret: String,
+    #[arg(long, env = "MONICA_COOKIE_PREFIX", default_value = "crm")]
+    cookie_prefix: String,
+    #[arg(long, env = "MONICA_ORIGIN")]
+    origin: Option<String>,
+    #[arg(
+        long,
+        env = "MONICA_MEDIA_ROOT",
+        default_value = ".local-validation/media"
+    )]
+    media_root: PathBuf,
+    #[arg(long, env = "MONICA_LEGACY_ARCHIVE_ROOT")]
+    legacy_archive_root: Option<PathBuf>,
+    #[arg(long, env = "MONICA_LEGACY_MIGRATION_ROOT")]
+    legacy_migration_root: Option<PathBuf>,
+    #[arg(long, env = "MONICA_WEB_ROOT")]
+    web_root: Option<PathBuf>,
+    #[arg(long, env = "MONICA_IMPORT_HMAC_SECRET", hide_env_values = true)]
+    import_hmac_secret: Option<String>,
+    #[arg(long, env = "MONICA_CONTROL_TOKEN", hide_env_values = true)]
+    control_token: Option<String>,
+    #[arg(long, env = "MONICA_START_PAUSED", default_value_t = false)]
+    start_paused: bool,
 }
 #[derive(Clone)]
 struct Readiness {
@@ -137,6 +153,17 @@ async fn run() -> Result<()> {
         pool.close().await;
         return result;
     }
+    if let Command::LegacyFinalize {
+        migration_id,
+        statement_timeout_seconds,
+    } = &args.command
+    {
+        let pool = DatabasePools::connect_migration(&args.database_url, *statement_timeout_seconds)
+            .await?;
+        let result = legacy::finalize(&pool, *migration_id).await;
+        pool.close().await;
+        return result;
+    }
     let pools = DatabasePools::connect(&args.database_url, Default::default()).await?;
     let pool = pools.interactive.clone();
     match args.command {
@@ -160,20 +187,27 @@ async fn run() -> Result<()> {
                 monica_core::messages::finish(&pool, &lease, &snapshot).await?;
             }
         }
+        Command::LegacyFinalize { .. } => {
+            unreachable!("offline settlement precedes request pool initialization")
+        }
         Command::AppendMessages { provider, file } => {
             let provider = serde_json::from_value(serde_json::Value::String(provider))?;
             append_file(&pool, provider, file).await?;
         }
-        Command::Serve {
-            listen,
-            session_secret,
-            origin,
-            media_root,
-            web_root,
-            import_hmac_secret,
-            control_token,
-            start_paused,
-        } => {
+        Command::Serve(options) => {
+            let ServeArgs {
+                listen,
+                session_secret,
+                cookie_prefix,
+                origin,
+                media_root,
+                legacy_archive_root,
+                legacy_migration_root,
+                web_root,
+                import_hmac_secret,
+                control_token,
+                start_paused,
+            } = *options;
             let mut state = auth::AppState::new(
                 pool.clone(),
                 &session_secret,
@@ -181,6 +215,9 @@ async fn run() -> Result<()> {
                 media_root,
             )
             .await?;
+            state.configure_cookie_prefix(&cookie_prefix)?;
+            state.legacy_archive_root = legacy_archive_root;
+            state.legacy_migration_root = legacy_migration_root;
             state.aggregate_pool = pools.background.clone();
             state.import_hmac_secret = import_hmac_secret.filter(|secret| !secret.is_empty());
             if let Some(secret) = &state.import_hmac_secret {
