@@ -17,6 +17,7 @@ mod profiles;
 mod runtime;
 mod timeline;
 mod web;
+mod wechat_images;
 use anyhow::Result;
 use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::get};
 use clap::{Parser, Subcommand};

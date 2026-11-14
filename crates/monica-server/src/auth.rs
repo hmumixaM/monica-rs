@@ -231,6 +231,7 @@ pub fn routes(state: AppState) -> Router {
         .merge(crate::profiles::routes())
         .merge(crate::media::routes())
         .merge(crate::imports::routes())
+        .merge(crate::wechat_images::routes())
         .merge(crate::linking::routes())
         .merge(crate::messages::routes())
         .merge(crate::timeline::routes())
