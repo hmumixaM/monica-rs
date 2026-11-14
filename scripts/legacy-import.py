@@ -34,7 +34,7 @@ DIRECT = {
     "tag_memberships": "tag_memberships", "tag_membership_removals": "tag_membership_removals",
     "media_links": "media_links",
     "activities": "activities", "activity_participants": "activity_participants",
-
+    
     "faces": "faces", "face_scans": "face_scans", "image_ocr_readings": "image_ocr_readings",
     "profile_suggestion_decisions": "profile_suggestion_decisions",
     "community_names": "community_names", "linkedin_collection_targets": "linkedin_collection_targets",
@@ -552,7 +552,7 @@ class Importer:
         if table in ("profile_field_revisions", "profile_address_revisions", "profile_employment_revisions", "profile_education_revisions"):
             keys = ["revision_seq"]
         while processed < entry["rows"]:
-            if self.space_path and shutil.disk_usage(self.space_path).free<21*1024**3:
+            if not self.verifying and self.space_path and shutil.disk_usage(self.space_path).free<21*1024**3:
                 raise RuntimeError("Mac free-space floor reached; resume committed batches later")
             attach_body=not self.metadata_only and store=="crm" and table=="message_events"
             attach_time=not self.metadata_only and store!="crm" and table=="revisions"
@@ -631,6 +631,7 @@ def main():
         if manifest != inspect_sources(sources):
             raise RuntimeError("offline source copies changed after inspection")
         with psycopg.connect(os.environ["MONICA_DATABASE_URL"],autocommit=True) as target:
+            if args.action=='verify':target.execute('SET default_transaction_read_only=on')
             importer=Importer(sources,target,manifest)
             importer.space_path=args.manifest.resolve().parent
             if args.action in {"apply","metadata"}:

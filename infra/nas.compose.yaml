@@ -24,8 +24,8 @@ services:
       driver: json-file
       options: {max-size: 10m, max-file: '3'}
   server:
-    image: ${MONICA_IMAGE:?Set the reviewed Rust image digest}
     group_add: ['10001']
+    image: ${MONICA_IMAGE:?Set the reviewed Rust image digest}
     environment:
       MONICA_DATABASE_URL: postgresql://monica_rust:${MONICA_DB_PASSWORD}@postgres/monica_rust
       MONICA_SESSION_SECRET: ${MONICA_SESSION_SECRET:?Set a new installation secret}
@@ -68,7 +68,9 @@ services:
       - ./certs:/certs:ro
       - ${MONICA_RUST_DATA_ROOT}/proxy-data:/data
       - ${MONICA_RUST_DATA_ROOT}/proxy-config:/config
-    networks: [isolated]
+    # Docker does not publish host ports for an exclusively internal bridge.
+    # Only the TLS proxy joins this second, project-owned ingress network.
+    networks: [isolated, ingress]
     mem_limit: 64m
     cpuset: '${MONICA_CPUSET:-3}'
     cpu_shares: 64
@@ -79,3 +81,4 @@ services:
 networks:
   isolated:
     internal: true
+  ingress: {}

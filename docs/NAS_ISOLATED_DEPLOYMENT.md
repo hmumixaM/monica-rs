@@ -2,7 +2,7 @@
 
 本流程只操作新项目 `monica-rs`。旧版 Monica Next 的数据库、运行目录、容器、代理、采集器、授权和调度配置继续保持原样。当前文档描述部署流程；实际验收记录尚未完成。
 
-新配置目录为 `~/docker/monica-rs`，新数据根目录为 `/volume1/docker/monica-rs`。HTTPS 入口为 `https://nas.tailfb022c.ts.net:9444`。数据库不发布主机端口，三项服务使用独立内部网络。运行容器只挂载新目录。
+新配置目录为 `~/docker/monica-rs`，新数据根目录为 `/volume1/docker/monica-rs`。HTTPS 入口为 `https://nas.tailfb022c.ts.net:9444`。数据库不发布主机端口，数据库和服务使用独立内部网络；只有 TLS 代理额外加入本项目的入口网络，以便发布 Tailscale 地址上的 9444 端口。运行容器只挂载新目录。
 
 `infra/nas.compose.yaml` 要求明确提供 Rust、PostgreSQL 和 Caddy 的不可变镜像引用。Rust 镜像从已完成本地技能审查并合并的 main 提交构建。交付记录同时保存源码提交、多架构镜像摘要和 amd64 实际镜像摘要。
 
@@ -16,7 +16,7 @@ NAS 当前内核支持 cpuset 和 CPU shares，不支持 CFS 配额及 pids cont
 2. 在 Mac 专用 PostgreSQL 实例恢复四库。不要复用 Mac 应用的数据库、端口、数据目录或安装秘密。迁移源连接采用只读模式；转换工具要求本机 Unix socket，并核对目标的系统标识、数据库身份及空目标。
 3. 使用 `scripts/legacy-import.py inspect/apply/verify --manifest PATH`。四个源连接放在 `MONICA_LEGACY_{CRM,WECHAT,INSTAGRAM,LINKEDIN}_URL`，目标放在 `MONICA_DATABASE_URL`。安装秘密使用 `MONICA_SESSION_SECRET`；只有源账号存在 TOTP 时才需要临时提供旧安装秘密。不要将秘密放入命令参数或日志。
 4. `monica-server legacy-finalize MIGRATION_UUID` 重建会话统计、月份、摘要侧栏、来源投影基线、人物资料及确定性 Memory 输入。它使用独立管理连接和有界语句期限；原始历史任务保持历史状态。再次运行验证，确认每张表的内容、映射与当前值。
-5. Chatlog 活跃 SQLite 使用 `scripts/nas-migration-copy.py chatlog-db` 创建一致性备份和 SHA-256。源挂载只读，复制后立即释放 WAL 读快照。使用 `scripts/nas-migration-download.py` 取回新目录中的快照，在 Mac 使用 `legacy-chatlog-import.py inspect` 执行完整性检查，然后执行 `apply` 和只读 `verify`。Chatlog 应用完毕还会强制执行第二次确定性结算；会话统计和 Memory 输入未就绪时，不会标记转换完成。不得将一次普通文件复制视作活跃 SQLite 的有效备份。
+5. Chatlog 活跃 SQLite 使用 `scripts/nas-migration-copy.py chatlog-db` 创建一致性备份和 SHA-256。源挂载只读，复制后立即释放 WAL 读快照。使用 `scripts/nas-migration-download.py` 取回新目录中的快照，在 Mac 使用 `legacy-chatlog-import.py inspect` 执行完整性检查，然后执行 `apply` 和只读 `verify`。已提交批次需要按修复后的规则重新对账时，使用显式 `reconcile`；它完整扫描冻结副本、保留旧收据和修订，并在独立的小型扫描状态中断点继续。Chatlog 应用完毕还会强制执行第二次确定性结算；会话统计和 Memory 输入未就绪时，不会标记转换完成。不得将一次普通文件复制视作活跃 SQLite 的有效备份。所有 SQLite 表通过固定规则分类；未知文件和表会阻止迁移完成。业务表核对完整扫描数量，历史表在 Rust 中分页归档并逐行复核，授权和可执行运行状态不会安装为有效凭据或队列。
 
 迁移覆盖清单见 [NAS_MIGRATION_COVERAGE.md](NAS_MIGRATION_COVERAGE.md)。未分类表、未解析引用、正文或内容哈希差异会中止转换或验收。Chatlog 的修订保留原消息 ID、原始正文和独立版本；验证既检查原始 CRM 基线，也检查最新快照对应的当前投影。
 
@@ -44,4 +44,4 @@ Chatlog apply 在标记转换完成前自动调用 Rust `legacy-finalize`，刷�
 
 后续本地 Chatlog 快照中消失的行只形成 `snapshot_record_absent` 差异证据。快照缺失不能证明上游删除，因此历史消息、联系人和动态仍保留；显式撤回通知继续按原有版本化路径处理。
 
-Reader 的本地进度与 ACK 绑定到具体目标 PostgreSQL 实例、数据库及来源身份。换目标或使用没有目标回执的旧状态目录时，需指定新 `--state` 目录，避免将另一份副本的已读进度当作当前目标已入库的证明。
+Reader 的本地进度与 ACK 绑定到具体目标 PostgreSQL 实例、数据库及来源身份。换目标时需指定新 `--state` 目录。旧状态只有在每条 ACK 均能在当前目标库找到匹配提交收据时才允许补建目标绑定，避免将另一份副本的已读进度当作当前目标已入库的证明。

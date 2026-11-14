@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest import mock
+from unittest.mock import patch
 import uuid
 
 import psycopg
@@ -24,6 +25,7 @@ ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location("legacy_import",ROOT/"scripts/legacy-import.py")
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 PG=Path(os.environ.get("MONICA_PG_BIN","/opt/homebrew/opt/postgresql@16/bin"))
+SERVER=Path(os.environ.get("MONICA_TEST_SERVER",str(ROOT/"target/debug/monica-server")))
 OLD="synthetic-old-installation-secret-at-least32"
 NEW="synthetic-new-installation-secret-at-least32"
 U=lambda value:str(uuid.uuid5(uuid.NAMESPACE_URL,"synthetic-legacy:"+value))
@@ -81,10 +83,11 @@ class MigrationContract(unittest.TestCase):
         os.environ.pop("MONICA_LEGACY_WECHAT_SELF_ID",None)
         os.environ["MONICA_LEGACY_SESSION_SECRET"]=OLD
         os.environ["MONICA_SESSION_SECRET"]=NEW
+        os.environ["MONICA_LEGACY_FINALIZER"]=str(SERVER.resolve(strict=True))
         self.target_name="monica_rust_"+self.suffix
         self.admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(self.target_name)))
         url=f"postgresql:///{self.target_name}?host={self.folder}"
-        subprocess.run([str(ROOT/"target/debug/monica-server"),"--database-url",url,"migrate"],check=True,stdout=subprocess.DEVNULL)
+        subprocess.run([str(SERVER),"--database-url",url,"migrate"],check=True,stdout=subprocess.DEVNULL)
         self.target=psycopg.connect(url,autocommit=True)
         self.addCleanup(self.target.close)
         c=self.writers["crm"]
@@ -144,11 +147,15 @@ class MigrationContract(unittest.TestCase):
         self.assertEqual(cipher.decrypt(encrypted.encode()),b"synthetic-totp-value")
         self.assertEqual(self.target.execute("SELECT event_id,version FROM wechat.observations ORDER BY event_id").fetchall(),[("event:1",1),("event:2",2),("event:3",3)])
         self.assertEqual(m.inspect_sources(self.sources),manifest)
-        subprocess.run([str(ROOT/"target/debug/monica-server"),"--database-url",f"postgresql:///{self.target_name}?host={self.folder}","legacy-finalize",str(importer.id)],check=True,stdout=subprocess.DEVNULL)
+        subprocess.run([str(SERVER),"--database-url",f"postgresql:///{self.target_name}?host={self.folder}","legacy-finalize",str(importer.id)],check=True,stdout=subprocess.DEVNULL)
         self.assertEqual(self.target.execute("SELECT message_count FROM crm.conversations").fetchone()[0],1)
         self.assertEqual(self.target.execute("SELECT message_count FROM crm.conversation_summaries").fetchone()[0],1)
         self.assertEqual(self.target.execute("SELECT status FROM crm.platform_link_decisions").fetchone()[0],"confirmed")
-        importer.verifying=True;importer.apply()
+        importer.verifying=True;importer.space_path=self.folder
+        self.target.execute('SET default_transaction_read_only=on')
+        try:
+            with patch.object(m.shutil,'disk_usage',return_value=type('Disk',(),{'free':0})()):importer.apply()
+        finally:self.target.execute('SET default_transaction_read_only=off')
         self.target.execute("UPDATE crm.field_revisions SET value='\"changed\"' WHERE id=%s",(U("revision"),))
         with self.assertRaisesRegex(RuntimeError,"content mismatch"):
             importer.apply()
@@ -172,9 +179,11 @@ class MigrationContract(unittest.TestCase):
         spec=importlib.util.spec_from_file_location("chatlog_import",ROOT/"scripts/legacy-chatlog-import.py")
         chatlog=importlib.util.module_from_spec(spec);spec.loader.exec_module(chatlog)
         os.environ["MONICA_LEGACY_WECHAT_SELF_ID"]="synthetic-self"
+        self.target.execute("SET TIME ZONE 'America/Chicago'")
+        self.writers["crm"].execute("UPDATE content_objects SET payload_json=%s",(Jsonb('Original value'),))
         self.writers["crm"].execute("UPDATE message_search SET body='Original value'")
         manifest=m.inspect_sources(self.sources);original=m.Importer(self.sources,self.target,manifest);original.apply()
-        subprocess.run([str(ROOT/"target/debug/monica-server"),"--database-url",f"postgresql:///{self.target_name}?host={self.folder}","legacy-finalize",str(original.id)],check=True,stdout=subprocess.DEVNULL)
+        subprocess.run([str(SERVER),"--database-url",f"postgresql:///{self.target_name}?host={self.folder}","legacy-finalize",str(original.id)],check=True,stdout=subprocess.DEVNULL)
         snapshots=self.folder/("chatlog-"+self.suffix);(snapshots/"contact").mkdir(parents=True);(snapshots/"message").mkdir();(snapshots/"sns").mkdir()
         with closing(sqlite3.connect(snapshots/"contact/contact.db")) as db,db:
             db.execute("CREATE TABLE contact(username TEXT,remark TEXT,nick_name TEXT,local_type INTEGER)")
@@ -188,6 +197,9 @@ class MigrationContract(unittest.TestCase):
             db.execute("CREATE TABLE Name2Id(user_name TEXT)");db.execute("INSERT INTO Name2Id VALUES('synthetic-account')")
             db.execute(f"CREATE TABLE {table}(local_id INTEGER PRIMARY KEY,server_id INTEGER,create_time INTEGER,local_type TEXT,real_sender_id INTEGER,message_content TEXT,compress_content BLOB)")
             db.executemany(f"INSERT INTO {table} VALUES(?,?,?,'text',1,?,NULL)",[(1,7,1577836800,"Original value"),(2,8,1577836801,"Additional snapshot message")])
+            from datetime import datetime
+            fold=int(datetime.fromisoformat('2026-11-01T06:06:24+00:00').timestamp())
+            db.execute(f"INSERT INTO {table} VALUES(60,120,?,'text',1,'DST fold message',NULL)",(fold,))
         with closing(sqlite3.connect(snapshots/"sns/sns.db")) as db,db:
             db.execute("CREATE TABLE SnsTimeLine(tid INTEGER PRIMARY KEY,user_name TEXT,content TEXT)")
             xml='<SnsObject><TimelineObject><id>synthetic-canonical-post</id><username>synthetic-account</username><createTime>1577836800</createTime><contentDesc>Original snapshot post</contentDesc></TimelineObject><LocalExtraInfo><comment_user_list><user_comment><username>synthetic-account</username><nickname>Synthetic author</nickname><comment_64id>99</comment_64id><content>Original comment</content><create_time>1577836801</create_time></user_comment></comment_user_list></LocalExtraInfo></SnsObject>'
@@ -198,12 +210,12 @@ class MigrationContract(unittest.TestCase):
         # the 20 GiB reserve required for real personal-history migration.
         space_floor=mock.patch.object(chatlog,"FLOOR",1024**2)
         space_floor.start();self.addCleanup(space_floor.stop)
-        def run(source,state,verify=False):
+        def run(source,state,verify=False,reconcile=False):
             state.mkdir(exist_ok=True)
-            if not verify:chatlog.bind_reader_target(self.target,state,"synthetic-self")
             current=chatlog.inspect(source,"synthetic-self")
-            target=chatlog.Importer(self.target,current,verify)
-            scan=chatlog.reader.Reader(state,source,"synthetic-self",chatlog.atomic,lambda path:json.loads(Path(path).read_text()),own_id="synthetic-self",allow_unknown_source_sender=True)
+            target=chatlog.Importer(self.target,current,verify,reconcile)
+            if not verify:chatlog.bind_reader_target(self.target,state,"synthetic-self",target.id)
+            scan=chatlog.reader.Reader(state,source,"synthetic-self",chatlog.atomic,lambda path:json.loads(Path(path).read_text()),own_id="synthetic-self",allow_unknown_source_sender=True,immutable_scan=verify or reconcile)
             frames=[]
             def emit(frame):
                 target.page(frame);target.page(frame) if not verify else None
@@ -212,15 +224,15 @@ class MigrationContract(unittest.TestCase):
             try:
                 while scan.step(emit):pass
                 target.archive_tables(source,scan)
-                target.finish(ROOT/"target/debug/monica-server")
+                target.finish(SERVER)
             finally:scan.close()
             return current,frames
         current,frames=run(snapshots,self.folder/("chatlog-state-"+self.suffix))
-        self.assertEqual(self.target.execute("SELECT count(*) FROM crm.message_search").fetchone()[0],2)
+        self.assertEqual(self.target.execute("SELECT count(*) FROM crm.message_search").fetchone()[0],3)
         self.assertEqual(self.target.execute("SELECT count(*) FROM crm.timeline_events").fetchone()[0],1)
         self.assertEqual(self.target.execute("SELECT external_id FROM crm.timeline_events").fetchone()[0],'synthetic-canonical-post')
         self.assertEqual(self.target.execute("SELECT content->>'text' FROM crm.social_interactions").fetchone()[0],'Original comment')
-        self.assertEqual(self.target.execute("SELECT sum(records) FROM crm.legacy_chatlog_pages").fetchone()[0],4)
+        self.assertEqual(self.target.execute("SELECT sum(records) FROM crm.legacy_chatlog_pages").fetchone()[0],5)
         self.assertEqual(self.target.execute("SELECT count(*) FROM crm.legacy_chatlog_history WHERE table_name='contact_label'").fetchone()[0],205)
         archived=self.target.execute("SELECT payload FROM crm.legacy_chatlog_history WHERE table_name='contact_label' AND row_key=1").fetchone()[0]
         self.assertEqual(base64.b64decode(archived['value']['sqlite_text_utf8_base64']),b'Text with NUL\x00'+ '多'.encode())
@@ -244,17 +256,56 @@ class MigrationContract(unittest.TestCase):
         with closing(sqlite3.connect(later/"sns/sns.db")) as db,db:db.execute("UPDATE SnsTimeLine SET content=replace(replace(content,'Original snapshot post','Updated snapshot post'),'Original comment','Updated comment')")
         latest,frames=run(later,self.folder/("chatlog-later-state-"+self.suffix))
         self.assertEqual(self.target.execute("SELECT body FROM crm.message_search WHERE message_id=%s",(U("message"),)).fetchone()[0],"Corrected snapshot message")
-        self.assertEqual(self.target.execute("SELECT count(*) FROM crm.message_search").fetchone()[0],6)
+        self.assertEqual(self.target.execute("SELECT count(*) FROM crm.message_search").fetchone()[0],7)
         self.assertEqual(self.target.execute("SELECT count(*) FROM crm.message_search WHERE tombstone").fetchone()[0],1)
         self.assertEqual(self.target.execute("SELECT sender FROM crm.message_search WHERE body='Additional snapshot message'").fetchone()[0],'synthetic-other-sender')
-        self.assertEqual(self.target.execute("SELECT message_count,last_message_preview FROM crm.conversations").fetchone(),(5,'Video with source sender absent'))
+        self.assertEqual(self.target.execute("SELECT message_count,last_message_preview FROM crm.conversations").fetchone(),(6,'DST fold message'))
         self.assertEqual(self.target.execute("SELECT count(*) FROM crm.legacy_chatlog_issues WHERE status='source_missing'").fetchone()[0],4)
         self.assertEqual(self.target.execute("SELECT direction,sender_account_id FROM crm.message_search WHERE body='Video with source sender absent'").fetchone(),('unknown',None))
         self.assertEqual(self.target.execute("SELECT direction,sender_account_id FROM crm.message_search WHERE message_id=%s",(U('message'),)).fetchone(),('received',uuid.UUID(U('account'))))
         self.assertEqual(self.target.execute("SELECT content->>'text' FROM crm.social_interactions").fetchone()[0],'Updated comment')
         self.assertEqual(self.target.execute("SELECT original_row->>'body',revision FROM crm.legacy_chatlog_projection WHERE entity_type='message' AND entity_id=%s",(U("message"),)).fetchone(),("Original value",2))
-        self.assertEqual(self.target.execute("SELECT c.payload_json->>'text' FROM crm.legacy_message_evidence e JOIN crm.content_objects c ON c.id=e.content_object_id WHERE e.message_id=%s",(U("message"),)).fetchone()[0],"Original value")
+        self.assertEqual(self.target.execute("SELECT c.payload_json FROM crm.legacy_message_evidence e JOIN crm.content_objects c ON c.id=e.content_object_id WHERE e.message_id=%s",(U("message"),)).fetchone()[0],"Original value")
         original.verifying=True;original.apply()
+        # A successful old receipt must not prevent an explicit correction of
+        # an older projection. Preserve counts and immutable original evidence.
+        counts=self.target.execute('SELECT records,inserted FROM crm.legacy_chatlog_snapshots WHERE id=%s',(chatlog.Importer(self.target,latest).id,)).fetchone()
+        # A different target, including a recreated database with the same
+        # name, cannot inherit another database's already acknowledged cursors.
+        other_name='monica_rust_other_'+self.suffix
+        self.admin.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(other_name)))
+        other_url=f'postgresql:///{other_name}?host={self.folder}'
+        subprocess.run([str(SERVER),'--database-url',other_url,'migrate'],check=True,stdout=subprocess.DEVNULL)
+        state_a=self.folder/('chatlog-later-state-'+self.suffix)
+        chatlog.bind_state(self.target,state_a,chatlog.Importer(self.target,latest).id)
+        state_b=self.folder/('other-state-'+self.suffix);state_b.mkdir()
+        reconcile_only=self.folder/('old-reconcile-only-'+self.suffix);reconcile_only.mkdir()
+        shutil.copytree(state_a/'raw',reconcile_only/'reconcile/raw')
+        shutil.copyfile(state_a/'target.json',reconcile_only/'target.json')
+        with psycopg.connect(other_url,autocommit=True) as other:
+            with self.assertRaisesRegex(ValueError,'another target'):
+                chatlog.bind_reader_target(other,reconcile_only,'synthetic-self',chatlog.Importer(self.target,latest).id)
+            self.assertFalse((reconcile_only/'chatlog-target.json').exists())
+            with self.assertRaisesRegex(ValueError,'another target'):
+                chatlog.bind_state(other,state_a,chatlog.Importer(self.target,latest).id)
+            legacy_state=self.folder/('unbound-state-'+self.suffix)
+            shutil.copytree(state_a,legacy_state);(legacy_state/'target.json').unlink()
+            with self.assertRaisesRegex(ValueError,'matching target receipts'):
+                chatlog.bind_state(other,legacy_state,chatlog.Importer(self.target,latest).id)
+            chatlog.bind_state(other,state_b,chatlog.Importer(self.target,latest).id)
+        chatlog.bind_reader_target(self.target,reconcile_only,'synthetic-self',chatlog.Importer(self.target,latest).id)
+        self.assertTrue((reconcile_only/'chatlog-target.json').is_file())
+        self.admin.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(other_name)))
+        self.admin.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(other_name)))
+        with psycopg.connect(other_url,autocommit=True) as other:
+            with self.assertRaisesRegex(ValueError,'another target'):
+                chatlog.bind_state(other,state_b,chatlog.Importer(self.target,latest).id)
+        self.target.execute("UPDATE crm.message_search SET sender='synthetic-old-attribution' WHERE body='Additional snapshot message'")
+        run(later,self.folder/('replay-old-receipt-'+self.suffix))
+        self.assertEqual(self.target.execute("SELECT sender FROM crm.message_search WHERE body='Additional snapshot message'").fetchone()[0],'synthetic-old-attribution')
+        run(later,self.folder/('reconcile-old-receipt-'+self.suffix),reconcile=True)
+        self.assertEqual(self.target.execute("SELECT sender FROM crm.message_search WHERE body='Additional snapshot message'").fetchone()[0],'synthetic-other-sender')
+        self.assertEqual(self.target.execute('SELECT records,inserted FROM crm.legacy_chatlog_snapshots WHERE id=%s',(chatlog.Importer(self.target,latest).id,)).fetchone(),counts)
         self.target.execute("SET default_transaction_read_only=on")
         try:run(later,self.folder/("chatlog-verify-state-"+self.suffix),verify=True)
         finally:self.target.execute("SET default_transaction_read_only=off")
@@ -281,7 +332,7 @@ class MigrationContract(unittest.TestCase):
         self.target.execute("UPDATE crm.conversations SET message_count=message_count+1")
         with self.assertRaisesRegex(ValueError,'summaries are not settled'):
             run(corrected,self.folder/("chatlog-stale-summary-"+self.suffix),verify=True)
-        new_importer.verifying=False;new_importer.finish(ROOT/"target/debug/monica-server")
+        new_importer.verifying=False;new_importer.finish(SERVER)
         # Target identities fence persisted ACKs, even for copies with the same
         # immutable migration manifest. Only local state is modified here.
         policy_path=self.folder/("chatlog-corrected-state-"+self.suffix)/"chatlog-target.json"

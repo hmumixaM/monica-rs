@@ -128,10 +128,11 @@ def post(row):
     return dict(parsed,external_id='post:'+external,kind='post',body=parsed['text'],occurred_at=at.isoformat(),participants=people,raw_content=raw,coordinate_format='chatlog_sns_xml')
 
 class Reader:
-    def __init__(self,root,snapshots,account,atomic_document,load_json,own_id=None,allow_unknown_source_sender=False):
+    def __init__(self,root,snapshots,account,atomic_document,load_json,own_id=None,allow_unknown_source_sender=False,immutable_scan=False):
         if not root.is_absolute() or not snapshots.is_absolute() or not account or len(account)>1024:raise ValueError('Explicit Chatlog snapshot root and account anchor required')
         self.root=root.resolve(strict=True);self.snapshots=snapshots.resolve(strict=True);self.account=account;self.own_id=own_id
         self.allow_unknown_source_sender=allow_unknown_source_sender
+        self.immutable_scan=immutable_scan
         self.atomic=atomic_document;self.load=load_json
         digest=hashlib.sha256(account.encode()).hexdigest();self.folder=self.root/'raw/wechat'/digest;self.folder.mkdir(parents=True,exist_ok=True)
         if not self.folder.resolve().is_relative_to(self.root):raise ValueError('Chatlog state escapes data root')
@@ -144,6 +145,11 @@ class Reader:
         CREATE INDEX IF NOT EXISTS names_digest ON names(file,digest);
         CREATE TABLE IF NOT EXISTS pending(id INTEGER PRIMARY KEY CHECK(id=1),frame TEXT,change TEXT);
         CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT);''')
+        self.db.execute('CREATE TABLE IF NOT EXISTS scan_counts(file TEXT,table_name TEXT,records INTEGER NOT NULL,PRIMARY KEY(file,table_name))')
+        mode=self.db.execute("SELECT value FROM meta WHERE key='immutable_scan'").fetchone()
+        if mode and mode[0]!=str(int(immutable_scan)):raise ValueError('Chatlog scan policy changed; use a distinct state directory')
+        if not mode and immutable_scan and self.db.execute('SELECT 1 FROM files LIMIT 1').fetchone():raise ValueError('immutable scan requires its own state directory')
+        self.db.execute("INSERT OR IGNORE INTO meta VALUES('immutable_scan',?)",(str(int(immutable_scan)),))
         previous=self.db.execute("SELECT value FROM meta WHERE key='own_id'").fetchone()
         policy=own_id or ''
         if previous and previous[0]!=policy:raise ValueError('Chatlog self identity changed; use a distinct account anchor')
@@ -152,10 +158,20 @@ class Reader:
         self.db.close();self.guard.close()
     def apply(self,change):
         with self.db:
-            for row in change['known']:
-                self.db.execute('INSERT INTO known VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(file,table_name,row_id) DO UPDATE SET external=excluded.external,hash=excluded.hash,cycle=excluded.cycle,deleted=excluded.deleted,context=excluded.context',row)
+            if self.immutable_scan:
+                counts={}
+                for row in change['known']:counts[(row[0],row[1])]=counts.get((row[0],row[1]),0)+1
+                for (file,table),count in counts.items():self.db.execute('INSERT INTO scan_counts VALUES(?,?,?) ON CONFLICT(file,table_name) DO UPDATE SET records=scan_counts.records+excluded.records',(file,table,count))
+            else:
+                for row in change['known']:
+                    self.db.execute('INSERT INTO known VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(file,table_name,row_id) DO UPDATE SET external=excluded.external,hash=excluded.hash,cycle=excluded.cycle,deleted=excluded.deleted,context=excluded.context',row)
             f=change['file'];self.db.execute('UPDATE files SET table_name=?,row_id=?,phase=?,done=?,served=? WHERE name=? AND cycle=?',(f['table_name'],f['row_id'],f['phase'],f['done'],f['served'],f['name'],f['cycle']))
             self.db.execute('DELETE FROM pending')
+    def count_records(self,file,table):
+        if self.immutable_scan:
+            row=self.db.execute('SELECT records FROM scan_counts WHERE file=? AND table_name=?',(file,table)).fetchone()
+            return row[0] if row else 0
+        return self.db.execute('SELECT count(*) FROM known WHERE file=? AND table_name=? AND NOT deleted',(file,table)).fetchone()[0]
     def pending(self,emit):
         pending=self.db.execute('SELECT frame,change FROM pending').fetchone()
         if not pending:return False
@@ -171,6 +187,7 @@ class Reader:
         for path in sorted(found):
             safe_file(self.snapshots,path);name=path.relative_to(self.snapshots).as_posix();current=stamp(path)
             row=self.db.execute('SELECT * FROM files WHERE name=?',(name,)).fetchone()
+            if self.immutable_scan and row and row['stamp']!=current:raise ValueError('frozen Chatlog input changed')
             if row and (not row['done'] or row['stamp']==current):continue
             # ExportDatabase installs a standalone consistent SQLite by rename.
             # Pin that inode so another export cannot shift an active scan.
