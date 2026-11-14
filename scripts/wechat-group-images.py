@@ -381,7 +381,10 @@ class Worker:
             # Acquire row locks in a separate statement. After waiting for a
             # projector, a joined locking SELECT can retain old outer-join
             # payloads via EvalPlanQual. The next statement needs a fresh snapshot.
-            self.db.execute("SELECT m.message_id FROM crm.message_search m JOIN crm.conversations c ON c.id=m.conversation_id WHERE m.message_id=%s AND c.account=%s FOR SHARE OF m,c", (mid, self.args.account)).fetchone()
+            # The projector locks conversation before message. Only the message
+            # is needed here: image/raw/lifecycle/position changes write it in
+            # the same transaction. Do not introduce the reverse m -> c order.
+            self.db.execute("SELECT message_id FROM crm.message_search WHERE message_id=%s FOR SHARE", (mid,)).fetchone()
             current = self.db.execute(CURRENT + ' AND m.message_id=%s', (self.args.account, mid)).fetchone()
             if current != row:
                 state, q, asset = 'source_changed', 'none', None

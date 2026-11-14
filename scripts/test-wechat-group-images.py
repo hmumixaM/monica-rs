@@ -293,6 +293,21 @@ print(json.dumps(dict(sha256=h,byte_length=len(data),media_type='image/png',obje
                     native.run()
                 self.assertEqual(current_sha(), orphan['sha256'])
                 self.assertTrue(orphan_blob.is_file())
+                # A native projector may own c before it updates m. Publishing
+                # this image must finish while that conversation lock is held.
+                editor = psycopg.connect(db.info.dsn, autocommit=True)
+                editor.execute('BEGIN')
+                editor.execute("UPDATE crm.conversations SET source_display_name='Corrected group label' WHERE id=%s", (moved_group,))
+                db.execute("SET lock_timeout='300ms'")
+                try:
+                    native.item(native_mid)
+                    editor.execute("SET LOCAL lock_timeout='300ms'")
+                    editor.execute('UPDATE crm.message_search SET body=body WHERE message_id=%s', (native_mid,))
+                    editor.execute('COMMIT')
+                finally:
+                    db.execute("SET lock_timeout='0'")
+                    editor.close()
+                self.assertEqual(current_sha(), orphan['sha256'])
                 native_ledger.close()
         finally:
             if db:
