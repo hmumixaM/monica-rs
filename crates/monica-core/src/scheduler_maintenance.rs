@@ -46,6 +46,7 @@ pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
                 .fetch_one(&shared.background).await?;
             let mut reduced = 0;
             if !importing {
+                reduced+=crate::ai::memory::refresh_profile_facts(&shared.background).await?;
                 let pending: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.memory_legacy_pending_records) OR EXISTS(SELECT 1 FROM crm.memory_legacy_scopes)")
                     .fetch_one(&shared.background).await?;
                 if pending {

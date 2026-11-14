@@ -23,12 +23,12 @@ pub(super) fn routes() -> Router<AppState> {
 async fn model(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     user(&s, &h).await?;
     let row = sqlx::query(
-        "SELECT enabled,execution_enabled,qa_enabled,model,context_window,max_tokens FROM crm.ai_settings WHERE id",
+        "SELECT enabled,execution_enabled,qa_enabled,model,model_routes,context_window,max_tokens FROM crm.ai_settings WHERE id",
     )
     .fetch_one(&s.pool)
     .await?;
     Ok(Json(
-        json!({"enabled":row.get::<bool,_>("enabled")&&row.get::<bool,_>("execution_enabled")&&row.get::<bool,_>("qa_enabled"),"model":row.get::<String,_>("model"),"context_window":row.get::<i32,_>("context_window"),"max_tokens":row.get::<i32,_>("max_tokens")}),
+        json!({"enabled":row.get::<bool,_>("enabled")&&row.get::<bool,_>("execution_enabled")&&row.get::<bool,_>("qa_enabled"),"model":monica_core::ai::models::resolve(&row.get::<String,_>("model"),&row.get::<Value,_>("model_routes"),"ai.qa"),"context_window":row.get::<i32,_>("context_window"),"max_tokens":row.get::<i32,_>("max_tokens")}),
     ))
 }
 #[derive(Deserialize)]
@@ -90,7 +90,7 @@ async fn completion(
 ) -> Result<Response> {
     user(&s, &h).await?;
     let row = sqlx::query(
-        "SELECT enabled,execution_enabled,qa_enabled,model,base_url,max_tokens FROM crm.ai_settings WHERE id",
+        "SELECT enabled,execution_enabled,qa_enabled,model,model_routes,base_url,max_tokens FROM crm.ai_settings WHERE id",
     )
     .fetch_one(&s.pool)
     .await?;
@@ -103,7 +103,14 @@ async fn completion(
             "请先在 Monica 设置中启用模型服务",
         ));
     }
-    let body = input.body(&row.get::<String, _>("model"), row.get("max_tokens"))?;
+    let body = input.body(
+        &monica_core::ai::models::resolve(
+            &row.get::<String, _>("model"),
+            &row.get::<Value, _>("model_routes"),
+            "ai.qa",
+        ),
+        row.get("max_tokens"),
+    )?;
     let provider = monica_core::ai::configured_provider(&s.pool, Some(&s.credentials))
         .await
         .map_err(|_| ApiError(StatusCode::SERVICE_UNAVAILABLE, "模型服务配置无效"))?

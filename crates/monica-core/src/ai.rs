@@ -10,6 +10,8 @@ use uuid::Uuid;
 pub mod mail;
 #[path = "ai_memory.rs"]
 pub mod memory;
+#[path = "ai_models.rs"]
+pub mod models;
 #[path = "ai_provider.rs"]
 pub mod provider;
 #[path = "ai_slots.rs"]
@@ -73,10 +75,18 @@ pub async fn snapshot(
         include_private_notes: settings.get("include_private_notes"),
         include_messages: settings.get("include_messages"),
     };
-    let mut model: String = settings.get("model");
+    let routes: Value = settings.get("model_routes");
+    let mut model = models::resolve(&settings.get::<String, _>("model"), &routes, kind);
     let provider: String = settings.get("provider");
     let mut input = json!({"evidence":[],"prompt_version":PROMPT_VERSION});
     let mut versions = json!({});
+    if kind == "ai.profile" {
+        input["chunk_model"] = json!(models::resolve(
+            &settings.get::<String, _>("model"),
+            &routes,
+            "ai.memory_chunk"
+        ));
+    }
     match kind {
         "ai.mail_classify" | "ai.mail_events" => {
             let (payload, source) = mail::snapshot(tx, kind, subject, &privacy).await?;
@@ -97,7 +107,7 @@ pub async fn snapshot(
             ensure!(parts.next().is_none(), "invalid profile subject");
             input["week_start"] = json!(week);
             let fields:Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',r.id,'kind','profile','text',r.value,'field_key',c.field_key,'at',r.observed_at) FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1 AND c.field_key=ANY($2) ORDER BY c.field_key LIMIT 80")
-                .bind(id).bind(vec!["residence","hometown","company","job","school","email","phone","food","interests","family","personal.residence","personal.hometown","employment.company","employment.title","education.school","contact.email","contact.phone","personal.food","personal.interests","personal.family","monica.residence","monica.hometown","monica.company","monica.job","monica.school","monica.email","monica.phone","monica.food_preferences","monica.interests","monica.family"]).fetch_all(&mut **tx).await?;
+                .bind(id).bind(vec!["wechat.alias","wechat.remark","wechat.nickname","wechat.description","wechat.signature","wechat.labels","wechat.city","wechat.province","wechat.country","linkedin.headline","linkedin.about","linkedin.location","residence","hometown","company","job","school","email","phone","food","interests","family","personal.residence","personal.hometown","employment.company","employment.title","education.school","contact.email","contact.phone","personal.food","personal.interests","personal.family","monica.residence","monica.hometown","monica.company","monica.job","monica.school","monica.email","monica.phone","monica.food_preferences","monica.interests","monica.family"]).fetch_all(&mut **tx).await?;
             let posts:Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',id,'kind',event_type,'text',coalesce(content->>'text',content->>'caption',''),'at',occurred_at,'version',version) FROM crm.timeline_events WHERE profile_id=$1 AND status='active' AND ($2::date IS NULL OR (occurred_at>=($2::timestamp AT TIME ZONE 'America/Chicago') AND occurred_at<(($2+7)::timestamp AT TIME ZONE 'America/Chicago'))) ORDER BY occurred_at DESC NULLS LAST,id LIMIT 80").bind(id).bind(week).fetch_all(&mut **tx).await?;
             let mut evidence = if week.is_some() { Vec::new() } else { fields };
             evidence.extend(posts);
@@ -144,14 +154,19 @@ pub async fn snapshot(
             ensure!(ocr.get::<bool, _>("enabled"), "OCR is disabled");
             model = ocr.get("model");
             let media:Value=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'sha256',sha256,'media_type',media_type,'byte_length',byte_length) FROM crm.media_assets WHERE id=$1 AND media_type LIKE 'image/%'").bind(id).fetch_optional(&mut **tx).await?.context("unknown image")?;
-            if !ocr.get::<bool, _>("include_chat") {
-                let allowed:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.media_links WHERE media_id=$1 AND entity_type IN ('social_post','social_story','post','story','profile'))").bind(id).fetch_one(&mut **tx).await?;
-                ensure!(allowed, "private chat image excluded");
-            }
+            let allowed: bool = sqlx::query_scalar("SELECT crm.ai_ocr_media_allowed($1,$2)")
+                .bind(id)
+                .bind(ocr.get::<bool, _>("include_chat"))
+                .fetch_one(&mut **tx)
+                .await?;
+            ensure!(allowed, "image excluded by OCR source policy");
             input["media"] = media;
             versions["ocr_controls"] = json!({"model":ocr.get::<String,_>("model"),"include_chat":ocr.get::<bool,_>("include_chat")});
         }
         "ai.post_media" => {
+            model = sqlx::query_scalar("SELECT model FROM crm.image_ocr_settings WHERE id")
+                .fetch_one(&mut **tx)
+                .await?;
             let id: Uuid = subject.parse()?;
             let post:Value=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'kind',event_type,'text',coalesce(content->>'text',content->>'caption',''),'version',version) FROM crm.timeline_events WHERE id=$1 AND status='active'").bind(id).fetch_optional(&mut **tx).await?.context("unknown post")?;
             let readings:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',r.media_id,'kind','image','text',r.text,'description',r.description,'summary',r.summary,'version',r.input_hash) FROM crm.media_links l JOIN crm.image_ocr_readings r ON r.media_id=l.media_id WHERE l.entity_id=$1 AND r.status='complete' ORDER BY l.media_id LIMIT 20").bind(id).fetch_all(&mut **tx).await?;
@@ -583,6 +598,12 @@ pub async fn run_with_media<P: provider::Provider>(
         fail(pool, &lease, "provider configuration unavailable").await?;
         return Ok(true);
     }
+    if !models::permits_call(pool, &lease, &lease.kind, &lease.model).await? {
+        cancel(pool, lease.id).await?;
+        // Rebuild from the saved configuration; no provider is called here.
+        let _ = enqueue(pool, &lease.kind, &lease.subject).await;
+        return Ok(true);
+    }
     if lease.kind == "ai.image_ocr" && !reserve_ocr(pool, &lease).await? {
         return Ok(false);
     }
@@ -672,12 +693,31 @@ pub async fn fail(pool: &PgPool, lease: &Lease, message: &'static str) -> Result
 
 async fn reserve_ocr(pool: &PgPool, lease: &Lease) -> Result<bool> {
     let mut tx = pool.begin().await?;
-    let limit: i32 = sqlx::query_scalar(
-        "SELECT daily_limit FROM crm.image_ocr_settings WHERE id AND enabled FOR UPDATE",
+    let controls = sqlx::query(
+        "SELECT daily_limit,include_chat,model FROM crm.image_ocr_settings WHERE id AND enabled FOR UPDATE",
     )
     .fetch_optional(&mut *tx)
     .await?
-    .unwrap_or(0);
+    ;
+    let allowed = match &controls {
+        Some(row) if row.get::<String, _>("model") == lease.model => {
+            sqlx::query_scalar::<_, bool>("SELECT crm.ai_ocr_media_allowed($1,$2)")
+                .bind(lease.subject.parse::<Uuid>()?)
+                .bind(row.get::<bool, _>("include_chat"))
+                .fetch_one(&mut *tx)
+                .await?
+        }
+        _ => false,
+    };
+    if !allowed {
+        sqlx::query("UPDATE crm.ai_jobs SET status='cancelled',token=NULL,lease_until=NULL,error='OCR source policy or model changed',completed_at=now() WHERE id=$1 AND token=$2").bind(lease.id).bind(lease.token).execute(&mut *tx).await?;
+        tx.commit().await?;
+        return Ok(false);
+    }
+    let limit = controls
+        .as_ref()
+        .map(|r| r.get::<i32, _>("daily_limit"))
+        .unwrap_or(0);
     let used:i64=sqlx::query_scalar("SELECT count(*) FROM crm.ai_call_reservations WHERE day=(now() AT TIME ZONE 'America/Chicago')::date").fetch_one(&mut *tx).await?;
     if used >= limit as i64 {
         sqlx::query("UPDATE crm.ai_jobs SET status='queued',attempts=greatest(0,attempts-1),token=NULL,lease_until=NULL WHERE id=$1 AND token=$2").bind(lease.id).bind(lease.token).execute(&mut *tx).await?;
@@ -872,7 +912,7 @@ pub async fn dispatch_one(pool: &PgPool) -> Result<bool> {
     let (child,subjects):(String,Vec<String>)=match kind.as_str(){
         "ai.digest"=>{let week=period.parse::<NaiveDate>()?-chrono::Duration::days(7);(kind.clone(),if cursor.is_none(){vec![week.to_string()]}else{vec![]})},
         "ai.community_names"=>("ai.community".into(),sqlx::query_scalar("SELECT community_id FROM crm.ai_community_inputs WHERE ($1::text IS NULL OR community_id>$1) ORDER BY community_id LIMIT 25").bind(&cursor).fetch_all(pool).await?),
-        "ai.image_ocr"=>(kind.clone(),sqlx::query_scalar("SELECT id::text FROM crm.media_assets m WHERE media_type LIKE 'image/%' AND ($1::text IS NULL OR id::text>$1) AND EXISTS(SELECT 1 FROM crm.media_links l WHERE l.media_id=m.id AND l.entity_type IN ('profile','social_post','social_story','post','story')) ORDER BY id::text LIMIT 25").bind(&cursor).fetch_all(pool).await?),
+        "ai.image_ocr"=>(kind.clone(),sqlx::query_scalar("SELECT m.id::text FROM crm.media_assets m CROSS JOIN crm.image_ocr_settings o WHERE o.id AND o.enabled AND m.media_type LIKE 'image/%' AND ($1::text IS NULL OR m.id>$1::text::uuid) AND crm.ai_ocr_media_allowed(m.id,o.include_chat) AND NOT EXISTS(SELECT 1 FROM crm.image_ocr_readings r WHERE r.media_id=m.id AND r.status='complete' AND r.model=o.model) ORDER BY m.id LIMIT 25").bind(&cursor).fetch_all(pool).await?),
         "ai.post_media"=>(kind.clone(),sqlx::query_scalar("SELECT id::text FROM crm.timeline_events WHERE status='active' AND ($1::text IS NULL OR id::text>$1) ORDER BY id::text LIMIT 25").bind(&cursor).fetch_all(pool).await?),
         _=>{let child=if kind=="ai.person_weeks"{"ai.person_week"}else if kind=="ai.reconnect"{"ai.reconnect_one"}else{"ai.profile"};let ids:Vec<String>=sqlx::query_scalar("SELECT id::text FROM crm.profiles WHERE profile_type='person' AND archived_at IS NULL AND ($1::text IS NULL OR id::text>$1) ORDER BY id::text LIMIT 25").bind(cursor.as_ref().map(|c|c.split(':').next().unwrap_or(c))).fetch_all(pool).await?;let week=if kind=="ai.person_weeks"{Some(period.parse::<NaiveDate>()?-chrono::Duration::days(7))}else{None};(child.into(),ids.into_iter().map(|id|week.map_or(id.clone(),|week|format!("{id}:{week}"))).collect())}
     };
@@ -928,6 +968,16 @@ pub async fn configure_from_env(pool: &PgPool) -> Result<()> {
     let model = std::env::var("MONICA_AI_MODEL")
         .ok()
         .filter(|s| !s.is_empty());
+    let mut routes = serde_json::Map::new();
+    for role in models::ROLES {
+        if let Ok(value) = std::env::var(format!("MONICA_AI_{}_MODEL", role.to_uppercase())) {
+            ensure!(
+                !value.trim().is_empty() && value.len() <= 255,
+                "invalid task model"
+            );
+            routes.insert((*role).into(), json!(value));
+        }
+    }
     let base = std::env::var("MONICA_AI_BASE_URL")
         .ok()
         .filter(|s| !s.is_empty());
@@ -954,7 +1004,12 @@ pub async fn configure_from_env(pool: &PgPool) -> Result<()> {
     let chat = optional_bool("MONICA_OCR_INCLUDE_CHAT")?;
     let ocr_model = std::env::var("MONICA_OCR_MODEL")
         .ok()
-        .filter(|s| !s.is_empty());
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            std::env::var("MONICA_AI_VISION_MODEL")
+                .ok()
+                .filter(|s| !s.is_empty())
+        });
     let limit = std::env::var("MONICA_OCR_DAILY_LIMIT")
         .ok()
         .filter(|s| !s.is_empty())
@@ -973,6 +1028,12 @@ pub async fn configure_from_env(pool: &PgPool) -> Result<()> {
         )
     }
     let mut tx = pool.begin().await?;
+    if !routes.is_empty() {
+        sqlx::query("UPDATE crm.ai_settings SET model_routes=model_routes||$1 WHERE id")
+            .bind(json!(routes))
+            .execute(&mut *tx)
+            .await?;
+    }
     if let Some(value) = execution {
         sqlx::query("UPDATE crm.ai_settings SET execution_enabled=$1 WHERE id")
             .bind(value)

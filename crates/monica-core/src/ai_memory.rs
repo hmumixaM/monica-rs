@@ -83,8 +83,22 @@ pub async fn replace_sources(
 /// Current compact notebook facts are cheap to synchronize; no source history
 /// or chat bodies are scanned here. Large historical sources use writer hooks.
 pub async fn profile_facts(tx: &mut Transaction<'_, Postgres>, profile: Uuid) -> Result<bool> {
-    let input:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',p.id,'kind','profile','name',p.display_name,'summary',p.summary,'fields',(SELECT jsonb_object_agg(c.field_key,r.value) FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=p.id AND (r.source_type IN ('manual','monica') OR c.field_key IN ('wechat.alias','wechat.remark','wechat.nickname','wechat.description') OR c.field_key LIKE 'monica.%' OR c.field_key LIKE 'apple_contacts.%')),'structured',(SELECT jsonb_agg(jsonb_build_object('kind',fact_type,'key',fact_key,'value',value) ORDER BY fact_type,fact_key) FROM crm.profile_structured_current WHERE profile_id=p.id),'dates',(SELECT jsonb_agg(jsonb_build_object('kind',kind,'label',label,'precision',date_precision,'year',year,'month',month,'day',day) ORDER BY kind,id) FROM crm.profile_dates WHERE profile_id=p.id),'tags',(SELECT jsonb_agg(t.name ORDER BY t.name) FROM crm.presented_tag_memberships m JOIN crm.tags t ON t.id=m.tag_id WHERE m.profile_id=p.id)) FROM crm.profiles p WHERE p.id=$1 AND p.archived_at IS NULL AND p.profile_type='person'").bind(profile).fetch_optional(&mut **tx).await?;
+    let input:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',p.id,'kind','profile','name',p.display_name,'summary',p.summary,'fields',(SELECT jsonb_object_agg(c.field_key,r.value) FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=p.id AND (r.source_type IN ('manual','monica') OR c.field_key=ANY($2) OR c.field_key LIKE 'monica.%' OR c.field_key LIKE 'apple_contacts.%')),'field_evidence',(SELECT jsonb_object_agg(c.field_key,jsonb_build_object('revision_id',r.id,'source_type',r.source_type,'observed_at',r.observed_at)) FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=p.id AND (r.source_type IN ('manual','monica') OR c.field_key=ANY($2) OR c.field_key LIKE 'monica.%' OR c.field_key LIKE 'apple_contacts.%')),'structured',(SELECT jsonb_agg(jsonb_build_object('kind',fact_type,'key',fact_key,'value',value) ORDER BY fact_type,fact_key) FROM crm.profile_structured_current WHERE profile_id=p.id),'dates',(SELECT jsonb_agg(jsonb_build_object('kind',kind,'label',label,'precision',date_precision,'year',year,'month',month,'day',day) ORDER BY kind,id) FROM crm.profile_dates WHERE profile_id=p.id),'tags',(SELECT jsonb_agg(t.name ORDER BY t.name) FROM crm.presented_tag_memberships m JOIN crm.tags t ON t.id=m.tag_id WHERE m.profile_id=p.id)) FROM crm.profiles p WHERE p.id=$1 AND p.archived_at IS NULL AND p.profile_type='person'").bind(profile).bind(super::models::OVERVIEW_FIELDS).fetch_optional(&mut **tx).await?;
     replace_sources(tx, profile, "profile", &[("current".into(), input)], false).await
+}
+
+pub async fn refresh_profile_facts(pool: &PgPool) -> Result<usize> {
+    let mut tx = pool.begin().await?;
+    let ids:Vec<Uuid>=sqlx::query_scalar("SELECT profile_id FROM crm.memory_profile_refresh ORDER BY profile_id FOR UPDATE SKIP LOCKED LIMIT 25").fetch_all(&mut *tx).await?;
+    for id in &ids {
+        profile_facts(&mut tx, *id).await?;
+    }
+    sqlx::query("DELETE FROM crm.memory_profile_refresh WHERE profile_id=ANY($1)")
+        .bind(&ids)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(ids.len())
 }
 
 /// Called after connection_evidence and its people/direction projection commit
@@ -159,7 +173,7 @@ pub async fn connection_evidence_many(
 pub async fn enqueue_pending(pool: &PgPool) -> Result<()> {
     legacy::drain(pool).await?;
     let settings = sqlx::query(
-        "SELECT enabled,model,include_private_notes,include_messages FROM crm.ai_settings WHERE id",
+        "SELECT enabled,model,model_routes,include_private_notes,include_messages FROM crm.ai_settings WHERE id",
     )
     .fetch_one(pool)
     .await?;
@@ -170,7 +184,9 @@ pub async fn enqueue_pending(pool: &PgPool) -> Result<()> {
         include_messages: settings.get("include_messages"),
         include_private_notes: settings.get("include_private_notes"),
     });
-    let ids:Vec<Uuid>=sqlx::query_scalar("SELECT h.profile_id FROM crm.memory_heads h JOIN crm.profiles p ON p.id=h.profile_id AND p.archived_at IS NULL AND p.profile_type='person' LEFT JOIN crm.memory_current c ON c.profile_id=h.profile_id WHERE NOT EXISTS(SELECT 1 FROM crm.memory_legacy_pending s WHERE s.profile_id=h.profile_id) AND (c.profile_id IS NULL OR c.generation<>h.generation OR c.model<>$1 OR c.privacy_hash<>$2) ORDER BY h.updated_at,h.profile_id LIMIT 25").bind(settings.get::<String,_>("model")).bind(policy).fetch_all(pool).await?;
+    let default: String = settings.get("model");
+    let routes: Value = settings.get("model_routes");
+    let ids:Vec<Uuid>=sqlx::query_scalar("SELECT h.profile_id FROM crm.memory_heads h JOIN crm.profiles p ON p.id=h.profile_id AND p.archived_at IS NULL AND p.profile_type='person' LEFT JOIN crm.memory_current c ON c.profile_id=h.profile_id WHERE NOT EXISTS(SELECT 1 FROM crm.memory_legacy_pending s WHERE s.profile_id=h.profile_id) AND (c.profile_id IS NULL OR c.generation<>h.generation OR c.model<>$1 OR c.privacy_hash<>$2 OR coalesce(c.chunk_model,c.model)<>$3) ORDER BY h.updated_at,h.profile_id LIMIT 25").bind(super::models::resolve(&default,&routes,"ai.profile")).bind(policy).bind(super::models::resolve(&default,&routes,"ai.memory_chunk")).fetch_all(pool).await?;
     for profile in ids {
         let id = super::enqueue(pool, "ai.profile", &profile.to_string()).await?;
         sqlx::query("UPDATE crm.ai_jobs SET status='queued',attempts=0,completed_at=NULL WHERE id=$1 AND status='complete'").bind(id).execute(pool).await?;
@@ -253,6 +269,10 @@ async fn call<P: Provider>(
     kind: &str,
     input: Value,
 ) -> Result<Value> {
+    ensure!(
+        super::models::permits_call(pool, lease, kind, &lease.model).await?,
+        "Memory model or privacy policy changed"
+    );
     let mut part = lease.clone();
     part.kind = kind.into();
     part.input = input;
@@ -326,6 +346,14 @@ async fn part<P: Provider>(
     policy: &str,
     budget: &mut usize,
 ) -> Result<Option<Value>> {
+    let mut routed = lease.clone();
+    if node.key != "final" {
+        routed.model = lease.input["chunk_model"]
+            .as_str()
+            .unwrap_or(&lease.model)
+            .to_owned();
+    }
+    let lease = &routed;
     let saved:Option<Value>=sqlx::query_scalar("SELECT output FROM crm.memory_parts WHERE profile_id=$1 AND node=$2 AND input_hash=$3 AND model=$4 AND privacy_hash=$5").bind(profile).bind(&node.key).bind(&node.hash).bind(&lease.model).bind(policy).fetch_optional(pool).await?;
     if let Some(value) = saved {
         return Ok(Some(value));
@@ -391,16 +419,17 @@ pub async fn refresh<P: Provider>(pool: &PgPool, provider: &P, lease: &Lease) ->
     let mut summaries = std::collections::BTreeMap::new();
     let mut count = 0i64;
     let mut budget = 1usize;
+    let chunk_model = lease.input["chunk_model"].as_str().unwrap_or(&lease.model);
     for bucket in buckets {
         let name: String = bucket.get("bucket");
         let signature = hash(&json!([
             PROMPT,
             bucket.get::<String, _>("signature"),
-            lease.model,
+            chunk_model,
             policy
         ]));
         let source_count: i64 = bucket.get("count");
-        let saved:Option<Value>=sqlx::query_scalar("SELECT output FROM crm.memory_bucket_outputs WHERE profile_id=$1 AND bucket=$2 AND signature=$3 AND model=$4 AND privacy_hash=$5").bind(profile).bind(&name).bind(&signature).bind(&lease.model).bind(&policy).fetch_optional(&mut *read).await?;
+        let saved:Option<Value>=sqlx::query_scalar("SELECT output FROM crm.memory_bucket_outputs WHERE profile_id=$1 AND bucket=$2 AND signature=$3 AND model=$4 AND privacy_hash=$5").bind(profile).bind(&name).bind(&signature).bind(chunk_model).bind(&policy).fetch_optional(&mut *read).await?;
         if let Some(output) = saved {
             summaries.insert(name.clone(), output);
             count += source_count;
@@ -466,7 +495,7 @@ pub async fn refresh<P: Provider>(pool: &PgPool, provider: &P, lease: &Lease) ->
             .unwrap_or(json!({"summary":"","facts":[],"gaps":[]}));
         // The signature includes exact current input hashes. If inputs changed
         // concurrently this cached result simply misses on the next turn.
-        sqlx::query("INSERT INTO crm.memory_bucket_outputs VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(profile_id,bucket) DO UPDATE SET signature=excluded.signature,model=excluded.model,privacy_hash=excluded.privacy_hash,output=excluded.output,source_count=excluded.source_count").bind(profile).bind(name).bind(signature).bind(&lease.model).bind(&policy).bind(output).bind(source_count).execute(pool).await?;
+        sqlx::query("INSERT INTO crm.memory_bucket_outputs VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(profile_id,bucket) DO UPDATE SET signature=excluded.signature,model=excluded.model,privacy_hash=excluded.privacy_hash,output=excluded.output,source_count=excluded.source_count").bind(profile).bind(name).bind(signature).bind(chunk_model).bind(&policy).bind(output).bind(source_count).execute(pool).await?;
         return Ok(Refresh::Pending);
     }
     read.commit().await?;
@@ -557,7 +586,7 @@ pub async fn refresh<P: Provider>(pool: &PgPool, provider: &P, lease: &Lease) ->
         tx.rollback().await?;
         return Ok(Refresh::Pending);
     }
-    sqlx::query("INSERT INTO crm.memory_current(profile_id,generation,input_hash,model,privacy_hash,output) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(profile_id) DO UPDATE SET generation=excluded.generation,input_hash=excluded.input_hash,model=excluded.model,privacy_hash=excluded.privacy_hash,output=excluded.output,generated_at=now()").bind(profile).bind(generation).bind(signature).bind(&lease.model).bind(policy).bind(&output).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO crm.memory_current(profile_id,generation,input_hash,model,privacy_hash,output,chunk_model) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(profile_id) DO UPDATE SET generation=excluded.generation,input_hash=excluded.input_hash,model=excluded.model,privacy_hash=excluded.privacy_hash,output=excluded.output,chunk_model=excluded.chunk_model,generated_at=now()").bind(profile).bind(generation).bind(signature).bind(&lease.model).bind(policy).bind(&output).bind(chunk_model).execute(&mut *tx).await?;
     tx.commit().await?;
     if newly_generated {
         Ok(Refresh::Pending)

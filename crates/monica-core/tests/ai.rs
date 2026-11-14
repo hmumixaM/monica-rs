@@ -41,6 +41,13 @@ fn evidence_and_output_boundaries() {
     );
     assert!(OpenAiProvider::new("http://example.com/v1", "synthetic-key".into()).is_err());
     assert!(
+        OpenAiProvider::new(
+            "http://host.docker.internal:4000/v1",
+            "synthetic-key".into()
+        )
+        .is_ok()
+    );
+    assert!(
         OpenAiProvider::new("https://user:secret@example.com/v1", "synthetic-key".into()).is_err()
     );
 }
@@ -177,6 +184,8 @@ async fn lease_takeover_cancel_and_fake_provider(pool: PgPool) {
 #[sqlx::test(migrations = "../../migrations")]
 async fn ocr_privacy_and_daily_admission(pool: PgPool) {
     let id = person(&pool).await;
+    let account = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'wechat','synthetic-images','person','Synthetic')").bind(account).execute(&pool).await.unwrap();
     sqlx::query("UPDATE crm.image_ocr_settings SET enabled=true,daily_limit=1")
         .execute(&pool)
         .await
@@ -191,6 +200,19 @@ async fn ocr_privacy_and_daily_admission(pool: PgPool) {
                 .is_err()
         );
         sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('profile',$1,$2,'photo')").bind(id).bind(image).execute(&pool).await.unwrap();
+        assert!(
+            ai::enqueue(&pool, "ai.image_ocr", &image.to_string())
+                .await
+                .is_err()
+        );
+        let post = Uuid::new_v4();
+        sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,source_account_id,profile_id,event_type,external_id,content,content_hash,version) VALUES($1,'wechat',$1,$2,$3,'post',$4,'{}','synthetic',1)").bind(post).bind(account).bind(id).bind(post.to_string()).execute(&pool).await.unwrap();
+        let role = if n == 0 {
+            "thumbnail-video-1"
+        } else {
+            "media-0"
+        };
+        sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('social_post',$1,$2,$3)").bind(post).bind(image).bind(role).execute(&pool).await.unwrap();
         images.push(
             ai::enqueue(&pool, "ai.image_ocr", &image.to_string())
                 .await
@@ -213,6 +235,205 @@ async fn ocr_privacy_and_daily_admission(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(queued, 1);
+    let chat = Uuid::new_v4();
+    let conversation = Uuid::new_v4();
+    let message = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path) VALUES($1,$2,'image/png',0,'synthetic-chat')").bind(chat).bind(format!("{:064x}",99)).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.conversations(id,provider,account,external_id,conversation_type) VALUES($1,'wechat','synthetic-self','synthetic-group','group')").bind(conversation).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,occurred_at,body,message_type) VALUES($1,$2,'wechat','synthetic-self','photo','unknown',now(),'[图片]','3')").bind(message).bind(conversation).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('message_event',$1,$2,'image')").bind(message).bind(chat).execute(&pool).await.unwrap();
+    assert!(
+        ai::enqueue(&pool, "ai.image_ocr", &chat.to_string())
+            .await
+            .is_err()
+    );
+    sqlx::query("UPDATE crm.image_ocr_settings SET include_chat=true")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let chat_job = ai::enqueue(&pool, "ai.image_ocr", &chat.to_string())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE crm.image_ocr_settings SET include_chat=false,daily_limit=2")
+        .execute(&pool)
+        .await
+        .unwrap();
+    ai::cancel(&pool, images[1]).await.unwrap();
+    assert!(!ai::run_one(&pool, &provider).await.unwrap());
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT status FROM crm.ai_jobs WHERE id=$1")
+            .bind(chat_job)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "cancelled"
+    );
+    // Automatic backfill retains complete same-model legacy OCR without
+    // requiring its old input hash to match the new implementation's hash.
+    sqlx::query(
+        "UPDATE crm.image_ocr_readings SET input_hash='legacy-ocr-hash' WHERE status='complete'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let dispatch = ai::enqueue_dispatch(&pool, "ai.image_ocr", "2026-01-01T00", true)
+        .await
+        .unwrap();
+    assert!(ai::dispatch_one(&pool).await.unwrap());
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT processed_count FROM crm.ai_dispatches WHERE id=$1")
+            .bind(dispatch)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        1
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn configured_roles_drive_memory_and_preserve_profile_field_evidence(pool: PgPool) {
+    use std::{future::Future, pin::Pin, sync::Mutex};
+    struct Models(Mutex<Vec<(String, String)>>);
+    impl Provider for Models {
+        fn name(&self) -> &'static str {
+            "fake"
+        }
+        fn complete<'a>(
+            &'a self,
+            job: &'a ai::Lease,
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<serde_json::Value>> + Send + 'a>> {
+            Box::pin(async move {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push((job.kind.clone(), job.model.clone()));
+                Ok(json!({"summary":"Synthetic routed summary","facts":[],"gaps":[],"items":[]}))
+            })
+        }
+    }
+    let id = person(&pool).await;
+    sqlx::query("UPDATE crm.ai_settings SET model='default-model',model_routes=$1").bind(json!({"batch":"saved-batch","person":"saved-person","writer":"saved-writer","qa":"saved-qa"})).execute(&pool).await.unwrap();
+    for (key, value, source) in [
+        ("linkedin.about", "Synthetic biography", "linkedin"),
+        ("wechat.signature", "Synthetic signature", "wechat"),
+    ] {
+        let revision = Uuid::new_v4();
+        sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,field_key,value,content_hash,source_type,operation) VALUES($1,$2,$3,$4,$5,$6,'import')").bind(revision).bind(id).bind(key).bind(json!(value)).bind(revision.to_string()).bind(source).execute(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO crm.field_current(profile_id,field_key,revision_id) VALUES($1,$2,$3)",
+        )
+        .bind(id)
+        .bind(key)
+        .bind(revision)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    sqlx::query("INSERT INTO crm.memory_profile_refresh(profile_id) VALUES($1)")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(ai::memory::refresh_profile_facts(&pool).await.unwrap(), 1);
+    assert_eq!(ai::memory::refresh_profile_facts(&pool).await.unwrap(), 0);
+    let old = ai::enqueue(&pool, "ai.profile", &id.to_string())
+        .await
+        .unwrap();
+    let model: String = sqlx::query_scalar("SELECT model FROM crm.ai_jobs WHERE id=$1")
+        .bind(old)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(model, "saved-person");
+    sqlx::query("UPDATE crm.ai_settings SET model_routes=jsonb_set(model_routes,'{person}','\"updated-person\"')").execute(&pool).await.unwrap();
+    let provider = Models(Mutex::new(Vec::new()));
+    assert!(ai::run_one(&pool, &provider).await.unwrap());
+    assert!(provider.0.lock().unwrap().is_empty()); // Stale model was not called.
+    for _ in 0..20 {
+        ai::memory::legacy::drain(&pool).await.unwrap();
+        if !ai::run_one(&pool, &provider).await.unwrap() {
+            break;
+        }
+    }
+    let calls = provider.0.lock().unwrap();
+    assert!(
+        calls
+            .iter()
+            .any(|(k, m)| k == "ai.memory_chunk" && m == "saved-batch"),
+        "{calls:?}"
+    );
+    assert!(
+        calls
+            .iter()
+            .any(|(k, m)| k == "ai.memory_final" && m == "updated-person"),
+        "{calls:?}"
+    );
+    assert!(
+        calls
+            .iter()
+            .all(|(_, m)| m != "saved-person" && m != "default-model")
+    );
+    drop(calls);
+    // A batch-only settings change must enter normal pending processing even
+    // when source generation, privacy and the final/person model are unchanged.
+    provider.0.lock().unwrap().clear();
+    sqlx::query("UPDATE crm.ai_settings SET model_routes=jsonb_set(model_routes,'{batch}','\"updated-batch\"')").execute(&pool).await.unwrap();
+    ai::memory::enqueue_pending(&pool).await.unwrap();
+    for _ in 0..20 {
+        if !ai::run_one(&pool, &provider).await.unwrap() {
+            break;
+        }
+    }
+    assert!(
+        provider
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(k, m)| k == "ai.memory_chunk" && m == "updated-batch")
+    );
+    let chunk: String =
+        sqlx::query_scalar("SELECT chunk_model FROM crm.memory_current WHERE profile_id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(chunk, "updated-batch");
+    ai::memory::enqueue_pending(&pool).await.unwrap();
+    assert!(!ai::run_one(&pool, &provider).await.unwrap());
+    // A person-only change reuses the completed batch cache.
+    provider.0.lock().unwrap().clear();
+    sqlx::query("UPDATE crm.ai_settings SET model_routes=jsonb_set(model_routes,'{person}','\"final-person\"')").execute(&pool).await.unwrap();
+    ai::memory::enqueue_pending(&pool).await.unwrap();
+    for _ in 0..20 {
+        if !ai::run_one(&pool, &provider).await.unwrap() {
+            break;
+        }
+    }
+    let calls = provider.0.lock().unwrap();
+    assert!(
+        calls
+            .iter()
+            .any(|(k, m)| k == "ai.memory_final" && m == "final-person")
+    );
+    assert!(
+        calls
+            .iter()
+            .all(|(k, m)| k != "ai.memory_chunk" && m == "final-person")
+    );
+    drop(calls);
+    let facts:serde_json::Value=sqlx::query_scalar("SELECT payload FROM crm.memory_inputs WHERE profile_id=$1 AND source_kind='profile' AND source_id='current'").bind(id).fetch_one(&pool).await.unwrap();
+    assert_eq!(facts["fields"]["linkedin.about"], "Synthetic biography");
+    assert_eq!(facts["fields"]["wechat.signature"], "Synthetic signature");
+    assert_eq!(
+        facts["field_evidence"]["linkedin.about"]["source_type"],
+        "linkedin"
+    );
+    assert!(facts["field_evidence"]["wechat.signature"]["observed_at"].is_string());
+    assert_eq!(
+        ai::models::resolve("default", &json!({"writer":"saved-writer"}), "ai.qa"),
+        "saved-writer"
+    );
 }
 #[tokio::test]
 async fn openai_transport_against_loopback_fake() {

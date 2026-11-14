@@ -36,16 +36,18 @@ services:
       MONICA_MEDIA_ROOT: /data/media
       MONICA_LEGACY_ARCHIVE_ROOT: /data/archive
       MONICA_LEGACY_MIGRATION_ROOT: /data/migration
-      MONICA_AI_EXECUTION_ENABLED: 'false'
-      MONICA_AI_QA_ENABLED: 'false'
-      MONICA_OCR_ENABLED: 'false'
+      MONICA_AI_EXECUTION_ENABLED: ${MONICA_AI_EXECUTION_ENABLED:-false}
+      MONICA_AI_QA_ENABLED: ${MONICA_AI_QA_ENABLED:-false}
+      MONICA_OCR_ENABLED: ${MONICA_OCR_ENABLED:-false}
       MONICA_START_PAUSED: ${MONICA_START_PAUSED:-true}
       TOKIO_WORKER_THREADS: '2'
+    extra_hosts:
+      - host.docker.internal:host-gateway
     volumes:
       - ${MONICA_RUST_DATA_ROOT}/media:/data/media
       - ${MONICA_RUST_DATA_ROOT}/snapshots/monica-next:/data/archive:ro
       - ${MONICA_RUST_DATA_ROOT}/migration:/data/migration:ro
-    networks: [isolated]
+    networks: [isolated, ingress]
     mem_limit: 384m
     cpuset: '${MONICA_CPUSET:-3}'
     cpu_shares: 128
