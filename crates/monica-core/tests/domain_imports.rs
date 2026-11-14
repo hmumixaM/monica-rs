@@ -143,6 +143,155 @@ async fn source_projection_link_relink_and_manual_precedence(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn migrated_social_events_keep_public_ids_during_source_updates(pool: PgPool) {
+    let owner = profile(&pool, "Owner").await;
+    let author = profile(&pool, "Author").await;
+    for (external, person) in [("fixture-account", owner), ("speaker", author)] {
+        let source = Record {
+            account: external.into(),
+            ..record(
+                "profile",
+                "profile",
+                "profile",
+                json!({"display_name":external}),
+            )
+        };
+        monica_core::ingest(&pool, &source).await.unwrap();
+        drain(&pool).await;
+        linking::set_link(
+            &pool,
+            linking::LinkChange {
+                account_id: identity::account_id(Provider::Instagram, external).unwrap(),
+                profile_id: Some(person),
+                expected_profile_id: None,
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    }
+    let account = identity::account_id(Provider::Instagram, "fixture-account").unwrap();
+    let post = Uuid::new_v4();
+    let story = Uuid::new_v4();
+    let legacy_interaction = Uuid::new_v4();
+    for (kind, external, event) in [
+        ("post", "legacy-post", post),
+        ("story", "legacy-story", story),
+    ] {
+        let object = identity::object_id(account, kind, external);
+        assert_ne!(event, object);
+        sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,source_account_id,profile_id,event_type,external_id,content,content_hash,version) VALUES($1,'instagram',$2,$3,$4,$5,$6,'{\"caption\":\"Legacy content\"}','legacy',1)")
+            .bind(event).bind(object).bind(account).bind(owner).bind(kind).bind(external).execute(&pool).await.unwrap();
+        if kind == "post" {
+            sqlx::query("INSERT INTO crm.social_interactions(id,post_id,provider,external_id,interaction_type,author_external_id,content) VALUES($1,$2,'instagram','comment','comment','speaker','{\"text\":\"Legacy comment\"}')")
+                .bind(legacy_interaction).bind(post).execute(&pool).await.unwrap();
+        }
+        // Equal source versions must resolve the preserved ID without replacing
+        // a migration's existing interaction with an older source payload.
+        let first = record(
+            kind,
+            external,
+            "first",
+            json!({"caption":"Legacy content","interactions":[{"external_id":"comment","author_external_id":"speaker","content":{"text":"Old source comment"}}]}),
+        );
+        monica_core::ingest(&pool, &first).await.unwrap();
+        drain(&pool).await;
+        if kind == "post" {
+            let text: String = sqlx::query_scalar(
+                "SELECT content->>'text' FROM crm.social_interactions WHERE id=$1",
+            )
+            .bind(legacy_interaction)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(text, "Legacy comment");
+        }
+        let changed = record(
+            kind,
+            external,
+            "changed",
+            json!({"caption":"Updated content","coverage_status":"archived","interactions":[{"external_id":"comment","author_external_id":"speaker","content":{"text":"Updated comment"}}]}),
+        );
+        monica_core::ingest(&pool, &changed).await.unwrap();
+        drain(&pool).await;
+        monica_core::ingest(&pool, &changed).await.unwrap();
+        drain(&pool).await;
+        let saved: (Uuid, String, i64, String) = sqlx::query_as("SELECT id,content->>'caption',version,status FROM crm.timeline_events WHERE provider='instagram' AND object_id=$1")
+            .bind(object).fetch_one(&pool).await.unwrap();
+        assert_eq!(
+            saved,
+            (
+                event,
+                "Updated content".into(),
+                2,
+                if kind == "story" {
+                    "archived"
+                } else {
+                    "active"
+                }
+                .into()
+            )
+        );
+    }
+    let interaction: (Uuid, Uuid, Option<Uuid>, String) = sqlx::query_as("SELECT id,post_id,author_profile_id,content->>'text' FROM crm.social_interactions WHERE post_id=$1 AND external_id='comment'")
+        .bind(post).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        interaction,
+        (
+            legacy_interaction,
+            post,
+            Some(author),
+            "Updated comment".into()
+        )
+    );
+    let standalone = Record {
+        account: "speaker".into(),
+        ..record(
+            "comment",
+            "standalone",
+            "standalone",
+            json!({"post_account_external_id":"fixture-account","post_external_id":"legacy-post","text":"Standalone comment"}),
+        )
+    };
+    monica_core::ingest(&pool, &standalone).await.unwrap();
+    drain(&pool).await;
+    let parent: Uuid = sqlx::query_scalar(
+        "SELECT post_id FROM crm.social_interactions WHERE external_id='standalone'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(parent, post);
+    let reply = Record {
+        account: "speaker".into(),
+        ..record(
+            "reply",
+            "story-reply",
+            "story-reply",
+            json!({"post_id":story,"text":"Reply to the public Story ID"}),
+        )
+    };
+    monica_core::ingest(&pool, &reply).await.unwrap();
+    drain(&pool).await;
+    let parent: Uuid = sqlx::query_scalar(
+        "SELECT post_id FROM crm.social_interactions WHERE external_id='story-reply'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(parent, story);
+    let mut pending: Vec<Uuid> = sqlx::query_scalar("SELECT entity_id FROM crm.memory_legacy_pending_records WHERE kind='social' ORDER BY entity_id")
+        .fetch_all(&pool).await.unwrap();
+    let mut expected = vec![post, story];
+    pending.sort();
+    expected.sort();
+    assert_eq!(
+        pending, expected,
+        "Memory must follow the public legacy event IDs"
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn different_posts_for_same_person_project_concurrently(pool: PgPool) {
     monica_core::ingest(
         &pool,
