@@ -81,6 +81,12 @@ async fn source_projection_link_relink_and_manual_precedence(pool: PgPool) {
     drain(&pool).await;
     let value:Value=sqlx::query_scalar("SELECT r.value FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1").bind(p1).fetch_one(&pool).await.unwrap();
     assert_eq!(value, json!("Manual text"));
+    let conflict: bool = sqlx::query_scalar("SELECT is_conflict FROM crm.field_revisions WHERE profile_id=$1 AND source_account_id=$2 AND field_key='instagram.bio' ORDER BY revision_seq DESC LIMIT 1")
+        .bind(p1).bind(account).fetch_one(&pool).await.unwrap();
+    assert!(
+        conflict,
+        "the preserved manual value must expose the source update as a conflict"
+    );
     linking::set_link(
         &pool,
         linking::LinkChange {
@@ -107,6 +113,12 @@ async fn source_projection_link_relink_and_manual_precedence(pool: PgPool) {
     );
     let value:Value=sqlx::query_scalar("SELECT r.value FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1").bind(p2).fetch_one(&pool).await.unwrap();
     assert_eq!(value, json!("Updated source"));
+    let conflict: bool = sqlx::query_scalar("SELECT r.is_conflict FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1 AND c.field_key='instagram.bio'")
+        .bind(p2).fetch_one(&pool).await.unwrap();
+    assert!(
+        !conflict,
+        "relinking to a person without an override must not inherit a conflict"
+    );
     let source_count: i64 = sqlx::query_scalar("SELECT count(*) FROM instagram.revisions")
         .fetch_one(&pool)
         .await
