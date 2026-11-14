@@ -299,7 +299,7 @@ class Worker:
                 break
             with self.db.transaction():
                 for mid, group, day, *_ in rows:
-                    self.db.execute('INSERT INTO crm.wechat_group_images(run_id,message_id,conversation_id,day) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING', (self.run_id, mid, group, day))
+                    self.db.execute('INSERT INTO crm.wechat_group_images(run_id,message_id,conversation_id,day) VALUES(%s,%s,%s,%s) ON CONFLICT(run_id,message_id) DO UPDATE SET conversation_id=excluded.conversation_id,day=excluded.day WHERE (crm.wechat_group_images.conversation_id,crm.wechat_group_images.day) IS DISTINCT FROM (excluded.conversation_id,excluded.day)', (self.run_id, mid, group, day))
             after = rows[-1][0]
         self.db.execute("UPDATE crm.wechat_image_runs SET discovery_complete=true,status='running',heartbeat_at=now() WHERE id=%s", (self.run_id,))
 
@@ -394,7 +394,7 @@ class Worker:
                 self.db.execute("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) SELECT 'message_event',%s,%s,%s WHERE NOT EXISTS(SELECT 1 FROM crm.media_links WHERE entity_type='message_event' AND entity_id=%s AND media_id=%s) ON CONFLICT DO NOTHING", (mid, media_id, 'wechat-group-image:' + q, mid, media_id))
             else:
                 self.db.execute("DELETE FROM crm.media_links WHERE entity_type='message_event' AND entity_id=%s AND role LIKE 'wechat-group-image:%%'", (mid,))
-            self.db.execute('UPDATE crm.wechat_group_images SET state=%s,quality=%s,media_id=%s,attempts=attempts+1,updated_at=now() WHERE run_id=%s AND message_id=%s', (state, q, media_id, self.run_id, mid))
+            self.db.execute('UPDATE crm.wechat_group_images SET state=%s,quality=%s,media_id=%s,conversation_id=coalesce(%s,conversation_id),day=coalesce(%s,day),attempts=attempts+1,updated_at=now() WHERE run_id=%s AND message_id=%s', (state, q, media_id, current[1] if current else None, current[2] if current else None, self.run_id, mid))
 
     def run(self):
         self.open()

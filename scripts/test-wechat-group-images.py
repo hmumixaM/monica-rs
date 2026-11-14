@@ -187,6 +187,19 @@ print(json.dumps(dict(sha256=h,byte_length=len(data),media_type='image/png',obje
                 receipt = native_ledger.execute('SELECT asset FROM decoded WHERE path=?', ('attach/a/2026/Img/' + filename + '_h.dat',)).fetchone()[0]
                 self.assertEqual(json.loads(receipt)['sha256'], expected)
                 self.assertEqual(db.execute('SELECT counts FROM crm.wechat_image_runs WHERE id=%s', (native.run_id,)).fetchone()[0]['total'], 1)
+                moved_group = uuid.uuid4()
+                db.execute("INSERT INTO crm.conversations(id,provider,account,external_id,conversation_type,connection_id) VALUES(%s,'wechat',%s,'corrected-native-group','group',%s)", (moved_group, str(connection), connection))
+                db.execute("UPDATE crm.message_search SET conversation_id=%s,occurred_at='2026-01-03T00:00:00Z' WHERE message_id=%s", (moved_group, native_mid))
+                db.execute('UPDATE crm.connection_evidence SET conversation_id=%s WHERE id=%s', (moved_group, native_mid))
+                for _ in range(2):
+                    with redirect_stdout(io.StringIO()):
+                        native.run()
+                    buckets = db.execute('SELECT conversation_id,day::text,counts FROM crm.wechat_image_daily WHERE run_id=%s', (native.run_id,)).fetchall()
+                    self.assertEqual(len(buckets), 1)
+                    self.assertEqual(buckets[0][:2], (moved_group, '2026-01-03'))
+                    self.assertEqual(buckets[0][2]['total'], 1)
+                    self.assertEqual(buckets[0][2]['available'], 1)
+                    self.assertEqual(db.execute('SELECT counts FROM crm.wechat_image_runs WHERE id=%s', (native.run_id,)).fetchone()[0]['total'], 1)
                 native_ledger.close()
         finally:
             if db:

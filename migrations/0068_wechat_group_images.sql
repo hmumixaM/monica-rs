@@ -43,17 +43,24 @@ BEGIN
 END $$;
 CREATE FUNCTION crm.wechat_image_counters() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
- IF TG_OP='UPDATE' AND NEW.state=OLD.state AND NEW.quality=OLD.quality THEN RETURN NEW; END IF;
+ IF TG_OP='UPDATE' AND NEW.state=OLD.state AND NEW.quality=OLD.quality
+  AND NEW.conversation_id=OLD.conversation_id AND NEW.day=OLD.day THEN RETURN NEW; END IF;
  -- Serialize summaries in a fixed order: run first, then its group/day.
  UPDATE crm.wechat_image_runs SET counts=crm.wechat_image_count(
   CASE WHEN TG_OP='UPDATE' THEN crm.wechat_image_count(counts,OLD.state,OLD.quality,-1) ELSE counts END,
   NEW.state,NEW.quality,1) WHERE id=NEW.run_id;
+ IF TG_OP='UPDATE' THEN
+  UPDATE crm.wechat_image_daily SET counts=crm.wechat_image_count(counts,OLD.state,OLD.quality,-1),updated_at=now()
+  WHERE run_id=OLD.run_id AND conversation_id=OLD.conversation_id AND day=OLD.day;
+ END IF;
  INSERT INTO crm.wechat_image_daily(run_id,conversation_id,day) VALUES(NEW.run_id,NEW.conversation_id,NEW.day) ON CONFLICT DO NOTHING;
- UPDATE crm.wechat_image_daily SET counts=crm.wechat_image_count(
-  CASE WHEN TG_OP='UPDATE' THEN crm.wechat_image_count(counts,OLD.state,OLD.quality,-1) ELSE counts END,
-  NEW.state,NEW.quality,1),updated_at=now()
+ UPDATE crm.wechat_image_daily SET counts=crm.wechat_image_count(counts,NEW.state,NEW.quality,1),updated_at=now()
  WHERE run_id=NEW.run_id AND conversation_id=NEW.conversation_id AND day=NEW.day;
+ IF TG_OP='UPDATE' THEN
+  DELETE FROM crm.wechat_image_daily WHERE run_id=OLD.run_id AND conversation_id=OLD.conversation_id
+   AND day=OLD.day AND (counts->>'total')::bigint=0;
+ END IF;
  RETURN NEW;
 END $$;
-CREATE TRIGGER wechat_image_item_counters AFTER INSERT OR UPDATE OF state,quality ON crm.wechat_group_images
+CREATE TRIGGER wechat_image_item_counters AFTER INSERT OR UPDATE OF state,quality,conversation_id,day ON crm.wechat_group_images
  FOR EACH ROW EXECUTE FUNCTION crm.wechat_image_counters();
