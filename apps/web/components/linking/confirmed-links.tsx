@@ -3,6 +3,7 @@
 import Link from "@/router/link";
 import {useDeferredValue, useEffect, useState} from "react";
 import {SearchInput} from "../ui/field";
+import {Button} from "../ui/button";
 import {Avatar, formatNumber, SourceMark} from "../ui/primitives";
 import {Segmented} from "../ui/segmented";
 import {LoadMore} from "../ui/load-more";
@@ -19,20 +20,24 @@ const COMBOS = [
 ];
 const PAGE_SIZE = 50;
 
-export function ConfirmedLinks({version, onCount}: {version: number; onCount: (count: number) => void}) {
+export function ConfirmedLinks({active,version, onCount}: {active: boolean;version: number; onCount: (count: number) => void}) {
   const [text, setText] = useState("");
   const query = useDeferredValue(text.trim());
   const [combo, setCombo] = useState("");
   const [people, setPeople] = useState<LinkedPerson[] | null>(null);
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
+    if (!active) return;
     const params = new URLSearchParams();
     if (query) params.set("q", query);
     if (combo) params.set("providers", combo);
     let cancelled = false;
-    void fetch(`/api/v1/link-review/linked?${params}`, {cache: "no-cache"}).then(async (response) => {
+    const controller = new AbortController();
+    setError("");
+    void fetch(`/api/v1/link-review/linked?${params}`, {cache: "no-cache",signal:controller.signal}).then(async (response) => {
       if (!response.ok) throw new Error("linked");
       const body = await response.json() as LinkedPerson[];
       if (cancelled) return;
@@ -40,8 +45,8 @@ export function ConfirmedLinks({version, onCount}: {version: number; onCount: (c
       setError("");
       if (!query && !combo) onCount(body.length);
     }).catch(() => !cancelled && setError("暂时无法读取已关联的人。"));
-    return () => {cancelled = true;};
-  }, [query, combo, version, onCount]);
+    return () => {cancelled = true;controller.abort();};
+  }, [active,query, combo, version, onCount,retry]);
 
   return <section className={styles.panel} aria-label="已关联">
     <div className={styles.toolbar}>
@@ -50,7 +55,7 @@ export function ConfirmedLinks({version, onCount}: {version: number; onCount: (c
       <Segmented size="sm" label="平台组合" value={combo} onChange={(value) => {setCombo(value); setPage(1);}} options={COMBOS} />
       <span className={styles.count}>{people ? `${formatNumber(people.length)} 人` : ""}</span>
     </div>
-    {error && <p role="alert" className={styles.error}>{error}</p>}
+    {error && <div role="alert" className={styles.error}>{error} <Button size="sm" variant="ghost" onClick={()=>setRetry(value=>value+1)}>重新读取</Button></div>}
     <div className={styles.tableShell}>
       <table className={`${styles.table} ${styles.linked}`}>
         <caption className={styles.srOnly}>同一人物下已经关联的跨平台账号</caption>

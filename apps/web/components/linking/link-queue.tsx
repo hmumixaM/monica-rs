@@ -32,7 +32,8 @@ const STATUS = [
 const PAGE_SIZE = 50;
 const HIGH_SCORE = 70;
 
-export function LinkQueue({version, staged, stage, unstage, locked, onCount, initialQuery, onQuery}: {
+export function LinkQueue({active,version, staged, stage, unstage, locked, onCount, initialQuery, onQuery}: {
+  active: boolean;
   version: number;
   staged: Record<string, StagedItem>;
   stage: (items: StagedItem[]) => void;
@@ -52,12 +53,14 @@ export function LinkQueue({version, staged, stage, unstage, locked, onCount, ini
   const [searching, setSearching] = useState<QueueRow | null>(null);
 
   useEffect(() => {
+    if (!active) return;
     if (query === initialQuery.trim()) return;
     const timer = setTimeout(() => onQuery(query), 300);
     return () => clearTimeout(timer);
-  }, [query, initialQuery, onQuery]);
+  }, [active,query, initialQuery, onQuery]);
 
   const review = useInfiniteQuery({
+    enabled: active,
     queryKey: ["link-review", pair, status, sort, query, version],
     initialPageParam: 1,
     queryFn: ({pageParam}) => {

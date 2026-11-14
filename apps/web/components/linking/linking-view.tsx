@@ -42,9 +42,9 @@ export function LinkingView() {
         {value: "confirmed", label: "已关联", count: linkedCount ?? undefined},
         {value: "queue", label: "待关联", count: queueCount ?? undefined},
       ]} />} />
-    <div hidden={tab !== "confirmed"}><ConfirmedLinks version={version} onCount={setLinkedCount} /></div>
+    <div hidden={tab !== "confirmed"}><ConfirmedLinks active={tab === "confirmed"} version={version} onCount={setLinkedCount} /></div>
     <div hidden={tab !== "queue"}>
-      <LinkQueue version={version} staged={staged} stage={stage} unstage={unstage} locked={busy} onCount={setQueueCount}
+      <LinkQueue active={tab === "queue"} version={version} staged={staged} stage={stage} unstage={unstage} locked={busy} onCount={setQueueCount}
         initialQuery={initialQuery} onQuery={onQuery} />
     </div>
     <StagedTray staged={staged} unstage={unstage} markFailed={markFailed} clear={clear} onBusy={setBusy} onApplied={refresh} />
