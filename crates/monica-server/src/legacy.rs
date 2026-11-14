@@ -229,8 +229,34 @@ pub async fn evidence_version(
         hash = digest;
         content_id = json!(cid);
     }
-    let participants:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('role','sender','id',a.external_id,'profile_id',l.profile_id,'name',a.display_name)),'[]'::jsonb) FROM crm.source_accounts a LEFT JOIN crm.source_account_links l ON l.account_id=a.id WHERE a.id=$1::uuid")
-        .bind(message["sender_account_id"].as_str()).fetch_one(pool).await?;
+    // Historical attribution belongs to the selected immutable observation.
+    // Only the current revision follows today's confirmed person association.
+    let attribution = if selected == current {
+        &message
+    } else {
+        &presentation
+    };
+    let external = original.get("sender_external_id").and_then(Value::as_str);
+    let sender = attribution
+        .get("sender_account_id")
+        .or_else(|| {
+            external
+                .is_none()
+                .then(|| evidence["original"].get("sender_account_id"))
+                .flatten()
+        })
+        .and_then(Value::as_str);
+    let profile = attribution
+        .get("sender_profile_id")
+        .or_else(|| {
+            external
+                .is_none()
+                .then(|| evidence["original"].get("sender_profile_id"))
+                .flatten()
+        })
+        .and_then(Value::as_str);
+    let participants:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('role','sender','id',a.external_id,'profile_id',CASE WHEN $3 THEN l.profile_id ELSE $4::uuid END,'name',a.display_name)),'[]'::jsonb) FROM crm.source_accounts a LEFT JOIN crm.source_account_links l ON l.account_id=a.id WHERE a.provider=$5 AND (a.id=$1::uuid OR ($1::uuid IS NULL AND a.external_id=$2))")
+        .bind(sender).bind(external).bind(selected==current).bind(profile).bind(message["provider"].as_str()).fetch_one(pool).await?;
     let versions:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('revision',revision,'recorded_at',created_at) FROM crm.legacy_chatlog_versions WHERE entity_type='message' AND entity_id=$1 ORDER BY revision DESC LIMIT 50")
         .bind(id).fetch_all(pool).await?;
     let body = presentation
@@ -249,7 +275,7 @@ pub async fn evidence_version(
         .clone();
     Ok(Some((
         json!({"id":id,"provider":message["provider"],"account_name":message["account"],"external_account":message["account"],"external_id":evidence["source_record_id"],"revision":selected,"current_revision":current,"content_hash":hash,"versions":versions,"metadata":{"participants":participants,"direction":direction}}),
-        json!({"body":body,"raw_body":raw,"body_type":"text/plain","title":"历史聊天记录","occurred_at":message["occurred_at"],"included":true,"deleted":presentation.get("tombstone").unwrap_or(&message["tombstone"]),"direction":direction,"original_content_url":format!("/api/v1/imports/legacy/content/{}",content_id.as_str().unwrap()),"legacy":true}),
+        json!({"body":body,"raw_body":raw,"body_type":"text/plain","title":"历史聊天记录","occurred_at":message["occurred_at"],"included":true,"deleted":presentation.get("tombstone").unwrap_or(&message["tombstone"]),"direction":direction,"participants":participants,"original_content_url":format!("/api/v1/imports/legacy/content/{}",content_id.as_str().unwrap()),"legacy":true}),
     )))
 }
 

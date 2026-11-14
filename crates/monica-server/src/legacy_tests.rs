@@ -290,13 +290,80 @@ async fn imported_messages_expose_bounded_evidence_and_safe_original_files(pool:
     );
     let snapshot = Uuid::new_v4();
     let revised = Uuid::new_v4();
+    let intermediate = Uuid::new_v4();
+    let old_sender = Uuid::new_v4();
+    let middle_sender = Uuid::new_v4();
+    let current_sender = Uuid::new_v4();
+    let original_person = Uuid::new_v4();
+    let relinked_person = Uuid::new_v4();
+    let current_person = Uuid::new_v4();
+    for (id, external) in [
+        (old_sender, "original-sender"),
+        (middle_sender, "intermediate-sender"),
+        (current_sender, "current-sender"),
+    ] {
+        sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'wechat',$2,'person',$2)").bind(id).bind(external).execute(&pool).await.unwrap();
+    }
+    for id in [original_person, relinked_person, current_person] {
+        sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Synthetic sender')").bind(id).execute(&pool).await.unwrap();
+    }
+    for (source, person) in [
+        (old_sender, relinked_person),
+        (current_sender, current_person),
+    ] {
+        sqlx::query("INSERT INTO crm.source_account_links(account_id,profile_id) VALUES($1,$2)")
+            .bind(source)
+            .bind(person)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    sqlx::query("UPDATE crm.message_search SET sender_account_id=$2 WHERE message_id=$1")
+        .bind(message)
+        .bind(current_sender)
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("INSERT INTO crm.legacy_chatlog_snapshots(id,manifest,own_id,status) VALUES($1,'{\"files\":[]}','synthetic-self','converted')").bind(snapshot).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO crm.content_objects(id,content_kind,sha256,byte_length,payload_json) VALUES($1,'message',repeat('d',64),30,'{\"text\":\"Corrected raw message\"}')").bind(revised).execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO crm.legacy_chatlog_projection VALUES('message',$1,'{\"body\":\"Searchable original\"}','{\"body\":\"Corrected visible message\"}',2)").bind(message).execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO crm.legacy_chatlog_versions(entity_type,entity_id,revision,content_object_id,saved_row,snapshot_id) VALUES('message',$1,2,$2,'{\"body\":\"Corrected visible message\"}',$3)").bind(message).bind(revised).bind(snapshot).execute(&pool).await.unwrap();
-    for (query, expected, selected) in [
-        ("", "Corrected raw message", 2),
-        ("&revision=1", "Complete original message", 1),
+    sqlx::query("INSERT INTO crm.content_objects(id,content_kind,sha256,byte_length,payload_json) VALUES($1,'message',repeat('e',64),30,'{\"text\":\"Intermediate raw message\",\"sender_external_id\":\"intermediate-sender\"}')").bind(intermediate).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.legacy_chatlog_projection VALUES('message',$1,$2,$3,3)").bind(message).bind(json!({"body":"Searchable original","sender_account_id":old_sender,"sender_profile_id":original_person})).bind(json!({"body":"Corrected visible message","sender_account_id":current_sender})).execute(&pool).await.unwrap();
+    for (revision, cid, row) in [
+        (
+            2,
+            intermediate,
+            json!({"body":"Intermediate visible message"}),
+        ),
+        (
+            3,
+            revised,
+            json!({"body":"Corrected visible message","sender_account_id":current_sender}),
+        ),
+    ] {
+        sqlx::query("INSERT INTO crm.legacy_chatlog_versions(entity_type,entity_id,revision,content_object_id,saved_row,snapshot_id) VALUES('message',$1,$2,$3,$4,$5)").bind(message).bind(revision).bind(cid).bind(row).bind(snapshot).execute(&pool).await.unwrap();
+    }
+    for (query, expected, selected, sender, person) in [
+        (
+            "",
+            "Corrected raw message",
+            3,
+            "current-sender",
+            json!(current_person),
+        ),
+        (
+            "&revision=2",
+            "Intermediate raw message",
+            2,
+            "intermediate-sender",
+            Value::Null,
+        ),
+        (
+            "&revision=1",
+            "Complete original message",
+            1,
+            "original-sender",
+            json!(original_person),
+        ),
     ] {
         let response = call(
             &app,
@@ -312,6 +379,8 @@ async fn imported_messages_expose_bounded_evidence_and_safe_original_files(pool:
             serde_json::from_slice(&to_bytes(response.into_body(), 65536).await.unwrap()).unwrap();
         assert_eq!(body["body"], expected);
         assert_eq!(body["revision"], selected);
+        assert_eq!(body["metadata"]["participants"][0]["id"], sender);
+        assert_eq!(body["metadata"]["participants"][0]["profile_id"], person);
     }
     let url = format!("/api/v1/imports/legacy/content/{original}");
     assert_eq!(
