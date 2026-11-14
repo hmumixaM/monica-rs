@@ -205,7 +205,7 @@ fn field_key(kind: &str) -> String {
     }
 }
 async fn pending(s: &AppState, id: Option<Uuid>) -> Result<Vec<Value>> {
-    let mut rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'generated_at',max(v.generated_at),'current',(SELECT jsonb_object_agg(c.field_key,r.value) FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=p.id),'birthday',(SELECT jsonb_build_object('month',month,'day',day) FROM crm.profile_dates WHERE profile_id=p.id AND kind='birthday'),'items',jsonb_agg(jsonb_build_object('fingerprint',v.fingerprint,'kind',v.kind,'value',v.value,'date',v.date,'evidence',v.evidence,'quote',v.quote,'confidence',v.confidence) ORDER BY v.generated_at DESC,v.fingerprint)) FROM crm.profile_suggestions v JOIN crm.profiles p ON p.id=v.profile_id WHERE p.archived_at IS NULL AND ($1::uuid IS NULL OR p.id=$1) AND EXISTS(SELECT 1 FROM crm.ai_visible_outputs o WHERE o.kind='ai.profile' AND o.subject=p.id::text AND o.input_hash=v.input_hash) AND NOT EXISTS(SELECT 1 FROM crm.profile_suggestion_decisions d WHERE d.profile_id=p.id AND d.fingerprint=v.fingerprint) GROUP BY p.id ORDER BY max(v.generated_at) DESC,p.id").bind(id).fetch_all(&s.pool).await?;
+    let mut rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'generated_at',max(v.generated_at),'current',(SELECT jsonb_object_agg(c.field_key,r.value) FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=p.id),'birthday',(SELECT jsonb_build_object('month',month,'day',day) FROM crm.profile_dates WHERE profile_id=p.id AND kind='birthday'),'items',jsonb_agg(jsonb_build_object('fingerprint',v.fingerprint,'kind',v.kind,'value',v.value,'date',v.date,'evidence',v.evidence,'quote',v.quote,'confidence',v.confidence) ORDER BY v.generated_at DESC,v.fingerprint)) FROM crm.profile_suggestions v JOIN crm.profiles p ON p.id=v.profile_id WHERE p.archived_at IS NULL AND ($1::uuid IS NULL OR p.id=$1) AND EXISTS(SELECT 1 FROM crm.ai_visible_outputs o WHERE o.kind IN ('ai.profile','ai.profile_updates') AND o.subject=p.id::text AND o.input_hash=v.input_hash) AND NOT EXISTS(SELECT 1 FROM crm.profile_suggestion_decisions d WHERE d.profile_id=p.id AND d.fingerprint=v.fingerprint) GROUP BY p.id ORDER BY max(v.generated_at) DESC,p.id").bind(id).fetch_all(&s.pool).await?;
     for person in &mut rows {
         let known = person
             .as_object_mut()
@@ -249,7 +249,7 @@ async fn profile(
     if !enabled(&s).await? {
         return Ok(Json(json!({"enabled":false})));
     }
-    let memory:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('summary',output->'summary','facts',output->'facts','gaps',output->'gaps','generated_at',generated_at) FROM crm.ai_visible_outputs WHERE kind='ai.profile' AND subject=$1").bind(id.to_string()).fetch_optional(&s.pool).await?;
+    let memory:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('summary',output->'summary','facts',output->'facts','gaps',output->'gaps','generated_at',generated_at) FROM crm.ai_visible_outputs WHERE kind IN ('ai.profile','ai.profile_overview') AND subject=$1 ORDER BY (kind='ai.profile') DESC LIMIT 1").bind(id.to_string()).fetch_optional(&s.pool).await?;
     let queued:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.ai_jobs j JOIN crm.ai_subject_heads h ON h.job_id=j.id WHERE (j.subject=$1 OR j.subject LIKE $1||':%') AND j.status IN ('queued','running'))").bind(id.to_string()).fetch_one(&s.pool).await?;
     let weeks:Vec<Value>=sqlx::query_scalar("SELECT output||jsonb_build_object('week_start',week_start,'generated_at',generated_at) FROM crm.person_weekly_updates w WHERE profile_id=$1 AND EXISTS(SELECT 1 FROM crm.ai_visible_outputs o WHERE o.kind='ai.person_week' AND o.subject=w.profile_id::text||':'||w.week_start::text AND o.input_hash=w.input_hash) ORDER BY week_start DESC LIMIT 12").bind(id).fetch_all(&s.pool).await?;
     let suggestions = pending(&s, Some(id))
@@ -274,7 +274,9 @@ async fn suggestions(
 ) -> Result<Json<Value>> {
     user(&s, &h).await?;
     if !enabled(&s).await? {
-        return Ok(Json(json!({"enabled":false,"total":0,"people":[]})));
+        return Ok(Json(
+            json!({"enabled":false,"total":0,"items":0,"kinds":{},"people":[]}),
+        ));
     }
     let mut people = pending(&s, None).await?;
     let mut counts = serde_json::Map::new();
@@ -323,7 +325,7 @@ async fn decide(
         .fetch_optional(&mut *tx)
         .await?
         .ok_or(missing("profile not found"))?;
-    let item=sqlx::query("SELECT * FROM crm.profile_suggestions v WHERE profile_id=$1 AND fingerprint=$2 AND EXISTS(SELECT 1 FROM crm.ai_visible_outputs o WHERE o.kind='ai.profile' AND o.subject=v.profile_id::text AND o.input_hash=v.input_hash) AND NOT EXISTS(SELECT 1 FROM crm.profile_suggestion_decisions d WHERE d.profile_id=v.profile_id AND d.fingerprint=v.fingerprint) FOR UPDATE").bind(id).bind(&key).fetch_optional(&mut *tx).await?.ok_or(missing("No pending suggestion"))?;
+    let item=sqlx::query("SELECT * FROM crm.profile_suggestions v WHERE profile_id=$1 AND fingerprint=$2 AND EXISTS(SELECT 1 FROM crm.ai_visible_outputs o WHERE o.kind IN ('ai.profile','ai.profile_updates') AND o.subject=v.profile_id::text AND o.input_hash=v.input_hash) AND NOT EXISTS(SELECT 1 FROM crm.profile_suggestion_decisions d WHERE d.profile_id=v.profile_id AND d.fingerprint=v.fingerprint) FOR UPDATE").bind(id).bind(&key).fetch_optional(&mut *tx).await?.ok_or(missing("No pending suggestion"))?;
     let kind: String = item.get("kind");
     let suggested: String = item.get("value");
     let already_known = if kind == "meetup" {

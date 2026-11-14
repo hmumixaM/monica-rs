@@ -9,6 +9,25 @@ test('real Rust populated directory, calendar, orbit, map and profile overview',
  await page.getByRole('searchbox',{name:'筛选联系人'}).fill('hecheng');await expect(page.getByText('Synthetic Alice Updated',{exact:true}).first()).toBeVisible();
  await page.getByText('Synthetic Alice Updated',{exact:true}).first().click();await expect(page.getByRole('heading',{level:1,name:'Synthetic Alice Updated'})).toBeVisible();
  await expect(page.getByText(/45 条/)).toBeVisible();const olderEvidence=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/v1/evidence'&&new URL(r.url()).searchParams.has('before_id'));await page.getByRole('button',{name:'读取更早的往来',exact:true}).click();expect((await (await olderEvidence).json()).length).toBe(5);
+ const coverage=page.locator('section').filter({has:page.getByRole('heading',{name:'来源与关联账号',exact:true})});
+ const timeline=page.locator('section').filter({has:page.getByRole('heading',{name:'跨来源往来',exact:true})});
+ const left=await coverage.boundingBox();const right=await timeline.boundingBox();expect(right!.x).toBeGreaterThan(left!.x+left!.width);
+ await page.evaluate(()=>window.scrollTo(0,0));await expect(timeline.getByRole('link').first()).toBeVisible();await page.screenshot({path:'../../.local-validation/frontend-profile-populated-desktop.png'});
+ await page.goto('/suggestions');await expect(page.getByText('暂时没有建议',{exact:true})).toBeVisible();
+ await page.goto('/profiles');await page.getByRole('button',{name:'新建',exact:true}).click();
+ const create=page.getByRole('dialog',{name:'新建联系人',exact:true});await create.getByLabel('名称',{exact:true}).fill('Synthetic empty profile');await create.getByRole('button',{name:'创建',exact:true}).click();
+ await expect(page.getByRole('heading',{name:/^Synthetic empty profile/})).toBeVisible();
+ await expect(page.getByText('还没有关联的来源记录。',{exact:true})).toBeVisible();
+ const emptyProfile=page.url();
+ for(const width of [1440,390]){await page.setViewportSize({width,height:1000});for(const theme of ['light','dark']){
+  await page.evaluate(t=>{document.documentElement.dataset.theme=t;window.scrollTo(0,0);},theme);
+  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  const form=await page.getByLabel('关联邮箱或手机号',{exact:true}).boundingBox();expect(form!.width).toBeLessThan(400);
+  if(width===1440)await expect.poll(async()=>{const facts=await coverage.locator('..').boundingBox();const activity=await timeline.boundingBox();return Math.abs(activity!.y-facts!.y);}).toBeLessThan(1);
+  await page.screenshot({path:`../../.local-validation/frontend-profile-empty-${width}-${theme}.png`,fullPage:true});
+ }}
+ await page.goto(emptyProfile+'?tab=messages');await expect(page.getByRole('heading',{name:'跨来源往来',exact:true})).toHaveCount(0);
+ await page.setViewportSize({width:1440,height:1000});
  await page.goto('/insights');await expect(page.getByRole('heading',{name:'联系日历',exact:true})).toBeVisible();await expect(page.getByText('Synthetic Company',{exact:true}).first()).toBeVisible();await page.screenshot({path:'../../.local-validation/frontend-real-insights.png',fullPage:true});
  await page.goto('/relationships');await expect(page.getByRole('img',{name:/亲疏圈/})).toBeVisible();await expect(page.getByText('Synthetic Group',{exact:true}).first()).toBeVisible();await page.screenshot({path:'../../.local-validation/frontend-real-orbit.png',fullPage:true});
  await page.route('https://tiles.openfreemap.org/**',route=>route.abort());await page.goto('/relationships?view=map');await expect(page.locator('[data-map-ready]')).toBeVisible({timeout:15000});await expect(page.getByText('详细底图暂时无法连接，正在显示本地世界轮廓。')).toBeVisible();await expect(page.getByRole('heading',{name:'关系与足迹',exact:true})).toBeVisible();await page.getByText(/尚未精确定位的资料地点/).click();await expect(page.getByText('Springfield',{exact:true})).toBeVisible();await page.screenshot({path:'../../.local-validation/frontend-real-map.png',fullPage:true});
@@ -36,10 +55,16 @@ test('MCP settings and operational views use real Rust APIs across themes and si
  const key=await page.locator('code').filter({hasText:/^monica_/}).textContent();expect(key?.length).toBeGreaterThan(32);
  const mcp=await page.request.post('/mcp',{headers:{Authorization:`Bearer ${key}`,Accept:'application/json, text/event-stream','MCP-Protocol-Version':'2025-06-18'},data:{jsonrpc:'2.0',id:1,method:'tools/list',params:{}}});expect(mcp.ok()).toBeTruthy();expect((await mcp.json()).result.tools.length).toBeGreaterThan(10);
  await page.screenshot({path:'../../.local-validation/mcp-settings-desktop.png',fullPage:true});
- await page.getByRole('button',{name:'已保存，隐藏密钥'}).click();await page.getByRole('button',{name:'替换',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'旧密钥立即失效'})).toBeVisible();
+ await page.getByRole('button',{name:'已保存，隐藏密钥'}).click();page.once('dialog',dialog=>dialog.dismiss());await page.getByRole('button',{name:'替换',exact:true}).click();const kept=await page.request.post('/mcp',{headers:{Authorization:`Bearer ${key}`,Accept:'application/json, text/event-stream','MCP-Protocol-Version':'2025-06-18'},data:{jsonrpc:'2.0',id:2,method:'tools/list',params:{}}});expect(kept.ok()).toBeTruthy();page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'替换',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'旧密钥立即失效'})).toBeVisible();
  const old=await page.request.post('/mcp',{headers:{Authorization:`Bearer ${key}`},data:{}});expect(old.status()).toBe(401);
- await page.getByRole('button',{name:'撤销',exact:true}).click();await expect(page.getByText('已撤销',{exact:true})).toBeVisible();
- await page.goto('/imports');await expect(page.getByRole('heading',{name:'同步与导入进度',exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'每日进度',exact:true})).toBeVisible();
+ page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'撤销',exact:true}).click();await expect(page.getByText('已撤销',{exact:true})).toBeVisible();
+ await page.goto('/imports');await expect(page.getByRole('heading',{name:'同步与导入进度',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'表覆盖与历史档案',exact:true}).click();
+ const archive=page.getByRole('dialog',{name:'Chatlog 表覆盖与历史档案',exact:true});await expect(archive).toBeVisible();
+ await archive.getByRole('button',{name:'读取记录',exact:true}).first().click();await expect(archive.locator('pre')).toContainText('Synthetic archived evidence 1');
+ const nextHistory=page.waitForResponse(r=>new URL(r.url()).pathname.endsWith('/history')&&new URL(r.url()).searchParams.has('after'));
+ await archive.getByRole('button',{name:'后续记录',exact:true}).click();expect(new URL((await nextHistory).url()).searchParams.get('after')).toBe('9007199254741017');await expect(archive.locator('pre')).toContainText('Synthetic archived evidence 26');
+ await archive.getByRole('button',{name:'后续表',exact:true}).click();await expect(archive.getByText(/history_100/)).toBeVisible();await page.keyboard.press('Escape');await expect(page.getByRole('heading',{name:'每日进度',exact:true})).toBeVisible();
  await page.getByRole('combobox',{name:'来源',exact:true}).selectOption('apple_messages');await expect(page.locator('section').filter({has:page.getByRole('heading',{name:'每日进度',exact:true})}).getByText(/已保存/).first()).toBeVisible();
  await page.getByRole('button',{name:'查看诊断'}).first().click();await expect(page.getByRole('dialog',{name:'运行详情'})).toBeVisible();await page.keyboard.press('Escape');
  for(const width of [1440,390]){await page.setViewportSize({width,height:1000});for(const theme of ['light','dark']){await page.evaluate(t=>{document.documentElement.dataset.theme=t;window.scrollTo(0,0);(document.activeElement as HTMLElement)?.blur();},theme);await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:`../../.local-validation/mcp-imports-${width}-${theme}.png`,fullPage:true});}}

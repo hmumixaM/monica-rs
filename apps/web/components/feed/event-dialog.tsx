@@ -3,12 +3,14 @@
 import { Heart, MessageCircle, X } from "lucide-react";
 import Link from "../../src/router/link";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
 
 import { localMediaUrl } from "../../lib/media";
+import { fetchJson } from "../../lib/queries";
 import { recordText } from "../../lib/record-text";
 import { useZoomFrom } from "../../lib/zoom";
 import { PhotoPeople } from "../faces/photo-people";
-import { IconButton } from "../ui/button";
+import { Button, IconButton } from "../ui/button";
 import { PersonLink } from "../ui/person-link";
 import { Avatar, SourceMark } from "../ui/primitives";
 import { ChannelsInfo, EventAnnotations, FeedImage, SharedLinkCard, Unavailable, VideoCover } from "./feed-parts";
@@ -72,6 +74,7 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
       <EventAnnotations metadata={metadata} detailed />
       <InstagramPostDetails post={metadata?.post} content={detail?.content} />
       {detail?.media_reading && <MediaReadingNote reading={detail.media_reading} />}
+      {!!detail?.legacy_version_count && <LegacyVersions eventId={event.id} count={detail.legacy_version_count} />}
       {!!detail?.participants?.length && <div className={styles.participants}>{detail.participants.map((person) =>
         <Link key={person.id} href={`/profiles/${person.id}`}>{person.display_name}</Link>)}</div>}
       {!detail && !error && <p className={styles.status} role="status">正在读取详情…</p>}
@@ -93,6 +96,32 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
       </section>}
     </div>
   </dialog>;
+}
+
+type LegacyVersion = { key: string; content_hash: string; observed_at: string; content_object_id: string; kind: string };
+function LegacyVersions({eventId,count}:{eventId:string;count:number}) {
+  const [open,setOpen]=useState(false);
+  const [preview,setPreview]=useState<{key:string;content:unknown}|null>(null);
+  const [error,setError]=useState('');
+  const versions=useInfiniteQuery({
+    queryKey:['legacy-social-versions',eventId],enabled:open,
+    initialPageParam:undefined as {before:string;before_id:string}|undefined,
+    queryFn:({pageParam,signal})=>fetchJson<{records:LegacyVersion[];next:{before:string;before_id:string}|null}>(`/api/v1/imports/legacy/social/${eventId}/versions?`+new URLSearchParams({limit:'20',...pageParam}),{signal}),
+    getNextPageParam:page=>page.records.length===20?page.next:undefined,
+  });
+  return <details className={styles.reading} onToggle={event=>setOpen(event.currentTarget.open)}><summary>历史内容与修订 · {count}</summary>
+    {versions.isError&&<p role="alert">历史版本读取失败。<Button size="sm" variant="ghost" onClick={()=>void versions.refetch()}>重试</Button></p>}
+    {open&&versions.isPending&&<p role="status">正在读取历史版本…</p>}
+    {versions.data?.pages.flatMap(page=>page.records).map(row=>{
+      const url=`/api/v1/imports/legacy/content/${encodeURIComponent(row.content_object_id)}`;
+      return <section key={row.key}><p>{row.kind==='chatlog'?'本次快照修订':'来源历史版本'} · {new Date(row.observed_at).toLocaleString()}</p>
+        <Button size="sm" variant="ghost" onClick={()=>{setError('');void fetchJson<unknown>(url).then(content=>setPreview({key:row.key,content})).catch(()=>setError('该版本的原始文件暂时无法读取。'));}}>查看内容</Button> <a href={url} download>下载原文</a>
+        {preview?.key===row.key&&<><p className={styles.body}>{recordText(preview.content)}</p><details><summary>原始记录</summary><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:'40vh',overflow:'auto'}}>{JSON.stringify(preview.content,null,2)}</pre></details></>}
+      </section>;
+    })}
+    {error&&<p role="alert">{error}</p>}
+    {versions.hasNextPage&&<Button size="sm" variant="ghost" disabled={versions.isFetchingNextPage} onClick={()=>void versions.fetchNextPage()}>读取更早的版本</Button>}
+  </details>;
 }
 
 /** Keep the recognition entry next to the post or Story's own information. */

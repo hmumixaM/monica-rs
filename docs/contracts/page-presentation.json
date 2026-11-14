@@ -1,0 +1,59 @@
+{
+  "format": 1,
+  "source": {
+    "repository": "monica",
+    "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
+    "files": {
+      "services/api/app/profile_facts.py": "6092d72fada65b14c3866a64046e71489caa3b45942e1e9880ca65a6a78b2c68",
+      "services/api/app/location_points.py": "066075e8e4af6589b2fc2f8ebb7b82252c87dbdb30b4fadcb39074703b9c4d36"
+    }
+  },
+  "presentation": {
+    "aliases": [
+      "合成Alice",
+      "Straße"
+    ],
+    "group_names": [
+      "Group Alice"
+    ],
+    "city": "Chicago",
+    "headline": "Synthetic Company · Engineer"
+  },
+  "location_points": [
+    {
+      "label": "Archived place",
+      "latitude": 41.88,
+      "longitude": -87.63,
+      "count": 4,
+      "first_seen": "2024-01-01T00:00:00Z",
+      "last_seen": "2024-02-01T00:00:00Z",
+      "sources": [
+        "manual"
+      ],
+      "events": [
+        {
+          "at": "2024-01-02T00:00:00Z",
+          "text": "Synthetic visit",
+          "source": "manual",
+          "url": null
+        }
+      ],
+      "source_kind": "archived_visits",
+      "map_url": "https://www.openstreetmap.org/?mlat=41.88&mlon=-87.63#map=14/41.88/-87.63"
+    },
+    {
+      "label": "Another place",
+      "latitude": 41.880001,
+      "longitude": -87.630001,
+      "count": 2,
+      "first_seen": null,
+      "last_seen": null,
+      "sources": [
+        "manual"
+      ],
+      "events": [],
+      "source_kind": "archived_visits",
+      "map_url": "https://www.openstreetmap.org/?mlat=41.880001&mlon=-87.630001#map=14/41.880001/-87.630001"
+    }
+  ]
+}

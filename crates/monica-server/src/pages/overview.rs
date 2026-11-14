@@ -45,7 +45,7 @@ async fn overview(
             f
         })
         .collect();
-    let tags:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',t.id,'name',t.name) FROM crm.tag_memberships m JOIN crm.tags t ON t.id=m.tag_id WHERE m.profile_id=$1 ORDER BY t.name").bind(id).fetch_all(&mut *tx).await?;
+    let tags:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',t.id,'name',t.name) FROM crm.presented_tag_memberships m JOIN crm.tags t ON t.id=m.tag_id WHERE m.profile_id=$1 ORDER BY t.name").bind(id).fetch_all(&mut *tx).await?;
     let mut result = json!({"header":monica_core::pages::compact(header),"tags":tags,"linkedin_experience":linkedin});
     if result["header"]["type"] == "person" {
         let events = crate::profiles::summary::contact_events(&mut tx, id).await?;
@@ -56,7 +56,7 @@ async fn overview(
         if let Some(mut messages)=sqlx::query_scalar::<_,Value>("SELECT jsonb_build_object('total',direct_message_count,'group_total',group_message_count,'first_contact_at',first_contact_at,'last_contact_at',last_contact_at,'last_group_at',last_group_at,'sent',coalesce((SELECT sum(sent) FROM crm.page_profile_months WHERE profile_id=$1),0),'received',coalesce((SELECT sum(received) FROM crm.page_profile_months WHERE profile_id=$1),0)) FROM crm.page_contact_stats WHERE profile_id=$1").bind(id).fetch_optional(&mut *tx).await?{
    let months:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('month',to_char(m,'YYYY-MM'),'sent',coalesce(c.sent,0),'received',coalesce(c.received,0)) FROM generate_series(date_trunc('month',now() AT TIME ZONE 'America/Chicago')-interval '23 months',date_trunc('month',now() AT TIME ZONE 'America/Chicago'),interval '1 month') m LEFT JOIN crm.page_profile_months c ON c.profile_id=$1 AND c.month=to_char(m,'YYYY-MM') ORDER BY m").bind(id).fetch_all(&mut *tx).await?;messages["months"]=json!(months);result["messages"]=messages;
   }
-        let relationships:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'relationship_type',e.relationship_type,'direction',CASE WHEN count(DISTINCT e.from_profile_id)>1 THEN 'both' WHEN bool_or(e.from_profile_id=$1) THEN 'outgoing' ELSE 'incoming' END) FROM crm.relationship_edges e JOIN crm.profiles p ON p.id=CASE WHEN e.from_profile_id=$1 THEN e.to_profile_id ELSE e.from_profile_id END AND p.archived_at IS NULL WHERE(e.from_profile_id=$1 OR e.to_profile_id=$1) AND(e.valid_to IS NULL OR e.valid_to>now()) GROUP BY p.id,e.relationship_type ORDER BY p.display_name,e.relationship_type LIMIT 8").bind(id).fetch_all(&mut *tx).await?;
+        let relationships:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'relationship_type',e.relationship_type,'direction',CASE WHEN count(DISTINCT e.from_profile_id)>1 THEN 'both' WHEN bool_or(e.from_profile_id=$1) THEN 'outgoing' ELSE 'incoming' END) FROM crm.presented_relationship_edges e JOIN crm.profiles p ON p.id=CASE WHEN e.from_profile_id=$1 THEN e.to_profile_id ELSE e.from_profile_id END AND p.archived_at IS NULL WHERE(e.from_profile_id=$1 OR e.to_profile_id=$1) AND(e.valid_to IS NULL OR e.valid_to>now()) GROUP BY p.id,e.relationship_type ORDER BY p.display_name,e.relationship_type LIMIT 8").bind(id).fetch_all(&mut *tx).await?;
         result["relationships"] = json!(
             relationships
                 .into_iter()

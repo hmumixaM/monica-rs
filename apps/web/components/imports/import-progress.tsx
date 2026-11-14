@@ -14,7 +14,7 @@ type Run={kind:string;phase:string|null;heartbeat_at:string|null;next_run_at:str
 type Daily={date:string;provider:string;connection_id:string|null;stream:string;records:number;processed:number;inserted:number;changed:number;unchanged:number;failures:number};
 const states:Record<string,string>={received:'已接收',running:'处理中',complete:'已可查询',saved:'已保存',failed:'失败',connected:'已连接',paused:'已暂停',error:'需要处理',syncing:'同步中',needs_auth:'需要授权',disconnected:'已断开',queued:'等待处理',cancelled:'已取消',ready:'本轮采集完成',needs_login:'需要登录',stopped:'已停止',waiting:'等待下一轮',collecting:'正在采集',publishing:'正在保存'};
 const stageNames:Record<string,string>={import_pending:'导入批次待处理',projection_pending:'投影待处理',connection_records_pending:'已保存待处理记录',memory_records_pending:'Memory 输入待补齐',memory_scopes_pending:'人物归属待补齐',media_pending:'媒体待归档',analysis_pending:'模型分析待完成'};
-const phases:Record<string,string>={followees:'关注账号',profiles:'人物资料',posts:'帖子',stories:'Story',highlights:'Highlight',connections:'联系人',profiles_posts:'资料与动态',messages:'消息',browser_login:'登录验证',idle:'等待下一轮',collecting:'采集中',sync:'来源同步',native_read:'本机读取'};
+const phases:Record<string,string>={convert:'数据库转换',database_ready:'数据库已准备',snapshot:'正在获取备份',media_copy:'媒体复制',verify:'完整性校验',followees:'关注账号',profiles:'人物资料',posts:'帖子',stories:'Story',highlights:'Highlight',connections:'联系人',profiles_posts:'资料与动态',messages:'消息',browser_login:'登录验证',idle:'等待下一轮',collecting:'采集中',sync:'来源同步',native_read:'本机读取'};
 const stamp=(v:string|null)=>v?formatDateTime(v,true):'尚无记录';
 export function ImportProgress({compact=false}:{compact?:boolean}){
  const status=useQuery({queryKey:['import-status'],queryFn:()=>fetchJson<Status>('/api/v1/imports/status'),refetchInterval:()=>document.visibilityState==='visible'?5000:30000});

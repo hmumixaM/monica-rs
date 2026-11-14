@@ -35,7 +35,7 @@ async fn graph(
             projection(&s.pool, q.limit.unwrap_or(900).clamp(50, 2000), q.focus).await?,
         ));
     }
-    let edges:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',e.id,'from_profile_id',a.id,'to_profile_id',b.id,'from_display_name',a.display_name,'to_display_name',b.display_name,'from_profile_type',a.profile_type,'to_profile_type',b.profile_type,'relationship_type',e.relationship_type,'source_type',e.source_type,'confidence',e.confidence,'note',e.note,'created_at',e.created_at) FROM crm.relationship_edges e JOIN crm.profiles a ON a.id=e.from_profile_id JOIN crm.profiles b ON b.id=e.to_profile_id WHERE ($1::text IS NULL OR e.source_type=$1) AND ($2::text IS NULL OR e.relationship_type=$2) AND ($3<=0 OR coalesce(e.confidence,0)>=$3) ORDER BY coalesce(e.confidence,0) DESC,e.created_at DESC,e.id DESC LIMIT $4").bind(&q.source_type).bind(&q.relationship_type).bind(q.min_confidence.unwrap_or(0.0).min(1.0)).bind(q.limit.unwrap_or(900).clamp(50,5000)).fetch_all(&s.pool).await?;
+    let edges:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',e.id,'from_profile_id',a.id,'to_profile_id',b.id,'from_display_name',a.display_name,'to_display_name',b.display_name,'from_profile_type',a.profile_type,'to_profile_type',b.profile_type,'relationship_type',e.relationship_type,'source_type',e.source_type,'confidence',e.confidence,'note',e.note,'created_at',e.created_at) FROM crm.presented_relationship_edges e JOIN crm.profiles a ON a.id=e.from_profile_id JOIN crm.profiles b ON b.id=e.to_profile_id WHERE ($1::text IS NULL OR e.source_type=$1) AND ($2::text IS NULL OR e.relationship_type=$2) AND ($3<=0 OR coalesce(e.confidence,0)>=$3) ORDER BY coalesce(e.confidence,0) DESC,e.created_at DESC,e.id DESC LIMIT $4").bind(&q.source_type).bind(&q.relationship_type).bind(q.min_confidence.unwrap_or(0.0).min(1.0)).bind(q.limit.unwrap_or(900).clamp(50,5000)).fetch_all(&s.pool).await?;
     let mut nodes = Vec::<Value>::new();
     for edge in &edges {
         for prefix in ["from", "to"] {
@@ -47,13 +47,13 @@ async fn graph(
             }
         }
     }
-    let total_edges:i64=sqlx::query_scalar("SELECT count(*) FROM crm.relationship_edges e WHERE ($1::text IS NULL OR e.source_type=$1) AND ($2::text IS NULL OR e.relationship_type=$2) AND ($3<=0 OR coalesce(e.confidence,0)>=$3)").bind(q.source_type).bind(q.relationship_type).bind(q.min_confidence.unwrap_or(0.0).min(1.0)).fetch_one(&s.pool).await?;
+    let total_edges:i64=sqlx::query_scalar("SELECT count(*) FROM crm.presented_relationship_edges e WHERE ($1::text IS NULL OR e.source_type=$1) AND ($2::text IS NULL OR e.relationship_type=$2) AND ($3<=0 OR coalesce(e.confidence,0)>=$3)").bind(q.source_type).bind(q.relationship_type).bind(q.min_confidence.unwrap_or(0.0).min(1.0)).fetch_one(&s.pool).await?;
     let total_nodes: i64 =
         sqlx::query_scalar("SELECT count(*) FROM crm.profiles WHERE archived_at IS NULL")
             .fetch_one(&s.pool)
             .await?;
-    let types:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('relationship_type',relationship_type,'edge_count',count(*)) FROM crm.relationship_edges GROUP BY relationship_type ORDER BY count(*) DESC,relationship_type").fetch_all(&s.pool).await?;
-    let sources:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('source_type',source_type,'edge_count',count(*)) FROM crm.relationship_edges GROUP BY source_type ORDER BY count(*) DESC,source_type").fetch_all(&s.pool).await?;
+    let types:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('relationship_type',relationship_type,'edge_count',count(*)) FROM crm.presented_relationship_edges GROUP BY relationship_type ORDER BY count(*) DESC,relationship_type").fetch_all(&s.pool).await?;
+    let sources:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('source_type',source_type,'edge_count',count(*)) FROM crm.presented_relationship_edges GROUP BY source_type ORDER BY count(*) DESC,source_type").fetch_all(&s.pool).await?;
     Ok(Json(
         json!({"nodes":nodes,"visible_edges":edges.len(),"edges":edges,"total_edges":total_edges,"total_nodes":total_nodes,"relationship_types":types,"sources":sources}),
     ))
@@ -135,7 +135,7 @@ async fn projection(pool: &PgPool, limit: i64, focus: Option<Uuid>) -> Result<Va
             pairs.entry(ordered(f, p)).or_default();
         }
     }
-    let relations:Vec<(Uuid,Uuid,String)>=sqlx::query_as("SELECT e.from_profile_id,e.to_profile_id,e.relationship_type FROM crm.relationship_edges e JOIN crm.profiles a ON a.id=e.from_profile_id AND a.archived_at IS NULL AND a.profile_type='person' JOIN crm.profiles b ON b.id=e.to_profile_id AND b.archived_at IS NULL AND b.profile_type='person' WHERE lower(e.relationship_type) NOT SIMILAR TO '%(group|member|owner|群)%' AND ($1::uuid IS NULL OR a.id=$1 OR b.id=$1) ORDER BY e.created_at DESC,e.id DESC LIMIT $2").bind(focus).bind(limit).fetch_all(pool).await?;
+    let relations:Vec<(Uuid,Uuid,String)>=sqlx::query_as("SELECT e.from_profile_id,e.to_profile_id,e.relationship_type FROM crm.presented_relationship_edges e JOIN crm.profiles a ON a.id=e.from_profile_id AND a.archived_at IS NULL AND a.profile_type='person' JOIN crm.profiles b ON b.id=e.to_profile_id AND b.archived_at IS NULL AND b.profile_type='person' WHERE lower(e.relationship_type) NOT SIMILAR TO '%(group|member|owner|群)%' AND ($1::uuid IS NULL OR a.id=$1 OR b.id=$1) ORDER BY e.created_at DESC,e.id DESC LIMIT $2").bind(focus).bind(limit).fetch_all(pool).await?;
     for (a, b, name) in relations {
         ids.extend([a, b]);
         let e = pairs.entry(ordered(a, b)).or_default();

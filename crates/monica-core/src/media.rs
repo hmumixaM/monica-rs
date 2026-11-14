@@ -312,7 +312,7 @@ impl MediaStore {
         let source = manifest["source"].as_str().unwrap_or("manual");
         let record = manifest["record"].as_str().unwrap_or(&asset.sha256);
         let mut tx = self.pool.begin().await?;
-        sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,file_name,width,height,source_type,source_record_id,duration_ms,verified_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now()) ON CONFLICT(sha256) DO NOTHING")
+        sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,file_name,width,height,source_type,source_record_id,duration_ms,verified_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now()) ON CONFLICT(sha256) DO UPDATE SET media_type=excluded.media_type,width=excluded.width,height=excluded.height,duration_ms=excluded.duration_ms,file_name=coalesce(media_assets.file_name,excluded.file_name),verified_at=excluded.verified_at WHERE media_assets.media_type='application/octet-stream' AND excluded.media_type<>'application/octet-stream'")
             .bind(asset.id).bind(&asset.sha256).bind(&asset.media_type).bind(asset.byte_length).bind(&asset.object_path).bind(&asset.file_name).bind(asset.width).bind(asset.height).bind(source).bind(record).bind(asset.duration_ms).execute(&mut *tx).await?;
         let saved:Value=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'sha256',sha256,'media_type',media_type,'byte_length',byte_length,'object_path',object_path,'file_name',file_name,'width',width,'height',height,'duration_ms',duration_ms) FROM crm.media_assets WHERE sha256=$1").bind(&asset.sha256).fetch_one(&mut *tx).await?;
         let saved: Asset = serde_json::from_value(saved)?;

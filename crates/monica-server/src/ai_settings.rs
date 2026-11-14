@@ -15,10 +15,10 @@ pub(super) fn routes() -> Router<AppState> {
 }
 async fn read(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     user(&s, &h).await?;
-    let row = sqlx::query("SELECT enabled,qa_enabled,model,base_url,include_messages,include_private_notes,context_window,max_tokens,credential_ciphertext IS NOT NULL AS has_key FROM crm.ai_settings WHERE id")
+    let row = sqlx::query("SELECT enabled,execution_enabled,qa_enabled,model,base_url,include_messages,include_private_notes,context_window,max_tokens,credential_ciphertext IS NOT NULL AS has_key FROM crm.ai_settings WHERE id")
         .fetch_one(&s.pool).await?;
     Ok(Json(json!({
-        "enabled":row.get::<bool,_>("enabled"),"qa_enabled":row.get::<bool,_>("qa_enabled"),
+        "enabled":row.get::<bool,_>("enabled"),"execution_enabled":row.get::<bool,_>("execution_enabled"),"qa_enabled":row.get::<bool,_>("qa_enabled"),
         "model":row.get::<String,_>("model"),"base_url":row.get::<Option<String>,_>("base_url"),
         "include_messages":row.get::<bool,_>("include_messages"),"include_private_notes":row.get::<bool,_>("include_private_notes"),
         "context_window":row.get::<i32,_>("context_window"),"max_tokens":row.get::<i32,_>("max_tokens"),
@@ -90,6 +90,7 @@ async fn save(
         .or(old.get::<Option<String>, _>("base_url"));
     let has_env_key = std::env::var("MONICA_AI_API_KEY").is_ok_and(|key| !key.is_empty());
     if enabled
+        && old.get::<bool, _>("execution_enabled")
         && (base.is_none() && std::env::var("MONICA_AI_BASE_URL").is_err()
             || (!has_env_key
                 && (v.clear_key

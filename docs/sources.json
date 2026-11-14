@@ -2248,5 +2248,11 @@
     "commit": "6d59cfef4b1a12f678d809a00e37d8332be70b06",
     "path": "services/api/app/source_time.py",
     "sha256": "a6892468e7af28179f85612882b74e65768e105dcfa786c196ab467abcb5656a"
+  },
+  {
+    "repository": "/Users/maxhu/play/monica-multisource",
+    "commit": "1a6e40e20c6ac12aca434b61244059d067847473",
+    "path": "infra/snapshot_publish.py",
+    "sha256": "df369c6445c505c57fb645b3e4de4cb50576f82e2d600c0464411d170364954c"
   }
 ]

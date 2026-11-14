@@ -24,7 +24,7 @@ async fn summary_value(tx: &mut Transaction<'_, Postgres>) -> Result<Value> {
  'wechat_moments',(SELECT coalesce(sum(c.value),0) FROM crm.page_entity_counts c JOIN wechat.objects o ON o.id=c.subject WHERE c.metric='wechat.observations' AND o.object_kind='post'),
  'group_memberships',(SELECT count(*) FROM crm.current_group_memberships),
  'media',(SELECT count(*) FROM crm.media_assets),'posts',(SELECT count(*) FROM crm.page_posts WHERE kind='post'),
- 'stories',(SELECT count(*) FROM crm.page_posts WHERE kind='story'),'relationships',(SELECT count(*) FROM crm.relationship_edges),
+ 'stories',(SELECT count(*) FROM crm.page_posts WHERE kind='story'),'relationships',(SELECT count(*) FROM crm.presented_relationship_edges),
  'activities',(SELECT count(*) FROM crm.activities),'companies',(SELECT count(DISTINCT company_name) FROM crm.profile_structured_current),
  'schools',(SELECT count(DISTINCT school_name) FROM crm.profile_structured_current),
  'address_revisions',(SELECT coalesce(sum(value),0) FROM crm.page_entity_counts WHERE metric='address_revisions'),

@@ -1,0 +1,10 @@
+{
+    auto_https disable_redirects
+    admin off
+}
+https://nas.tailfb022c.ts.net {
+    tls /certs/nas.tailfb022c.ts.net.crt /certs/nas.tailfb022c.ts.net.key
+    reverse_proxy server:17494 {
+        header_up Host nas.tailfb022c.ts.net:9444
+    }
+}

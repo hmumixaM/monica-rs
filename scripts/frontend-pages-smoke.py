@@ -2,10 +2,8 @@
 """Isolated synthetic HTTP/projection regression for Rust page contracts."""
 import datetime, http.cookiejar, json, os, secrets, shutil, socket, subprocess, tempfile, time, urllib.error, urllib.request, uuid
 from pathlib import Path
-from reference_backend import BASELINES, tracked
-# Resolve and verify the pinned oracle before allocating a database/process.
-PRESENTATION_SOURCE=tracked(*BASELINES['crm'],'services/api/app/profile_facts.py').decode('utf-8')
 ROOT=Path(__file__).resolve().parents[1]
+GOLDEN=json.loads((ROOT/'docs/contracts/page-presentation.json').read_text())
 PG=Path(os.environ.get('MONICA_PG_BIN','/opt/homebrew/opt/postgresql@16/bin'))
 
 def run(*args,**kwargs):return subprocess.run([str(a) for a in args],check=True,**kwargs)
@@ -52,6 +50,11 @@ def check_pages(origin,dsn,control_token,native_root):
     ('{story}','wechat','{uuid.uuid4()}','{account}','{peer}','story','story',now(),'{{"text":"Synthetic story","coordinate_format":"chatlog_sns_xml","location":{{"latitude":"2.35","longitude":"48.85","name":"Synthetic Paris"}}}}','synthetic-story',1);
     INSERT INTO crm.social_interactions(id,post_id,provider,external_id,interaction_type,author_profile_id,occurred_at,content) VALUES('{interaction}','{post}','wechat','like','like','{peer}',now(),'{{}}');""")
     sql('INSERT INTO crm.message_months_utc SELECT * FROM crm.message_months')
+    chatlog=str(uuid.uuid4())
+    sql(f"""INSERT INTO crm.legacy_chatlog_snapshots(id,manifest,own_id,status) VALUES('{chatlog}','{{"files":[]}}','synthetic-pages','converted');
+    INSERT INTO crm.legacy_chatlog_tables(snapshot_id,file_name,table_name,mode,expected,processed,status,reason)
+    SELECT '{chatlog}','synthetic.db','history_'||lpad(n::text,3,'0'),'history',CASE WHEN n=0 THEN 26 ELSE 0 END,CASE WHEN n=0 THEN 26 ELSE 0 END,'complete','synthetic archive' FROM generate_series(0,100) n;
+    INSERT INTO crm.legacy_chatlog_history SELECT '{chatlog}','synthetic.db','history_000',9007199254740992+n,jsonb_build_object('text','Synthetic archived evidence '||n) FROM generate_series(1,26)n;""")
     # Dedicated source-owned structured facts; arbitrary manual JSON is not a typed fact.
     import hashlib
     linkedin=str(uuid.uuid4())
@@ -98,19 +101,14 @@ def check_pages(origin,dsn,control_token,native_root):
     assert sql(f"SELECT version FROM crm.cache_versions WHERE domain='profile' AND subject='{peer}'")==peer_version
     assert sql(projection_calls)=='2',sql(projection_calls)
 
-    import ast
-    presentation_source=PRESENTATION_SOURCE
-    selected={'_text','aliases','group_names','headline','current_job','is_current','_negated','city','ordered_experience'}
-    nodes=[node for node in ast.parse(presentation_source).body if isinstance(node,ast.Assign) or isinstance(node,ast.FunctionDef) and node.name in selected]
-    pure='from __future__ import annotations\nimport re\n'+ast.unparse(ast.Module(body=nodes,type_ignores=[]))
-    presentation={};exec(compile(pure,'pinned/profile_facts.py','exec'),presentation)
-    field_values={'wechat.nickname':'合成Alice','wechat.alias':'Straße','monica.nickname':'STRASSE','wechat.group_nicknames':'one｜Group Alice\ntwo|group alice\nthree|合成Alice','linkedin.headline':'Synthetic Engineer','linkedin.location':'Chicago, Illinois, United States'}
-    expected_aliases=presentation['aliases']('Synthetic Alice Updated',field_values,[])
+    presentation=GOLDEN['presentation']
+    expected_aliases=presentation['aliases']
+    expected_headline=presentation['headline']
+    expected_city=presentation['city']
     changed_directory=json.loads(changed);changed_row=dict(zip(changed_directory['columns'],next(row for row in changed_directory['profiles'] if row[0]==p)))
     assert changed_row['aliases']==expected_aliases,(changed_row['aliases'],expected_aliases)
-    assert changed_row['group_names']==presentation['group_names'](field_values['wechat.group_nicknames'],['Synthetic Alice Updated',*expected_aliases])
-    assert changed_row['city']==presentation['city'](field_values)
-    expected_headline=presentation['headline'](field_values,[{'type':'employment','company':'Synthetic Company','title':'Engineer','is_current':True}])
+    assert changed_row['group_names']==presentation['group_names']
+    assert changed_row['city']==expected_city
     assert changed_row['headline']==expected_headline
     posts=request('/api/v1/directory/posts');assert [r[0] for r in posts['posts']]==[post]
     home=request('/api/v1/home')['key_numbers'];assert home=={'contacts':2,'groups':1,'messages_30d':4,'active_contacts_30d':2},home
@@ -125,7 +123,7 @@ def check_pages(origin,dsn,control_token,native_root):
     metrics=request(f'/api/v1/profiles/{p}/metrics');assert next(x for x in metrics if x['metric_key']=='timeline.count')['value']==1
     assert any(m['metric_key']=='global.profile_count' and m['value']==3 for m in request('/api/v1/metrics/snapshots'))
     overview=request(f'/api/v1/profiles/{p}/overview');assert overview['header']['name']=='Synthetic Alice Updated' and overview['messages']['total']==3 and overview['contact_events']['calls']['total']==1,overview
-    assert overview['header']['headline']==expected_headline and overview['header']['city']==presentation['city'](field_values)
+    assert overview['header']['headline']==expected_headline and overview['header']['city']==expected_city
     assert overview['groups'][0]['profile_id']==group and overview['recent_posts'][0]['id']==post
     company_id=directory['companies'][row['company_ids'][0]][0]
     assert overview['linkedin_experience'][0]['company_id']==company_id
@@ -172,10 +170,8 @@ def check_pages(origin,dsn,control_token,native_root):
     assert request(f'/api/v1/profiles/{group}/locations')=={'profile_id':group,'total_posts_with_location':0,'place_count':0,'points':[],'field_sources':[]}
     visits=[{'name':'Archived place','lat':41.88,'lon':-87.63,'visits':4,'first':'2024-01-01T00:00:00Z','last':'2024-02-01T00:00:00Z','moments':[{'at':'2024-01-02T00:00:00Z','text':'Synthetic visit'}]},{'poiName':'Another place','latitude':41.880001,'longitude':-87.630001,'visits':2}]
     request(field,{'field_key':'wechat.location_history','value':{'places':visits}},method='PATCH')
-    # Run the actual pinned pure Python reducer as the oracle for profile-map rows.
-    baseline=run('git','-C','/Users/maxhu/play/monica','show','6d59cfef4b1a12f678d809a00e37d8332be70b06:services/api/app/location_points.py',capture_output=True,text=True).stdout
-    oracle={};exec(compile('from __future__ import annotations\n'+baseline,'pinned/location_points.py','exec'),oracle)
-    expected=oracle['_build_location_summary']([{'provider':'manual','location':v,'count':v['visits'],'first_seen':v.get('first'),'last_seen':v.get('last'),'source_kind':'archived_visits','events':[{'at':m['at'],'text':m.get('text',''),'source':'manual','url':None} for m in v.get('moments',[])]} for v in visits])
+    # Exact pinned Python reducer output; source hashes are recorded in GOLDEN.
+    expected=GOLDEN['location_points']
     actual=request(f'/api/v1/profiles/{p}/locations')
     assert actual['points']==expected,(actual['points'],expected)
     assert actual['total_posts_with_location']==6 and actual['place_count']==2
@@ -210,7 +206,7 @@ def check_pages(origin,dsn,control_token,native_root):
     print('PASS: 18 page routes, real data, directory dictionaries/ETag, exact rolling counts, calendar/corrections, ribbon, orbit/manual names, city resolution/maps, metrics/search; native evidence journal')
     return evidence_id
 
-with tempfile.TemporaryDirectory(prefix='monica-rust-pages-') as temp:
+with tempfile.TemporaryDirectory(prefix='monica-rust-pages-',dir=os.environ.get('MONICA_TEST_TMP_ROOT')) as temp:
     root=Path(temp);db=root/'postgres';server=None
     with (root/'postgres.log').open('w') as log:
         run(PG/'initdb','-D',db,'--auth=trust','--no-locale','--encoding=UTF8',stdout=log,stderr=log)

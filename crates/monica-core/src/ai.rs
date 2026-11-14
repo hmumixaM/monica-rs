@@ -212,7 +212,7 @@ pub struct Lease {
 }
 pub async fn claim(pool: &PgPool) -> Result<Option<Lease>> {
     let token = Uuid::new_v4();
-    let row=sqlx::query("WITH candidate AS (SELECT j.id FROM crm.ai_jobs j JOIN crm.ai_subject_heads h ON h.job_id=j.id JOIN crm.ai_settings s ON s.id AND s.enabled WHERE j.attempts<3 AND (j.kind<>'ai.image_ocr' OR EXISTS(SELECT 1 FROM crm.image_ocr_settings o WHERE o.id AND o.enabled AND o.daily_limit>(SELECT count(*) FROM crm.ai_call_reservations WHERE day=(now() AT TIME ZONE 'America/Chicago')::date))) AND (j.status='queued' OR (j.status='running' AND j.lease_until<clock_timestamp())) ORDER BY j.created_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1) UPDATE crm.ai_jobs j SET status='running',token=$1,lease_until=clock_timestamp()+interval '90 seconds',attempts=attempts+1 FROM candidate c WHERE j.id=c.id RETURNING j.*").bind(token).fetch_optional(pool).await?;
+    let row=sqlx::query("WITH candidate AS (SELECT j.id FROM crm.ai_jobs j JOIN crm.ai_subject_heads h ON h.job_id=j.id JOIN crm.ai_settings s ON s.id AND s.enabled AND s.execution_enabled WHERE j.attempts<3 AND (j.kind<>'ai.image_ocr' OR EXISTS(SELECT 1 FROM crm.image_ocr_settings o WHERE o.id AND o.enabled AND o.daily_limit>(SELECT count(*) FROM crm.ai_call_reservations WHERE day=(now() AT TIME ZONE 'America/Chicago')::date))) AND (j.status='queued' OR (j.status='running' AND j.lease_until<clock_timestamp())) ORDER BY j.created_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1) UPDATE crm.ai_jobs j SET status='running',token=$1,lease_until=clock_timestamp()+interval '90 seconds',attempts=attempts+1 FROM candidate c WHERE j.id=c.id RETURNING j.*").bind(token).fetch_optional(pool).await?;
     Ok(row.map(|r| Lease {
         id: r.get("id"),
         token,
@@ -754,7 +754,7 @@ pub async fn configured_provider(
     pool: &PgPool,
     cipher: Option<&crate::credentials::CredentialCipher>,
 ) -> Result<Option<provider::OpenAiProvider>> {
-    let row = sqlx::query("SELECT base_url,credential_ciphertext FROM crm.ai_settings WHERE id AND enabled AND provider='openai'")
+    let row = sqlx::query("SELECT base_url,credential_ciphertext FROM crm.ai_settings WHERE id AND enabled AND execution_enabled AND provider='openai'")
         .fetch_optional(pool).await?;
     let Some(row) = row else {
         return Ok(None);
@@ -863,7 +863,7 @@ pub async fn schedule_due(pool: &PgPool) -> Result<()> {
 /// enqueue are replay-safe; there is no1000-person truncation or long DB lock.
 pub async fn dispatch_one(pool: &PgPool) -> Result<bool> {
     let token = Uuid::new_v4();
-    let row=sqlx::query("WITH candidate AS (SELECT d.id FROM crm.ai_dispatches d JOIN crm.ai_settings s ON s.id AND s.enabled WHERE d.status='queued' OR (d.status='running' AND d.lease_until<clock_timestamp()) ORDER BY d.created_at,d.id FOR UPDATE OF d SKIP LOCKED LIMIT 1) UPDATE crm.ai_dispatches d SET status='running',token=$1,lease_until=clock_timestamp()+interval '2 minutes' FROM candidate c WHERE d.id=c.id RETURNING d.*").bind(token).fetch_optional(pool).await?;
+    let row=sqlx::query("WITH candidate AS (SELECT d.id FROM crm.ai_dispatches d JOIN crm.ai_settings s ON s.id AND s.enabled AND s.execution_enabled WHERE d.status='queued' OR (d.status='running' AND d.lease_until<clock_timestamp()) ORDER BY d.created_at,d.id FOR UPDATE OF d SKIP LOCKED LIMIT 1) UPDATE crm.ai_dispatches d SET status='running',token=$1,lease_until=clock_timestamp()+interval '2 minutes' FROM candidate c WHERE d.id=c.id RETURNING d.*").bind(token).fetch_optional(pool).await?;
     let Some(row) = row else { return Ok(false) };
     let id: Uuid = row.get("id");
     let kind: String = row.get("kind");
@@ -922,6 +922,7 @@ pub(crate) fn optional_bool(name: &str) -> Result<Option<bool>> {
 /// persisted user choices across native restarts; environment keys are not persisted.
 pub async fn configure_from_env(pool: &PgPool) -> Result<()> {
     let enabled = optional_bool("MONICA_AI_ENABLED")?;
+    let execution = optional_bool("MONICA_AI_EXECUTION_ENABLED")?;
     let notes = optional_bool("MONICA_AI_INCLUDE_PRIVATE_NOTES")?;
     let messages = optional_bool("MONICA_AI_INCLUDE_MESSAGES")?;
     let model = std::env::var("MONICA_AI_MODEL")
@@ -972,6 +973,12 @@ pub async fn configure_from_env(pool: &PgPool) -> Result<()> {
         )
     }
     let mut tx = pool.begin().await?;
+    if let Some(value) = execution {
+        sqlx::query("UPDATE crm.ai_settings SET execution_enabled=$1 WHERE id")
+            .bind(value)
+            .execute(&mut *tx)
+            .await?;
+    }
     if enabled.is_some()
         || notes.is_some()
         || messages.is_some()
