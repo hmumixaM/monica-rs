@@ -4,18 +4,34 @@ use serde_json::Value;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-pub async fn refresh_inputs(pool: &PgPool) -> Result<usize> {
+/// Move a small mutable queue batch before taking any person head. A crash after
+/// this commit leaves claims visible to the existing publication fence.
+pub async fn claim_pending(pool: &PgPool) -> Result<usize> {
     let mut tx = pool.begin().await?;
-    // Share the established legacy reducer order without holding a queue row
-    // while waiting for a person head. A source writer can enqueue a newer
-    // version concurrently; compare-and-delete leaves that work durable.
     let admitted: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(11803479)")
         .fetch_one(&mut *tx)
         .await?;
     if !admitted {
         return Ok(0);
     }
-    let rows = sqlx::query("SELECT q.event_id,q.version,q.profiles,o.profile_id AS previous_owner,p.id AS owner,CASE WHEN p.id IS NOT NULL THEN crm.ai_social_visual(q.event_id) END AS payload FROM (SELECT * FROM crm.memory_visual_pending ORDER BY requested_at,event_id LIMIT 25) q LEFT JOIN crm.memory_visual_owners o USING(event_id) LEFT JOIN crm.timeline_events e ON e.id=q.event_id LEFT JOIN crm.memory_legacy_eligible_profiles p ON p.id=e.profile_id ORDER BY q.event_id")
+    let count: i64 = sqlx::query_scalar("WITH picked AS (SELECT q.event_id FROM crm.memory_visual_pending q WHERE NOT EXISTS(SELECT 1 FROM crm.memory_visual_claims c WHERE c.event_id=q.event_id) ORDER BY q.requested_at,q.event_id LIMIT 25 FOR UPDATE OF q SKIP LOCKED), moved AS (DELETE FROM crm.memory_visual_pending q USING picked p WHERE q.event_id=p.event_id RETURNING q.*), saved AS (INSERT INTO crm.memory_visual_claims(event_id,profiles,version,requested_at) SELECT event_id,profiles,version,requested_at FROM moved RETURNING event_id) SELECT count(*) FROM saved")
+        .fetch_one(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(count as usize)
+}
+
+pub async fn refresh_inputs(pool: &PgPool) -> Result<usize> {
+    claim_pending(pool).await?;
+    let mut tx = pool.begin().await?;
+    let admitted: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(11803479)")
+        .fetch_one(&mut *tx)
+        .await?;
+    if !admitted {
+        return Ok(0);
+    }
+    // Only mutable current heads are reserved. Saved OCR, captions, faces and
+    // source evidence are ordinary MVCC reads, with no explicit source locks.
+    let rows = sqlx::query("SELECT q.event_id,q.version,q.profiles,o.profile_id AS previous_owner,p.id AS owner,CASE WHEN p.id IS NOT NULL THEN crm.ai_social_visual(q.event_id) END AS payload FROM (SELECT * FROM crm.memory_visual_claims ORDER BY requested_at,event_id LIMIT 25) q LEFT JOIN crm.memory_visual_owners o USING(event_id) LEFT JOIN crm.timeline_events e ON e.id=q.event_id LEFT JOIN crm.memory_legacy_eligible_profiles p ON p.id=e.profile_id ORDER BY q.event_id")
         .fetch_all(&mut *tx).await?;
     if rows.is_empty() {
         return Ok(0);
@@ -58,7 +74,7 @@ pub async fn refresh_inputs(pool: &PgPool) -> Result<usize> {
                 .execute(&mut *tx)
                 .await?;
         }
-        sqlx::query("DELETE FROM crm.memory_visual_pending WHERE event_id=$1 AND version=$2")
+        sqlx::query("DELETE FROM crm.memory_visual_claims WHERE event_id=$1 AND version=$2")
             .bind(event)
             .bind(row.get::<Uuid, _>("version"))
             .execute(&mut *tx)

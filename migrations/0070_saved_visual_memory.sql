@@ -3,7 +3,7 @@
 CREATE FUNCTION crm.ai_social_visual(event uuid) RETURNS jsonb LANGUAGE sql STABLE AS $$
  WITH selected AS (
   SELECT e.* FROM crm.timeline_events e
-  WHERE e.id=event AND e.status='active'
+  WHERE e.id=event AND e.status<>'deleted'
    AND (e.connection_id IS NULL OR EXISTS(
     SELECT 1 FROM crm.connection_evidence c JOIN crm.source_connections s ON s.id=c.connection_id
     WHERE c.id=e.id AND c.included AND NOT c.deleted AND s.enabled))
@@ -55,10 +55,16 @@ CREATE TABLE crm.memory_visual_pending (
 );
 CREATE INDEX ON crm.memory_visual_pending USING gin(profiles);
 CREATE INDEX ON crm.memory_visual_pending(requested_at,event_id);
+-- Claims are durable publication fences. Source writers only use pending;
+-- materialization touches claims and never waits for a source's pending row.
+CREATE TABLE crm.memory_visual_claims (LIKE crm.memory_visual_pending INCLUDING DEFAULTS INCLUDING CONSTRAINTS);
+ALTER TABLE crm.memory_visual_claims ADD PRIMARY KEY(event_id);
+CREATE INDEX ON crm.memory_visual_claims(requested_at,event_id);
 CREATE OR REPLACE VIEW crm.memory_legacy_pending AS
  SELECT unnest(profiles) profile_id FROM crm.memory_legacy_scopes
  UNION ALL SELECT unnest(profiles) FROM crm.memory_legacy_pending_records
- UNION ALL SELECT unnest(profiles) FROM crm.memory_visual_pending;
+ UNION ALL SELECT unnest(profiles) FROM crm.memory_visual_pending
+ UNION ALL SELECT unnest(profiles) FROM crm.memory_visual_claims;
 
 CREATE FUNCTION crm.queue_visual_memory(events uuid[],previous_profiles uuid[] DEFAULT '{}') RETURNS void
 LANGUAGE sql AS $$
