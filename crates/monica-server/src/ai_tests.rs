@@ -160,6 +160,45 @@ async fn authenticated_fake_ai_decisions_are_atomic_and_private_outputs_hide(poo
     .unwrap();
     assert_eq!(decisions, 1);
     response(&app, "DELETE", &path, Value::Null, StatusCode::NOT_FOUND).await;
+    // Existing imported suggestions are hidden against current structured facts
+    // without deleting their original result or needing another inference.
+    let source = monica_core::Record {
+        provider: monica_core::Provider::Linkedin,
+        account: "synthetic-structured".into(),
+        object: "profile".into(),
+        kind: "profile".into(),
+        event: "1".into(),
+        payload: json!({"education":[{"school":"Synthetic University","degree":"MS"}]}),
+    };
+    monica_core::ingest(&pool, &source).await.unwrap();
+    while let Some(job) = monica_core::claim(&pool).await.unwrap() {
+        monica_core::project(&pool, &job).await.unwrap();
+    }
+    monica_core::linking::set_link(
+        &pool,
+        monica_core::linking::LinkChange {
+            account_id: monica_core::identity::account_id(source.provider, &source.account)
+                .unwrap(),
+            profile_id: Some(id),
+            expected_profile_id: None,
+        },
+        None,
+    )
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO crm.profile_suggestions(profile_id,fingerprint,kind,value,evidence,quote,confidence,input_hash) VALUES($1,'synthetic-existing-structured','school','合成大学','[{\"kind\":\"profile\"}]','Master of Science at Synthetic University','high',$2)")
+        .bind(id).bind(&lease.input_hash).execute(&pool).await.unwrap();
+    let structured = response(
+        &app,
+        "GET",
+        "/api/v1/ai/suggestions",
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(structured["items"], 0);
+    assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM crm.profile_suggestions WHERE profile_id=$1 AND fingerprint='synthetic-existing-structured'")
+        .bind(id).fetch_one(&pool).await.unwrap(),1);
     sqlx::query("UPDATE crm.ai_settings SET include_messages=true")
         .execute(&pool)
         .await
