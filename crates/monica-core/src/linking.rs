@@ -18,7 +18,7 @@ pub async fn rebuild_profile(tx: &mut Transaction<'_, Postgres>, profile: Uuid) 
     // Manual values (including explicit null deletions) remain authoritative.
     sqlx::query("DELETE FROM crm.field_current c USING crm.field_revisions r WHERE c.revision_id=r.id AND c.profile_id=$1 AND r.source_account_id IS NOT NULL AND r.source_type<>'manual'")
         .bind(profile).execute(&mut **tx).await?;
-    let rows=sqlx::query("SELECT DISTINCT ON(f.field_key) f.*,a.provider FROM crm.source_fields f JOIN crm.source_account_links l ON l.account_id=f.account_id JOIN crm.source_accounts a ON a.id=f.account_id WHERE l.profile_id=$1 ORDER BY f.field_key,f.observed_at DESC,f.account_id")
+    let rows=sqlx::query("SELECT DISTINCT ON(f.field_key) f.*,a.provider,CASE WHEN protected.source_type IN ('manual','monica') THEN protected.content_hash END AS protected_hash FROM crm.source_fields f JOIN crm.source_account_links l ON l.account_id=f.account_id JOIN crm.source_accounts a ON a.id=f.account_id LEFT JOIN crm.field_current c ON c.profile_id=l.profile_id AND c.field_key=f.field_key LEFT JOIN crm.field_revisions protected ON protected.id=c.revision_id WHERE l.profile_id=$1 ORDER BY f.field_key,f.observed_at DESC,f.account_id")
         .bind(profile).fetch_all(&mut **tx).await?;
     let values = rows
         .iter()
@@ -30,6 +30,9 @@ pub async fn rebuild_profile(tx: &mut Transaction<'_, Postgres>, profile: Uuid) 
         let account: Uuid = row.get("account_id");
         let value: Value = row.get("value");
         let hash = content.hash;
+        let is_conflict = row
+            .get::<Option<String>, _>("protected_hash")
+            .is_some_and(|current| current != hash);
         let revision=sqlx::query("SELECT id,content_hash,value FROM crm.field_revisions WHERE profile_id=$1 AND source_account_id=$2 AND field_key=$3 ORDER BY revision_seq DESC LIMIT 1")
             .bind(profile).bind(account).bind(&key).fetch_optional(&mut **tx).await?;
         let id = if let Some(revision) = revision.filter(|r| {
@@ -38,8 +41,8 @@ pub async fn rebuild_profile(tx: &mut Transaction<'_, Postgres>, profile: Uuid) 
             revision.get("id")
         } else {
             let id = Uuid::new_v4();
-            sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,field_key,value,content_hash,source_type,operation,source_account_id,content_object_id) VALUES($1,$2,$3,$4,$5,$6,'import',$7,$8)")
-                .bind(id).bind(profile).bind(&key).bind(value).bind(hash).bind(row.get::<String,_>("provider")).bind(account).bind(content.id).execute(&mut **tx).await?;
+            sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,field_key,value,content_hash,source_type,operation,source_account_id,content_object_id,is_conflict) VALUES($1,$2,$3,$4,$5,$6,'import',$7,$8,$9)")
+                .bind(id).bind(profile).bind(&key).bind(value).bind(hash).bind(row.get::<String,_>("provider")).bind(account).bind(content.id).bind(is_conflict).execute(&mut **tx).await?;
             id
         };
         sqlx::query("INSERT INTO crm.field_current(profile_id,field_key,revision_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
