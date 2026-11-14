@@ -12,6 +12,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 import uuid
 
 import psycopg
@@ -193,6 +194,10 @@ class MigrationContract(unittest.TestCase):
             db.execute("INSERT INTO SnsTimeLine VALUES(12,'synthetic-account',?)",(xml,))
             db.execute("ALTER TABLE SnsTimeLine ADD COLUMN pack_info_buf TEXT")
             db.execute("UPDATE SnsTimeLine SET pack_info_buf=CAST(x'fffe' AS TEXT)")
+        # The fixture writes only kilobytes. Hosted CI runners need not have
+        # the 20 GiB reserve required for real personal-history migration.
+        space_floor=mock.patch.object(chatlog,"FLOOR",1024**2)
+        space_floor.start();self.addCleanup(space_floor.stop)
         def run(source,state,verify=False):
             state.mkdir(exist_ok=True)
             if not verify:chatlog.bind_reader_target(self.target,state,"synthetic-self")
