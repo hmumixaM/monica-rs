@@ -46,6 +46,7 @@ pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
                 .fetch_one(&shared.background).await?;
             let mut reduced = 0;
             if !importing {
+                reduced+=crate::ai::week_window::refresh_observations(&shared.background).await?;
                 reduced+=crate::ai::memory::refresh_profile_facts(&shared.background).await?;
                 reduced+=crate::ai::visual::refresh_inputs(&shared.background).await?;
                 let pending: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.memory_legacy_pending_records) OR EXISTS(SELECT 1 FROM crm.memory_legacy_scopes)")
@@ -76,6 +77,7 @@ pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
                 }
             }
             if !importing && housekeeping_at.elapsed() >= Duration::from_secs(15) {
+                crate::ai::week_window::prune_completed(&shared.background).await?;
                 sqlx::query("DELETE FROM crm.import_run_events WHERE id IN(SELECT id FROM crm.import_run_events WHERE created_at<now()-interval '90 days' ORDER BY created_at LIMIT 1000)").execute(&shared.background).await?;
                 crate::pages::refresh_metrics(&shared.background).await?;
                 housekeeping_at = Instant::now();

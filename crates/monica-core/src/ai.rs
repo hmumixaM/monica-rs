@@ -18,6 +18,8 @@ pub mod provider;
 pub mod slots;
 #[path = "ai_visual.rs"]
 pub mod visual;
+#[path = "ai_week_window.rs"]
+pub mod week_window;
 #[path = "ai_weekly.rs"]
 pub mod weekly;
 
@@ -82,7 +84,7 @@ pub async fn snapshot(
     let provider: String = settings.get("provider");
     let mut input = json!({"evidence":[],"prompt_version":PROMPT_VERSION});
     let mut versions = json!({});
-    if kind == "ai.profile" {
+    if matches!(kind, "ai.profile" | "ai.person_week" | "ai.digest") {
         input["chunk_model"] = json!(models::resolve(
             &settings.get::<String, _>("model"),
             &routes,
@@ -95,17 +97,13 @@ pub async fn snapshot(
             input = payload;
             versions = source;
         }
-        "ai.profile" | "ai.person_week" | "ai.reconnect_one" => {
+        "ai.profile" | "ai.reconnect_one" => {
             let mut parts = subject.split(':');
             let id: Uuid = parts.next().context("missing profile")?.parse()?;
             let row = sqlx::query("SELECT id,display_name,summary,generation FROM crm.profiles WHERE id=$1 AND archived_at IS NULL AND profile_type='person' FOR SHARE").bind(id).fetch_optional(&mut **tx).await?.context("inactive profile")?;
             input["profile"] = json!({"id":id,"name":row.get::<String,_>("display_name"),"summary":row.get::<Option<String>,_>("summary")});
             versions["profile"] = json!(row.get::<i64, _>("generation"));
-            let week = if kind == "ai.person_week" {
-                Some(parts.next().context("missing week")?.parse::<NaiveDate>()?)
-            } else {
-                None
-            };
+            let week: Option<NaiveDate> = None;
             ensure!(parts.next().is_none(), "invalid profile subject");
             input["week_start"] = json!(week);
             let fields:Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',r.id,'kind','profile','text',r.value,'field_key',c.field_key,'at',r.observed_at) FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1 AND c.field_key=ANY($2) ORDER BY c.field_key LIMIT 80")
@@ -126,15 +124,33 @@ pub async fn snapshot(
             }
             input["evidence"] = json!(evidence);
         }
+        "ai.person_week" => {
+            let (id, week) = subject.split_once(':').context("week subject")?;
+            let id: Uuid = id.parse()?;
+            let week: NaiveDate = week.parse()?;
+            ensure!(
+                week.weekday().num_days_from_monday() == 0,
+                "week must begin Monday"
+            );
+            let row=sqlx::query("SELECT display_name,summary,generation FROM crm.profiles WHERE id=$1 AND archived_at IS NULL AND profile_type='person' FOR SHARE")
+                .bind(id).fetch_optional(&mut **tx).await?.context("inactive profile")?;
+            input["profile"] = json!({"id":id,"name":row.get::<String,_>("display_name"),"summary":row.get::<Option<String>,_>("summary")});
+            versions["profile"] = json!(row.get::<i64, _>("generation"));
+            input["week_start"] = json!(week);
+            input["window"] = week_window::manifest(tx, kind, subject, &privacy).await?;
+            ensure!(
+                input["window"]["source_count"].as_i64().unwrap_or(0) > 0,
+                "no evidence in this week"
+            );
+        }
         "ai.digest" => {
             let week: NaiveDate = subject.parse()?;
             ensure!(
                 week.weekday().num_days_from_monday() == 0,
                 "week must begin Monday"
             );
-            let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',t.id,'kind',t.event_type,'profile_id',t.profile_id,'text',coalesce(t.content->>'text',t.content->>'caption',''),'at',t.occurred_at,'version',t.version) FROM crm.timeline_events t JOIN crm.profiles p ON p.id=t.profile_id WHERE p.archived_at IS NULL AND t.status='active' AND t.occurred_at>=($1::date::timestamp AT TIME ZONE 'America/Chicago') AND t.occurred_at<(($1::date+7)::timestamp AT TIME ZONE 'America/Chicago') ORDER BY t.occurred_at,t.id LIMIT 160").bind(week).fetch_all(&mut **tx).await?;
             input["week_start"] = json!(week);
-            input["evidence"] = json!(rows);
+            input["window"] = week_window::manifest(tx, kind, subject, &privacy).await?;
             input["facts"] = weekly::facts(tx, week).await?;
         }
         "ai.community" => {
@@ -268,7 +284,7 @@ pub fn resolve_evidence(input: &Value, refs: &Value) -> Vec<Value> {
                 .cloned()
                 .map(|mut value| {
                     value["quote"] = value["text"].clone();
-                    value["discovered"] = json!(false);
+                    value["discovered"] = json!(value["discovered"].as_bool().unwrap_or(false));
                     let source = value["id"].as_str().unwrap_or_default();
                     let profile = input["profile"]["id"].as_str().unwrap_or(source);
                     let citation = match value["kind"].as_str() {
@@ -340,7 +356,7 @@ pub fn validate_output(lease: &Lease, output: Value) -> Result<Value> {
                 ["new_job","move","travel","wedding","graduation","new_baby","other"].contains(&event["kind"].as_str().unwrap_or_default())
                     && event["text"].is_string() && evidence
                     .iter()
-                    .any(|e| e["id"] == event["post_id"] && e["profile_id"] == event["profile_id"])
+                    .any(|e| e["id"] == event["post_id"] && e["profile_id"] == event["profile_id"] && !e["discovered"].as_bool().unwrap_or(false) && e["temporal_kind"] != "profile_update" && matches!(e["kind"].as_str(),Some("post"|"story")))
             })
             .take(30)
             .map(|event| json!({"profile_id":event["profile_id"],"post_id":event["post_id"],"kind":event["kind"],"text":event["text"].as_str().unwrap_or_default().chars().take(2000).collect::<String>()}))
@@ -483,7 +499,26 @@ pub fn birthday_at(value: &str, today: NaiveDate) -> Option<(Option<i32>, u32, u
 
 pub async fn finish(pool: &PgPool, lease: &Lease, output: Value) -> Result<bool> {
     let memory_generation = output.get("_memory_generation").and_then(Value::as_i64);
-    let output = validate_output(lease, output)?;
+    let output = if matches!(lease.kind.as_str(), "ai.person_week" | "ai.digest")
+        && lease.input.get("window").is_some()
+    {
+        let resolved = week_window::output_lease(pool, lease, &output).await?;
+        let mut validated = validate_output(&resolved, output)?;
+        let processed: i64 = sqlx::query_scalar(
+            "SELECT coalesce(sum(source_count),0)::bigint FROM crm.ai_week_buckets WHERE job_id=$1",
+        )
+        .bind(lease.id)
+        .fetch_one(pool)
+        .await?;
+        ensure!(
+            Some(processed) == lease.input["window"]["source_count"].as_i64(),
+            "week evidence reduction incomplete"
+        );
+        validated["coverage"] = json!({"sources":processed,"processed":processed,"complete":true});
+        validated
+    } else {
+        validate_output(lease, output)?
+    };
     let mut tx = pool.begin().await?;
     // Snapshot locks the same subject rows as enqueue and manual writes.
     let current = snapshot(&mut tx, &lease.kind, &lease.subject).await;
@@ -504,6 +539,11 @@ pub async fn finish(pool: &PgPool, lease: &Lease, output: Value) -> Result<bool>
         _ => {
             sqlx::query("UPDATE crm.ai_jobs SET status='cancelled',token=NULL,lease_until=NULL,error='input or privacy policy changed',completed_at=now() WHERE id=$1 AND token=$2").bind(lease.id).bind(lease.token).execute(&mut *tx).await?;
             tx.commit().await?;
+            if matches!(lease.kind.as_str(), "ai.person_week" | "ai.digest") {
+                // A completed dispatch must not strand a window invalidated
+                // while its bounded parts were running. Reuse unchanged parts.
+                week_window::request_refresh(pool, &lease.kind, &lease.subject).await?;
+            }
             return Ok(false);
         }
     };
@@ -610,6 +650,24 @@ pub async fn run_with_media<P: provider::Provider>(
         return Ok(false);
     }
     let mut submitted = lease.clone();
+    if matches!(lease.kind.as_str(), "ai.person_week" | "ai.digest") {
+        if lease.input.get("window").is_none() {
+            cancel(pool, lease.id).await?;
+            let _ = enqueue(pool, &lease.kind, &lease.subject).await;
+            return Ok(true);
+        }
+        match week_window::prepare(pool, provider, &lease).await? {
+            Some(summary) => {
+                submitted.input["evidence"] = summary["evidence"].clone();
+                submitted.input["window_summary"] = summary;
+            }
+            None => {
+                sqlx::query("UPDATE crm.ai_jobs SET status='queued',token=NULL,lease_until=NULL,attempts=greatest(0,attempts-1) WHERE id=$1 AND token=$2 AND status='running' AND lease_until>clock_timestamp()")
+                    .bind(lease.id).bind(lease.token).execute(pool).await?;
+                return Ok(true);
+            }
+        }
+    }
     let mut memory = None;
     if lease.kind == "ai.profile" {
         let mut tx = pool.begin().await?;
@@ -787,6 +845,7 @@ pub async fn run_configured(
     dispatch_one(pool).await?;
     mail::enqueue_pending(pool).await?;
     memory::enqueue_pending(pool).await?;
+    week_window::enqueue_pending(pool).await?;
     run_with_media(pool, &provider, Some(media_root), Some(resources)).await
 }
 
@@ -920,8 +979,16 @@ pub async fn dispatch_one(pool: &PgPool) -> Result<bool> {
     };
     let mut errors = 0i64;
     for subject in &subjects {
-        if enqueue(pool, &child, subject).await.is_err() {
-            errors += 1;
+        if let Err(error) = enqueue(pool, &child, subject).await {
+            if matches!(child.as_str(), "ai.person_week" | "ai.digest")
+                && error.to_string() == week_window::CONTEXT_PENDING
+            {
+                week_window::request_refresh(pool, &child, subject).await?;
+            } else if !(child == "ai.person_week"
+                && error.to_string() == "no evidence in this week")
+            {
+                errors += 1;
+            }
         }
     }
     let complete = subjects.len() < 25;

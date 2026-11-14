@@ -15,6 +15,7 @@ async fn person(pool: &PgPool, name: &str) -> Uuid {
 }
 async fn drain(pool: &PgPool) {
     while ai::visual::refresh_inputs(pool).await.unwrap() > 0 {}
+    while ai::week_window::refresh_observations(pool).await.unwrap() > 0 {}
 }
 async fn wait_for_head_waiters(pool: &PgPool, wanted: i64) {
     tokio::time::timeout(std::time::Duration::from_secs(3),async {
