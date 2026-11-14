@@ -362,7 +362,8 @@ class Worker:
                         self.ledger.execute('INSERT OR REPLACE INTO decoded VALUES(?,?,?)', (relative, raw_hash, json.dumps(asset)))
                         self.ledger.commit()
                         self.db.execute('UPDATE crm.wechat_image_runs SET copied_bytes=copied_bytes+%s WHERE id=%s', (asset['byte_length'], self.run_id))
-                        # One worker and at most 2 MiB/s; pause checks also run during pacing.
+                        # Pace copied input/output bytes at 2 MiB/s; checksum
+                        # reads are additional. Pause checks also run while pacing.
                         until = started + (size + asset['byte_length']) / (2 * 1024 * 1024)
                         while time.monotonic() < until:
                             self.guard(True)
@@ -387,6 +388,11 @@ class Worker:
             media_id = None
             if asset:
                 key = asset['sha256']
+                # Share MediaStore's orphan-collection fence. Earlier file
+                # checks precede the message-lock wait and cannot protect an
+                # old, unregistered CAS blob from concurrent GC.
+                self.db.execute("SELECT pg_advisory_xact_lock(hashtextextended('media-gc:'||%s,0))", (key,))
+                verify_asset(self.media, asset)
                 media_id = uuid.uuid5(uuid.NAMESPACE_URL, 'monica:wechat-group-image:' + key)
                 self.db.execute("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,width,height,source_type,verified_at) VALUES(%s,%s,%s,%s,%s,%s,%s,'wechat',now()) ON CONFLICT(sha256) DO NOTHING", (media_id, key, asset['media_type'], asset['byte_length'], asset['object_path'], asset.get('width'), asset.get('height')))
                 media_id, stored_bytes = self.db.execute('SELECT id,byte_length FROM crm.media_assets WHERE sha256=%s', (key,)).fetchone()

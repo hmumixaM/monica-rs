@@ -238,6 +238,61 @@ print(json.dumps(dict(sha256=h,byte_length=len(data),media_type='image/png',obje
                 with redirect_stdout(io.StringIO()):
                     native.run()
                 self.assertEqual(current_sha(), sha_a)
+                # An interrupted decode can leave an old, unregistered CAS blob.
+                # Orphan GC wins while this worker waits for its message lock.
+                orphan_key = 'e' * 32
+                orphan_path = folder / (orphan_key + '_h.dat')
+                orphan_path.write_bytes(PNG + b'orphan-resume')
+                orphan = worker.decode(source, media, decoder, str(orphan_path.relative_to(source)), {'PATH': os.environ['PATH']})
+                orphan_blob = media / orphan['object_path']
+                os.utime(orphan_blob, (time.time() - 25 * 3600,) * 2)
+                native_ledger.execute('INSERT INTO decoded VALUES(?,?,?)', (str(orphan_path.relative_to(source)), worker.digest(orphan_path), json.dumps(orphan))); native_ledger.commit()
+                db.execute("INSERT INTO wechat.connection_payloads(content_hash,payload) VALUES('orphan-ref',%s)", (Jsonb({'body': f'<msg><img md5="{orphan_key}"/></msg>'}),))
+                db.execute("UPDATE crm.connection_evidence SET revision=5,content_hash='orphan-ref' WHERE id=%s", (native_mid,))
+                db.execute("UPDATE wechat.connection_record_heads SET revision=5,content_hash='orphan-ref' WHERE connection_id=%s", (connection,))
+                db.execute("UPDATE crm.wechat_group_images SET state='pending',quality='none',media_id=NULL WHERE run_id=%s AND message_id=%s", (native.run_id, native_mid))
+                worker.catalog(source, native_ledger, native.guard)
+                editor = psycopg.connect(db.info.dsn, autocommit=True)
+                editor.execute('BEGIN')
+                editor.execute('UPDATE crm.message_search SET body=body WHERE message_id=%s', (native_mid,))
+                waited, errors = [], []
+                def collect_while_waiting():
+                    try:
+                        deadline = time.monotonic() + 5
+                        while time.monotonic() < deadline:
+                            event = admin.execute('SELECT wait_event_type FROM pg_stat_activity WHERE pid=%s', (db.info.backend_pid,)).fetchone()
+                            if event and event[0] == 'Lock':
+                                waited.append(True)
+                                editor.execute("SELECT pg_advisory_xact_lock(hashtextextended('media-gc:'||%s,0))", (orphan['sha256'],))
+                                protected = editor.execute('SELECT EXISTS(SELECT 1 FROM crm.media_assets WHERE sha256=%s) OR EXISTS(SELECT 1 FROM crm.media_publications WHERE sha256=%s)', (orphan['sha256'], orphan['sha256'])).fetchone()[0]
+                                if protected:
+                                    raise AssertionError('fixture must be an unregistered orphan')
+                                orphan_blob.unlink()
+                                editor.execute('COMMIT')
+                                return
+                            time.sleep(0.01)
+                        errors.append('worker did not reach GC lock boundary')
+                        editor.execute('ROLLBACK')
+                    except Exception as error:
+                        errors.append(str(error))
+                        editor.execute('ROLLBACK')
+                thread = threading.Thread(target=collect_while_waiting)
+                thread.start()
+                try:
+                    with self.assertRaises(FileNotFoundError):
+                        native.item(native_mid)
+                finally:
+                    thread.join(timeout=6)
+                    editor.close()
+                self.assertFalse(thread.is_alive())
+                self.assertEqual(errors, [])
+                self.assertEqual(waited, [True])
+                self.assertEqual(db.execute('SELECT state,media_id FROM crm.wechat_group_images WHERE run_id=%s AND message_id=%s', (native.run_id, native_mid)).fetchone(), ('pending', None))
+                self.assertFalse(orphan_blob.exists())
+                with redirect_stdout(io.StringIO()):
+                    native.run()
+                self.assertEqual(current_sha(), orphan['sha256'])
+                self.assertTrue(orphan_blob.is_file())
                 native_ledger.close()
         finally:
             if db:

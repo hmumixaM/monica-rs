@@ -1,4 +1,5 @@
 -- Opt-in, offline group-image recovery. Installing this migration starts no work.
+CREATE INDEX connection_evidence_message_lookup ON crm.connection_evidence(message_id) WHERE message_id IS NOT NULL;
 CREATE TABLE crm.wechat_image_control (
  singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),
  enabled boolean NOT NULL DEFAULT false, paused boolean NOT NULL DEFAULT true,
