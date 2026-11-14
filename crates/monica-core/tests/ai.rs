@@ -207,7 +207,12 @@ async fn ocr_privacy_and_daily_admission(pool: PgPool) {
         );
         let post = Uuid::new_v4();
         sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,source_account_id,profile_id,event_type,external_id,content,content_hash,version) VALUES($1,'wechat',$1,$2,$3,'post',$4,'{}','synthetic',1)").bind(post).bind(account).bind(id).bind(post.to_string()).execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('social_post',$1,$2,'media-0')").bind(post).bind(image).execute(&pool).await.unwrap();
+        let role = if n == 0 {
+            "thumbnail-video-1"
+        } else {
+            "media-0"
+        };
+        sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('social_post',$1,$2,$3)").bind(post).bind(image).bind(role).execute(&pool).await.unwrap();
         images.push(
             ai::enqueue(&pool, "ai.image_ocr", &image.to_string())
                 .await
@@ -368,6 +373,55 @@ async fn configured_roles_drive_memory_and_preserve_profile_field_evidence(pool:
             .iter()
             .all(|(_, m)| m != "saved-person" && m != "default-model")
     );
+    drop(calls);
+    // A batch-only settings change must enter normal pending processing even
+    // when source generation, privacy and the final/person model are unchanged.
+    provider.0.lock().unwrap().clear();
+    sqlx::query("UPDATE crm.ai_settings SET model_routes=jsonb_set(model_routes,'{batch}','\"updated-batch\"')").execute(&pool).await.unwrap();
+    ai::memory::enqueue_pending(&pool).await.unwrap();
+    for _ in 0..20 {
+        if !ai::run_one(&pool, &provider).await.unwrap() {
+            break;
+        }
+    }
+    assert!(
+        provider
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(k, m)| k == "ai.memory_chunk" && m == "updated-batch")
+    );
+    let chunk: String =
+        sqlx::query_scalar("SELECT chunk_model FROM crm.memory_current WHERE profile_id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(chunk, "updated-batch");
+    ai::memory::enqueue_pending(&pool).await.unwrap();
+    assert!(!ai::run_one(&pool, &provider).await.unwrap());
+    // A person-only change reuses the completed batch cache.
+    provider.0.lock().unwrap().clear();
+    sqlx::query("UPDATE crm.ai_settings SET model_routes=jsonb_set(model_routes,'{person}','\"final-person\"')").execute(&pool).await.unwrap();
+    ai::memory::enqueue_pending(&pool).await.unwrap();
+    for _ in 0..20 {
+        if !ai::run_one(&pool, &provider).await.unwrap() {
+            break;
+        }
+    }
+    let calls = provider.0.lock().unwrap();
+    assert!(
+        calls
+            .iter()
+            .any(|(k, m)| k == "ai.memory_final" && m == "final-person")
+    );
+    assert!(
+        calls
+            .iter()
+            .all(|(k, m)| k != "ai.memory_chunk" && m == "final-person")
+    );
+    drop(calls);
     let facts:serde_json::Value=sqlx::query_scalar("SELECT payload FROM crm.memory_inputs WHERE profile_id=$1 AND source_kind='profile' AND source_id='current'").bind(id).fetch_one(&pool).await.unwrap();
     assert_eq!(facts["fields"]["linkedin.about"], "Synthetic biography");
     assert_eq!(facts["fields"]["wechat.signature"], "Synthetic signature");

@@ -1,6 +1,9 @@
 -- Preserve existing configured defaults and credentials; never enable execution.
 ALTER TABLE crm.ai_settings ADD COLUMN model_routes jsonb NOT NULL DEFAULT '{}'
  CHECK(jsonb_typeof(model_routes)='object');
+-- Older results used the same model at every stage. NULL retains that identity
+-- without rewriting the imported historical result or its generation time.
+ALTER TABLE crm.memory_current ADD COLUMN chunk_model text;
 
 -- Refresh only compact profile facts in bounded maintenance turns. Do not
 -- rescan imported message histories merely to extend the field allow-list.
@@ -17,7 +20,7 @@ CREATE FUNCTION crm.ai_ocr_media_allowed(asset uuid,include_chat boolean) RETURN
 LANGUAGE sql STABLE AS $$
  SELECT EXISTS(SELECT 1 FROM crm.media_links l WHERE l.media_id=asset AND (
   (l.entity_type IN ('social_post','social_story','post','story')
-   AND l.role ~ '^(media-[0-9]+(-poster)?|thumbnail-(media-)?[0-9]+)$'
+   AND l.role ~ '^(media-[0-9]+(-poster)?|thumbnail-(media-|video-)?[0-9]+)$'
    AND EXISTS(SELECT 1 FROM crm.timeline_events e WHERE e.id=l.entity_id AND e.status<>'deleted'))
   OR (include_chat AND l.entity_type='message_event'
    AND EXISTS(SELECT 1 FROM crm.message_search m WHERE m.message_id=l.entity_id AND NOT m.tombstone))

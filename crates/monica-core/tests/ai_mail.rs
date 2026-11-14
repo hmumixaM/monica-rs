@@ -135,3 +135,41 @@ async fn transactional_event_quotes_dates_and_stale_revision_fence(pool: PgPool)
         .unwrap();
     assert_eq!(people, 0, "mail event extraction must not create people");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn routed_mail_backlog_reaches_older_missing_events(pool: PgPool) {
+    let connection = connection(&pool).await;
+    sqlx::query(r#"UPDATE crm.ai_settings SET include_messages=true,model='default-model',model_routes='{"batch":"saved-batch"}'"#)
+        .execute(&pool).await.unwrap();
+    // Fifty newer completed results must not repeatedly occupy the pending
+    // window merely because their batch model differs from the default.
+    sqlx::query("INSERT INTO crm.connection_evidence(id,connection_id,external_id,revision,content_hash,kind,title,body,category,included,occurred_at) SELECT gen_random_uuid(),$1,'completed-'||n,1,'synthetic-'||n,'message','Synthetic','Existing body','transactional',true,now() FROM generate_series(1,50) n").bind(connection).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.mail_event_extractions(evidence_id,input_hash,revision,model,events) SELECT id,'synthetic',revision,'saved-batch','[]' FROM crm.connection_evidence WHERE connection_id=$1").bind(connection).execute(&pool).await.unwrap();
+    let older = evidence(
+        &pool,
+        connection,
+        "older-missing",
+        "transactional",
+        "Older receipt",
+    )
+    .await;
+    ai::mail::enqueue_pending(&pool).await.unwrap();
+    let lease = ai::claim(&pool).await.unwrap().unwrap();
+    assert_eq!(lease.subject, older.to_string());
+    assert_eq!(lease.model, "saved-batch");
+    assert!(
+        ai::finish(&pool, &lease, json!({"events":[]}))
+            .await
+            .unwrap()
+    );
+    ai::mail::enqueue_pending(&pool).await.unwrap();
+    assert!(ai::claim(&pool).await.unwrap().is_none());
+    // Switching batch back to the default still invalidates those results.
+    sqlx::query("UPDATE crm.ai_settings SET model_routes='{}'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    ai::mail::enqueue_pending(&pool).await.unwrap();
+    let refreshed = ai::claim(&pool).await.unwrap().unwrap();
+    assert_eq!(refreshed.model, "default-model");
+}

@@ -201,7 +201,15 @@ pub async fn enqueue_pending(pool: &PgPool) -> Result<()> {
             super::enqueue(pool, "ai.mail_classify", &batch.to_string()).await?;
         }
     }
-    let events:Vec<Uuid>=sqlx::query_scalar("SELECT e.id FROM crm.connection_evidence e JOIN crm.source_connections c ON c.id=e.connection_id AND c.provider='mail' AND c.enabled JOIN crm.ai_settings s ON s.id AND s.enabled AND s.include_messages LEFT JOIN crm.mail_event_extractions x ON x.evidence_id=e.id WHERE e.included AND NOT e.deleted AND e.category='transactional' AND e.body<>'' AND (x.evidence_id IS NULL OR x.revision<>e.revision OR x.model<>s.model) ORDER BY e.occurred_at DESC NULLS LAST,e.id LIMIT 50").fetch_all(pool).await?;
+    let settings = sqlx::query("SELECT model,model_routes FROM crm.ai_settings WHERE id")
+        .fetch_one(pool)
+        .await?;
+    let model = super::models::resolve(
+        &settings.get::<String, _>("model"),
+        &settings.get::<Value, _>("model_routes"),
+        "ai.mail_events",
+    );
+    let events:Vec<Uuid>=sqlx::query_scalar("SELECT e.id FROM crm.connection_evidence e JOIN crm.source_connections c ON c.id=e.connection_id AND c.provider='mail' AND c.enabled JOIN crm.ai_settings s ON s.id AND s.enabled AND s.include_messages LEFT JOIN crm.mail_event_extractions x ON x.evidence_id=e.id WHERE e.included AND NOT e.deleted AND e.category='transactional' AND e.body<>'' AND (x.evidence_id IS NULL OR x.revision<>e.revision OR x.model<>$1) ORDER BY e.occurred_at DESC NULLS LAST,e.id LIMIT 50").bind(model).fetch_all(pool).await?;
     for event in events {
         super::enqueue(pool, "ai.mail_events", &event.to_string()).await?;
     }
