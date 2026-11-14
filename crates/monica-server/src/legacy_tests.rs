@@ -382,6 +382,27 @@ async fn imported_messages_expose_bounded_evidence_and_safe_original_files(pool:
         assert_eq!(body["metadata"]["participants"][0]["id"], sender);
         assert_eq!(body["metadata"]["participants"][0]["profile_id"], person);
     }
+    // A manual sender overrides an account link, and older messages can have
+    // that confirmed person as their sole attribution.
+    for source in [Some(current_sender), None] {
+        sqlx::query("UPDATE crm.message_search SET sender_account_id=$2,sender_profile_id=$3 WHERE message_id=$1").bind(message).bind(source).bind(original_person).execute(&pool).await.unwrap();
+        let response = call(
+            &app,
+            "testserver",
+            "GET",
+            &format!("/api/v1/evidence/{message}"),
+            "crm_session=new-session",
+            "",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 65536).await.unwrap()).unwrap();
+        assert_eq!(
+            body["metadata"]["participants"][0]["profile_id"],
+            json!(original_person)
+        );
+    }
     let url = format!("/api/v1/imports/legacy/content/{original}");
     assert_eq!(
         call(&app, "testserver", "GET", &url, "", "").await.status(),

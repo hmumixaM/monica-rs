@@ -255,8 +255,21 @@ pub async fn evidence_version(
                 .flatten()
         })
         .and_then(Value::as_str);
-    let participants:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('role','sender','id',a.external_id,'profile_id',CASE WHEN $3 THEN l.profile_id ELSE $4::uuid END,'name',a.display_name)),'[]'::jsonb) FROM crm.source_accounts a LEFT JOIN crm.source_account_links l ON l.account_id=a.id WHERE a.provider=$5 AND (a.id=$1::uuid OR ($1::uuid IS NULL AND a.external_id=$2))")
+    let mut participants:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('role','sender','id',a.external_id,'profile_id',CASE WHEN $3 THEN coalesce($4::uuid,l.profile_id) ELSE $4::uuid END,'name',a.display_name)),'[]'::jsonb) FROM crm.source_accounts a LEFT JOIN crm.source_account_links l ON l.account_id=a.id WHERE a.provider=$5 AND (a.id=$1::uuid OR ($1::uuid IS NULL AND a.external_id=$2))")
         .bind(sender).bind(external).bind(selected==current).bind(profile).bind(message["provider"].as_str()).fetch_one(pool).await?;
+    if participants.as_array().is_some_and(Vec::is_empty)
+        && let Some(profile) = profile
+    {
+        let person: Option<Value> = sqlx::query_scalar(
+            "SELECT jsonb_build_object('role','sender','id',id,'profile_id',id,'name',display_name) FROM crm.profiles WHERE id=$1::uuid",
+        )
+        .bind(profile)
+        .fetch_optional(pool)
+        .await?;
+        if let Some(person) = person {
+            participants = json!([person]);
+        }
+    }
     let versions:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('revision',revision,'recorded_at',created_at) FROM crm.legacy_chatlog_versions WHERE entity_type='message' AND entity_id=$1 ORDER BY revision DESC LIMIT 50")
         .bind(id).fetch_all(pool).await?;
     let body = presentation
