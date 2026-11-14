@@ -25,3 +25,14 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS media_links_account_avatar
 NAS 内存。未完成、无效或定义不同的同名索引须报告并保留证据；不能当作成功跳过。
 预建成功后记录 SQL 校验值、索引定义、indisvalid/indisready 和实际查询计划。
 后续正式迁移仍正常执行并登记 0071；IF NOT EXISTS 复用已核实的同名索引。
+
+## 归属检查
+
+头像查询恢复后，账号快照还会检查旧身份、未标来源的标签与关系。实际只读查询计划发现，
+这些条件也对每个账号扫描 `identities`、`tag_memberships` 和 `relationship_edges`。
+迁移 0072 补上账号状态、人物标签及关系两端的索引；不改变阻止错误关联的规则。
+
+这四个索引可按上面的同一目标核验、低内存、短锁等待流程逐个预建，将各条
+`CREATE INDEX IF NOT EXISTS` 改为 `CREATE INDEX CONCURRENTLY IF NOT EXISTS`。
+一次只建立一个，分别记录定义、有效性、内存和复制心跳。正式迁移登记仍由后续版本完成，
+不能修改当前 67 的运行与续跑凭据。没有同名有效索引时，不得将建索引失败解释为成功。
