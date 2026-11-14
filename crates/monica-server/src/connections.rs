@@ -514,7 +514,12 @@ async fn detail(
     Ok(Json(value))
 }
 async fn version(s: &AppState, id: Uuid, revision: Option<i64>) -> Result<(Value, Value)> {
-    let mut value:Value=sqlx::query_scalar("SELECT to_jsonb(e)||jsonb_build_object('provider',c.provider,'account_name',c.display_name,'external_account',c.external_account,'current_revision',e.revision) FROM crm.connection_evidence e JOIN crm.source_connections c ON c.id=e.connection_id WHERE e.id=$1").bind(id).fetch_optional(&s.pool).await?.ok_or_else(missing)?;
+    let value:Option<Value>=sqlx::query_scalar("SELECT to_jsonb(e)||jsonb_build_object('provider',c.provider,'account_name',c.display_name,'external_account',c.external_account,'current_revision',e.revision) FROM crm.connection_evidence e JOIN crm.source_connections c ON c.id=e.connection_id WHERE e.id=$1").bind(id).fetch_optional(&s.pool).await?;
+    let Some(mut value) = value else {
+        return crate::legacy::evidence_version(&s.pool, id, revision)
+            .await?
+            .ok_or_else(missing);
+    };
     let provider = Provider::parse(value["provider"].as_str().unwrap_or("")).map_err(operation)?;
     let cid: Uuid =
         serde_json::from_value(value["connection_id"].clone()).map_err(|_| missing())?;
@@ -524,15 +529,11 @@ async fn version(s: &AppState, id: Uuid, revision: Option<i64>) -> Result<(Value
     value["content_hash"] = json!(row.try_get::<String, _>("content_hash")?);
     Ok((value, row.try_get("payload")?))
 }
-fn session(h: &HeaderMap) -> Result<&str> {
-    h.get("cookie")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|h| {
-            h.split(';')
-                .find_map(|v| v.trim().strip_prefix("crm_session="))
-        })
+fn session<'a>(s: &AppState, h: &'a HeaderMap) -> Result<&'a str> {
+    s.session_token(h)
         .ok_or(ApiError(StatusCode::UNAUTHORIZED, "login required"))
 }
+
 fn redirect(s: &AppState) -> Result<String> {
     let authority = s
         .origin
@@ -569,7 +570,7 @@ async fn oauth_start(
     let url = mail_oauth::start(
         &s.pool,
         &s.credentials,
-        session(&h)?,
+        session(&s, &h)?,
         &v.provider,
         v.client_id.trim(),
         v.client_secret.as_deref(),
@@ -603,7 +604,7 @@ async fn oauth_callback(
         .complete(
             &s.pool,
             &s.credentials,
-            session(&h)?,
+            session(&s, &h)?,
             &v.state,
             &v.code,
             &uri,

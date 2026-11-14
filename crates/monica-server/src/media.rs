@@ -396,6 +396,11 @@ async fn download(
                 | "image/webp"
                 | "video/mp4"
                 | "video/webm"
+                | "audio/mpeg"
+                | "audio/mp4"
+                | "audio/wav"
+                | "audio/ogg"
+                | "audio/webm"
                 | "application/pdf"
         );
         let filename = percent_encoding::utf8_percent_encode(

@@ -7,6 +7,7 @@ The active exported inode is pinned across passes so source replacement cannot
 shift pagination. A later snapshot is fully reconciled, including corrections.
 """
 import base64
+from contextlib import closing
 import fcntl
 import hashlib
 import importlib.util
@@ -45,6 +46,12 @@ def safe_file(root,path):
 def standalone(path):
     db=sqlite3.connect(path.as_uri()+'?mode=ro&immutable=1',uri=True)
     db.row_factory=sqlite3.Row
+    # WCDB can put protobuf bytes in columns declared TEXT. Keep those bytes
+    # intact; individual field decoders decide whether UTF-8 is required.
+    def text_or_bytes(data):
+        try:return data.decode('utf-8')
+        except UnicodeDecodeError:return data
+    db.text_factory=text_or_bytes
     db.execute('PRAGMA query_only=ON')
     return db
 
@@ -57,28 +64,41 @@ def body(value):
         except UnicodeDecodeError:return '',base64.b64encode(value).decode('ascii')
     return str(value or '').replace('\0',''),None
 
+def is_group_identity(value):
+    # Some exported Name2Id entries retain trailing whitespace. Preserve the
+    # exact identity, while retaining group privacy for the protocol suffix.
+    return value.rstrip().endswith('@chatroom')
+
 def contact(row):
-    row=dict(row);external=str(row.get('username') or '').strip()
+    row=dict(row)
+    if row.get('username') is not None and not isinstance(row['username'],str):raise ValueError('Chatlog contact identity is not UTF-8')
+    external=str(row.get('username') or '').strip()
     if not external:raise ValueError('Chatlog contact has no stable username')
     if external.endswith(('@chatroom','@openim')) or external.startswith(('gh_','@')) or external in SYSTEM or row.get('local_type') in (2,3,5,6):return None
     name=row.get('remark') or row.get('nick_name') or row.get('alias') or external
     fields={k:row.get(k) for k in ['alias','remark','nick_name','description','big_head_url','small_head_url'] if row.get(k)}
     return dict(external_id='contact:'+external,kind='contact',deleted=bool(row.get('delete_flag')),display_name=name,fields=fields,participants=[dict(id=external,name=name,is_self=False,role='contact')])
 
-def message(row,names,talker,file,table,own_id):
+def message(row,names,talker,file,table,own_id,allow_unknown_source_sender=False):
     row=dict(row);sender=names.get(row.get('real_sender_id'))
-    if not sender:raise ValueError('Chatlog sender Name2Id identity is missing')
+    # Offline copies can contain the protocol's empty/zero sender sentinel.
+    # Retain the record and its missing attribution explicitly. Arbitrary
+    # dangling positive IDs still fail, and the live reader remains strict.
+    source_gap=not sender and allow_unknown_source_sender and (row.get('real_sender_id')==0 or row.get('real_sender_id') in names)
+    if not sender and not source_gap:
+        raise ValueError('Chatlog sender Name2Id identity is missing')
     at=datetime.fromtimestamp(row['create_time'],timezone.utc)
     if not 1990<=at.year<=2100:raise ValueError('Chatlog timestamp outside supported range')
     text,binary=body(row.get('message_content'))
     if not text and not binary:text,binary=body(row.get('compress_content'))
     external='server:'+str(row['server_id']) if row.get('server_id') else file+':'+table+':'+str(row['local_id'])
     # Authoritative Name2Id, never the colliding display name or an XML prefix.
-    people=[dict(id=sender,name=sender,role='sender',is_self=own_id is not None and sender==own_id)]
-    group=talker.endswith('@chatroom')
+    people=[dict(id=sender,name=sender,role='sender',is_self=own_id is not None and sender==own_id)] if sender else []
+    group=is_group_identity(talker)
     if not group and talker!=sender:people.append(dict(id=talker,name=talker,role='participant',is_self=own_id is not None and talker==own_id))
-    result=dict(external_id='message:'+talker+':'+external,kind='message',thread_id=talker,body=text,occurred_at=at.isoformat(),message_type=str(row['local_type']),is_group=group,direction='unknown' if own_id is None else ('sent' if sender==own_id else 'received'),participants=people,raw_message=dict(local_id=row['local_id'],server_id=row.get('server_id'),real_sender_id=row['real_sender_id'],create_time=row['create_time'],local_type=row['local_type']))
+    result=dict(external_id='message:'+talker+':'+external,kind='message',thread_id=talker,body=text,occurred_at=at.isoformat(),message_type=str(row['local_type']),is_group=group,direction='unknown' if own_id is None or not sender else ('sent' if sender==own_id else 'received'),participants=people,raw_message=dict(local_id=row['local_id'],server_id=row.get('server_id'),real_sender_id=row['real_sender_id'],create_time=row['create_time'],local_type=row['local_type']))
     if binary:result['binary_base64']=binary
+    if source_gap:result['source_gap']='sender_reference_absent'
     return result
 
 def post(row):
@@ -108,9 +128,10 @@ def post(row):
     return dict(parsed,external_id='post:'+external,kind='post',body=parsed['text'],occurred_at=at.isoformat(),participants=people,raw_content=raw,coordinate_format='chatlog_sns_xml')
 
 class Reader:
-    def __init__(self,root,snapshots,account,atomic_document,load_json,own_id=None):
+    def __init__(self,root,snapshots,account,atomic_document,load_json,own_id=None,allow_unknown_source_sender=False):
         if not root.is_absolute() or not snapshots.is_absolute() or not account or len(account)>1024:raise ValueError('Explicit Chatlog snapshot root and account anchor required')
         self.root=root.resolve(strict=True);self.snapshots=snapshots.resolve(strict=True);self.account=account;self.own_id=own_id
+        self.allow_unknown_source_sender=allow_unknown_source_sender
         self.atomic=atomic_document;self.load=load_json
         digest=hashlib.sha256(account.encode()).hexdigest();self.folder=self.root/'raw/wechat'/digest;self.folder.mkdir(parents=True,exist_ok=True)
         if not self.folder.resolve().is_relative_to(self.root):raise ValueError('Chatlog state escapes data root')
@@ -145,7 +166,7 @@ class Reader:
             self.apply(json.loads(pending['change']));return False
         emit(frame);return True
     def discover(self):
-        found=[*self.snapshots.glob('contact/contact.db'),*self.snapshots.glob('message/message_[0-9]*.db'),*self.snapshots.glob('sns/sns.db')]
+        found=[*self.snapshots.glob('contact/contact.db'),*self.snapshots.glob('message/message_[0-9]*.db'),*self.snapshots.glob('message/biz_message_[0-9]*.db'),*self.snapshots.glob('sns/sns.db')]
         if len(found)>1024:raise ValueError('Chatlog exported shard budget exceeded')
         for path in sorted(found):
             safe_file(self.snapshots,path);name=path.relative_to(self.snapshots).as_posix();current=stamp(path)
@@ -168,7 +189,7 @@ class Reader:
             directory=os.open(pin.parent,os.O_RDONLY)
             try:os.fsync(directory)
             finally:os.close(directory)
-            with standalone(pin) as source:
+            with closing(standalone(pin)) as source:
                 source.execute('SELECT name FROM sqlite_master LIMIT 1').fetchall()
             cycle=hashlib.sha256((name+current).encode()).hexdigest()
             with self.db:
@@ -202,8 +223,9 @@ class Reader:
                     names=source.execute('SELECT rowid AS _name_id,user_name FROM Name2Id WHERE rowid>? ORDER BY rowid LIMIT 1000',(state['row_id'],)).fetchall()
                     with self.db:
                         for row in names:
-                            if not row['user_name']:raise ValueError('Empty Chatlog Name2Id identity')
-                            self.db.execute('INSERT OR REPLACE INTO names VALUES(?,?,?,?)',(file,row['_name_id'],row['user_name'],hashlib.md5(row['user_name'].encode()).hexdigest()))
+                            name=row['user_name']
+                            if name is not None and not isinstance(name,str):raise ValueError('Chatlog Name2Id identity is not UTF-8')
+                            self.db.execute('INSERT OR REPLACE INTO names VALUES(?,?,?,?)',(file,row['_name_id'],name,hashlib.md5(name.encode()).hexdigest() if name else None))
                     if names:state['row_id']=names[-1]['_name_id']
                     if len(names)==1000:self.apply(dict(file=state,known=[]));return True
             state.update(phase='scan',row_id=0)
@@ -232,14 +254,18 @@ class Reader:
                 talker=None;names={}
                 if table.startswith('Msg_'):
                     entry=self.db.execute('SELECT username FROM names WHERE file=? AND digest=?',(file,table[4:].lower())).fetchone()
-                    if not entry:raise ValueError('Chatlog conversation table has no stable talker')
+                    if not entry:
+                        if not selected:
+                            state.update(table_name=table+'\0',row_id=0)
+                            return self.page(state,[],[],emit)
+                        raise ValueError('Chatlog conversation table has no stable talker')
                     talker=entry['username'];ids=[r['real_sender_id'] for r in selected]
                     if ids:
                         names={r['id']:r['username'] for r in self.db.execute('SELECT id,username FROM names WHERE file=? AND id IN ('+','.join('?' for _ in ids)+')',[file,*ids])}
                 changed=[];known=[];size=0
                 rows=source.execute('SELECT rowid AS _row_id,* FROM "'+table+'" WHERE rowid IN ('+','.join('?' for _ in selected)+') ORDER BY rowid',[item['_row_id'] for item in selected]) if selected else []
                 for row in rows:
-                    value=contact(row) if table=='contact' else post(row) if table=='SnsTimeLine' else message(row,names,talker,file,table,self.own_id)
+                    value=contact(row) if table=='contact' else post(row) if table=='SnsTimeLine' else message(row,names,talker,file,table,self.own_id,self.allow_unknown_source_sender)
                     row_size=len(encode(value).encode()) if value else 0
                     if row_size>MAX_PAGE:raise ValueError('Single Chatlog record exceeds page budget')
                     if size+row_size>MAX_PAGE:break

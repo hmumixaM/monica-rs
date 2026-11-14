@@ -21,20 +21,31 @@ export function LoginForm() {
     event.preventDefault();
     setBusy(true);
     setError("");
-    await fetch("/api/v1/auth/csrf");
-    const response = await fetch("/api/v1/auth/login", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({email, password, totp_code: totpCode || null, recovery_code: recoveryCode || null}),
-    });
-    if (response.ok) {
-      router.replace("/dashboard");
-      return;
+    try {
+      await fetch("/api/v1/auth/csrf");
+      const response = await fetch("/api/v1/auth/login", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({email, password, totp_code: totpCode || null, recovery_code: recoveryCode || null}),
+      });
+      if (response.ok) {
+        router.replace("/dashboard");
+        return;
+      }
+      const body = await response.json().catch(() => ({}));
+      const totpRequired = response.status === 401 && body.detail === "TOTP code required";
+      if (totpRequired) setNeedsTotp(true);
+      const detail: unknown = body.detail;
+      const messages = Array.isArray(detail) ? detail.flatMap(item =>
+        item && typeof item === "object" && "msg" in item && typeof item.msg === "string" ? [item.msg] : []
+      ) : [];
+      let message = messages.join("；") || "登录失败，请检查账号或密码。";
+      if (typeof detail === "string") message = detail;
+      setError(totpRequired ? "" : message);
+    } catch {
+      setError("暂时无法连接登录服务，请检查网络后重试。");
+    } finally {
+      setBusy(false);
     }
-    const body = await response.json().catch(() => ({}));
-    const totpRequired = response.status === 401 && body.detail === "TOTP code required";
-    if (totpRequired) setNeedsTotp(true);
-    setError(totpRequired ? "" : body.detail ?? "登录失败，请检查账号或密码。");
-    setBusy(false);
   }
 
   return <form className={styles.form} onSubmit={(event) => void submit(event)}>

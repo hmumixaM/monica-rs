@@ -7,6 +7,7 @@ import { useSearchParams } from "../../src/router/navigation";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { monthLabel } from "../../lib/months";
+import { localMediaUrl } from "../../lib/media";
 import { fetchJson, queryKeys } from "../../lib/queries";
 import { Button, IconButton } from "../ui/button";
 import { SearchInput } from "../ui/field";
@@ -15,7 +16,7 @@ import { LoadMore } from "../ui/load-more";
 import { Failure, Loading, Muted } from "../ui/primitives";
 import styles from "./conversation.module.css";
 
-type Message = { id: string; occurred_at: string; message_type: string; text?: string; sender_profile_id?: string; sender_name?: string; direction?: string };
+type Message = { id: string; occurred_at: string; message_type: string; text?: string; sender_profile_id?: string; sender_name?: string; direction?: string; citation?: string; media?: { id: string; media_type: string; file_name?: string; byte_length: number }[] };
 const PAGE = 50;
 const KIND: Record<string, string> = { "3": "图片", "34": "语音", "43": "视频", "47": "表情", "49": "分享", "10000": "系统消息" };
 
@@ -109,7 +110,7 @@ export function Conversation({ profileId, conversationId, counterpartId, heading
     <div className={styles.thread} data-group={group ? "" : undefined}>
       <VirtualList anchor={anchor} items={rows.map((row, index) => {
           const system = row.message_type === "10000";
-          const mine = !!counterpartId && row.sender_profile_id !== counterpartId;
+          const mine = row.direction === "sent" || (!row.direction && !!counterpartId && row.sender_profile_id !== counterpartId);
           const above = rows[index - 1];
           const sameSender = !!above && above.message_type !== "10000" && above.sender_profile_id === row.sender_profile_id && above.sender_name === row.sender_name;
           const below = rows[index + 1];
@@ -125,6 +126,17 @@ export function Conversation({ profileId, conversationId, counterpartId, heading
               : row.sender_name ? <Link href={`/linking?q=${encodeURIComponent(row.sender_name)}`} title="发送者尚未关联资料，去关联">{row.sender_name}</Link>
               : <span>发送者未关联</span>}</header>}
             <p>{body.quote && <q>{body.quote}</q>}{body.text}</p>
+            {!!row.media?.length && <div className={styles.media}>{row.media.map(item => {
+              const src = localMediaUrl(item.id);
+              if (!src) return null;
+              return <div key={item.id}>
+                {item.media_type.startsWith("image/") ? <a href={src} target="_blank" rel="noreferrer"><img src={src} alt={item.file_name || "消息图片"} loading="lazy" decoding="async" /></a>
+                  : item.media_type.startsWith("video/") ? <video src={src} controls preload="none" aria-label={item.file_name || "消息视频"} />
+                  : item.media_type.startsWith("audio/") ? <audio src={src} controls preload="none" aria-label={item.file_name || "消息语音"} /> : null}
+                <a href={src} target="_blank" rel="noreferrer">{item.file_name || "打开附件"} · {Math.ceil(item.byte_length / 1024)} KB</a>
+              </div>;
+            })}</div>}
+            {row.citation && /^\/evidence\/[0-9a-f-]{36}\?revision=[1-9][0-9]*$/i.test(row.citation) && <Link className={styles.original} href={row.citation}>查看原文</Link>}
             {lastOfRun && !system && <time dateTime={row.occurred_at}>{clock.format(new Date(row.occurred_at))}</time>}
           </article></> };
         })} />

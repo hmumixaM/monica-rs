@@ -33,6 +33,8 @@ pub struct AppState {
     pub native_sources_available: bool,
     pub cdc_enabled: bool,
     pub media_root: std::path::PathBuf,
+    pub legacy_archive_root: Option<std::path::PathBuf>,
+    pub legacy_migration_root: Option<std::path::PathBuf>,
     pub resources: monica_core::resources::ResourceBudget,
     pub read_cache: crate::cache::ReadCache,
     pub import_hmac_secret: Option<String>,
@@ -41,6 +43,8 @@ pub struct AppState {
     passwords: Arc<Semaphore>,
     dummy: String,
     pub origin: String,
+    session_cookie: String,
+    csrf_cookie: String,
     secure: bool,
     delegated_actor: Option<(Uuid, String)>,
 }
@@ -65,6 +69,8 @@ impl AppState {
             aggregate_pool: pool.clone(),
             pool,
             media_root,
+            legacy_archive_root: None,
+            legacy_migration_root: None,
             import_hmac_secret: None,
             credentials: monica_core::credentials::CredentialCipher::new(secret)?,
             resources: monica_core::resources::ResourceBudget::new(Default::default())?,
@@ -73,9 +79,28 @@ impl AppState {
             passwords: Arc::new(Semaphore::new(2)),
             dummy,
             origin,
+            session_cookie: "crm_session".into(),
+            csrf_cookie: "crm_csrf".into(),
             secure,
             delegated_actor: None,
         })
+    }
+
+    pub fn configure_cookie_prefix(&mut self, prefix: &str) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            (1..=32).contains(&prefix.len())
+                && prefix
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_'),
+            "cookie prefix must contain 1–32 lowercase ASCII letters, digits or underscores"
+        );
+        self.session_cookie = format!("{prefix}_session");
+        self.csrf_cookie = format!("{prefix}_csrf");
+        Ok(())
+    }
+
+    pub(crate) fn session_token<'a>(&self, headers: &'a HeaderMap) -> Option<&'a str> {
+        cookie(headers, &self.session_cookie)
     }
 }
 #[derive(Debug)]
@@ -146,7 +171,9 @@ pub async fn user(s: &AppState, h: &HeaderMap) -> ApiResult<(Uuid, String)> {
     if let Some(actor) = &s.delegated_actor {
         return Ok(actor.clone());
     }
-    let t = cookie(h, "crm_session").ok_or(bad(StatusCode::UNAUTHORIZED, "login required"))?;
+    let t = s
+        .session_token(h)
+        .ok_or(bad(StatusCode::UNAUTHORIZED, "login required"))?;
     sqlx::query_as("SELECT u.id,u.email FROM crm.sessions s JOIN crm.app_users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>now()")
   .bind(digest(t)).fetch_optional(&s.pool).await?.ok_or(bad(StatusCode::UNAUTHORIZED,"invalid session"))
 }
@@ -172,7 +199,7 @@ async fn boundary(State(s): State<AppState>, request: Request, next: Next) -> Re
         .contains(&request.uri().path())
         && !request.uri().path().starts_with("/api/v1/faces/device/")
     {
-        let c = cookie(request.headers(), "crm_csrf").unwrap_or("");
+        let c = cookie(request.headers(), &s.csrf_cookie).unwrap_or("");
         let h = request
             .headers()
             .get("x-csrf-token")
@@ -200,6 +227,7 @@ pub fn routes(state: AppState) -> Router {
         .route("/api/v1/auth/password", post(change_password))
         .merge(crate::mcp::settings_routes())
         .merge(crate::import_status::routes())
+        .merge(crate::legacy::routes())
         .merge(crate::profiles::routes())
         .merge(crate::media::routes())
         .merge(crate::imports::routes())
@@ -293,6 +321,7 @@ impl FromRequest<AppState> for Credentials {
     }
 }
 async fn bootstrap(State(s): State<AppState>, c: Credentials) -> ApiResult<Json<Value>> {
+    let email = c.email.trim().to_lowercase();
     let permit = s
         .passwords
         .clone()
@@ -311,7 +340,7 @@ async fn bootstrap(State(s): State<AppState>, c: Credentials) -> ApiResult<Json<
         "INSERT INTO crm.app_users(id,email,password_hash) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
     )
     .bind(id)
-    .bind(&c.email)
+    .bind(&email)
     .bind(hash)
     .execute(&mut *tx)
     .await?
@@ -321,15 +350,25 @@ async fn bootstrap(State(s): State<AppState>, c: Credentials) -> ApiResult<Json<
     }
     sqlx::query("INSERT INTO crm.audit_events(user_id,action,metadata) VALUES($1,'auth.bootstrap',jsonb_build_object('email',$2::text))")
         .bind(id)
-        .bind(&c.email)
+        .bind(&email)
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
     Ok(Json(json!({"id":id,"email":c.email})))
 }
-async fn csrf(State(s): State<AppState>) -> Response {
-    let t = token();
-    cookie_response(&s, "crm_csrf", &t, false, 1209600, json!({"csrf_token":t}))
+async fn csrf(State(s): State<AppState>, h: HeaderMap) -> Response {
+    let t = cookie(&h, &s.csrf_cookie)
+        .filter(|v| v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit()))
+        .map(str::to_owned)
+        .unwrap_or_else(token);
+    cookie_response(
+        &s,
+        &s.csrf_cookie,
+        &t,
+        false,
+        1209600,
+        json!({"csrf_token":t}),
+    )
 }
 async fn login(
     State(s): State<AppState>,
@@ -350,10 +389,11 @@ async fn login(
             "too many login attempts; try again later",
         ));
     }
-    let row = sqlx::query("SELECT id,password_hash FROM crm.app_users WHERE email=$1")
-        .bind(&c.email)
-        .fetch_optional(&s.pool)
-        .await?;
+    let row =
+        sqlx::query("SELECT id,password_hash FROM crm.app_users WHERE lower(btrim(email))=$1")
+            .bind(c.email.trim().to_lowercase())
+            .fetch_optional(&s.pool)
+            .await?;
     let encoded: String = row
         .as_ref()
         .map(|r| r.get("password_hash"))
@@ -424,7 +464,7 @@ async fn login(
     tx.commit().await?;
     Ok(cookie_response(
         &s,
-        "crm_session",
+        &s.session_cookie,
         &t,
         true,
         1209600,
@@ -443,12 +483,12 @@ async fn me(State(s): State<AppState>, h: HeaderMap) -> ApiResult<Json<Value>> {
     Ok(Json(json!({"id":id,"email":email})))
 }
 async fn logout(State(s): State<AppState>, h: HeaderMap) -> ApiResult<Response> {
-    if let Some(t) = cookie(&h, "crm_session") {
+    if let Some(t) = s.session_token(&h) {
         sqlx::query("WITH revoked AS (UPDATE crm.sessions SET revoked_at=now() WHERE token_hash=$1 AND revoked_at IS NULL RETURNING user_id) INSERT INTO crm.audit_events(user_id,action) SELECT user_id,'auth.logout' FROM revoked").bind(digest(t)).execute(&s.pool).await?;
     }
     Ok(cookie_response(
         &s,
-        "crm_session",
+        &s.session_cookie,
         "",
         true,
         0,
@@ -565,7 +605,7 @@ async fn totp_status(State(s): State<AppState>, h: HeaderMap) -> ApiResult<Json<
 async fn sessions(State(s): State<AppState>, h: HeaderMap) -> ApiResult<Json<Value>> {
     let (id, _) = user(&s, &h).await?;
     let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'created_at',created_at,'expires_at',expires_at,'revoked_at',revoked_at,'user_agent',user_agent,'ip_address',ip_address,'current',token_hash=$2) FROM crm.sessions WHERE user_id=$1 ORDER BY created_at DESC")
- .bind(id).bind(digest(cookie(&h,"crm_session").unwrap_or(""))).fetch_all(&s.pool).await?;
+ .bind(id).bind(digest(s.session_token(&h).unwrap_or(""))).fetch_all(&s.pool).await?;
     Ok(Json(json!(rows)))
 }
 async fn revoke(
@@ -600,6 +640,80 @@ mod tests {
     use super::*;
     use axum::body::{Body, to_bytes};
     use tower::ServiceExt;
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn email_case_and_whitespace_remain_compatible_with_password_recovery(
+        pool: sqlx::PgPool,
+    ) {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::new(
+            pool.clone(),
+            "synthetic-email-recovery-secret-at-least32",
+            "http://testserver".into(),
+            root.path().into(),
+        )
+        .await
+        .unwrap();
+        let credentials = |email: &str, password: &str| Credentials {
+            email: email.into(),
+            password: password.into(),
+            totp_code: None,
+            recovery_code: None,
+        };
+        let _ = bootstrap(
+            State(state.clone()),
+            credentials(" Alice@Example.com ", "synthetic-original-password"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            sqlx::query_scalar::<_, String>("SELECT email FROM crm.app_users")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            "alice@example.com"
+        );
+        // Compatibility also covers records created before normalization.
+        sqlx::query("UPDATE crm.app_users SET email='Alice@Example.com'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            login(
+                State(state.clone()),
+                HeaderMap::new(),
+                None,
+                credentials(" ALICE@EXAMPLE.COM ", "synthetic-original-password")
+            )
+            .await
+            .unwrap()
+            .status(),
+            StatusCode::OK
+        );
+        let _ = reset_password(
+            &state,
+            ResetPassword {
+                email: " alice@example.com ".into(),
+                password: "synthetic-replacement-password".into(),
+                reset_totp: false,
+            },
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            login(
+                State(state),
+                HeaderMap::new(),
+                None,
+                credentials("Alice@Example.com", "synthetic-replacement-password")
+            )
+            .await
+            .unwrap()
+            .status(),
+            StatusCode::OK
+        );
+    }
 
     #[tokio::test]
     async fn real_python_auth_validation_contract() {
@@ -685,11 +799,12 @@ pub(crate) async fn reset_password(
         .map_err(|_| bad(StatusCode::INTERNAL_SERVER_ERROR, "password worker failed"))?
         .map_err(|_| bad(StatusCode::INTERNAL_SERVER_ERROR, "password hashing failed"))?;
     let mut tx = s.pool.begin().await?;
-    let row: Option<(Uuid, String)> =
-        sqlx::query_as("SELECT id,password_hash FROM crm.app_users WHERE email=$1 FOR UPDATE")
-            .bind(body.email.trim().to_lowercase())
-            .fetch_optional(&mut *tx)
-            .await?;
+    let row: Option<(Uuid, String)> = sqlx::query_as(
+        "SELECT id,password_hash FROM crm.app_users WHERE lower(btrim(email))=$1 FOR UPDATE",
+    )
+    .bind(body.email.trim().to_lowercase())
+    .fetch_optional(&mut *tx)
+    .await?;
     let (id, current) = row.ok_or(bad(
         StatusCode::NOT_FOUND,
         "Account not found; create a first-use account",

@@ -525,17 +525,16 @@ async fn staged_disk_request_does_not_wait_behind_unavailable_memory() {
         })
         .await
         .unwrap();
-    let waiting_resources = resources.clone();
-    let large = tokio::spawn(async move {
-        waiting_resources
-            .acquire(TaskResources {
-                memory_bytes: 192 * 1024 * 1024,
-                ..Default::default()
-            })
-            .await
-            .unwrap()
+    let large = resources.acquire(TaskResources {
+        memory_bytes: 192 * 1024 * 1024,
+        ..Default::default()
     });
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    tokio::pin!(large);
+    std::future::poll_fn(|cx| {
+        assert!(large.as_mut().poll(cx).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
     let disk = tokio::time::timeout(
         Duration::from_secs(1),
         resources.acquire(TaskResources {

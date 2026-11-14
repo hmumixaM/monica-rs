@@ -37,6 +37,7 @@ export function CollectorTokens() {
 
   return <Section title="采集器令牌" className={styles.panel}
     action={<Button size="sm" variant="ghost" onClick={() => setCreating(true)}><Plus size={14} />新令牌</Button>}>
+    <p>创建导入令牌后，每个来源的采集器都需要配置该来源的有效令牌。全部停用后也不会恢复免令牌导入。</p>
     {active.length ? <ul className={styles.tokens}>
       {active.map((token) => <li key={token.id}>
         <KeyRound size={15} aria-hidden="true" />

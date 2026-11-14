@@ -195,6 +195,7 @@ async fn detail(
         },
     )
     .await?;
+    row["legacy_version_count"]=json!(sqlx::query_scalar::<_,i64>("SELECT (SELECT count(*) FROM crm.legacy_social_versions WHERE event_id=$1)+(SELECT count(*) FROM crm.legacy_chatlog_versions WHERE entity_type='post' AND entity_id=$1)").bind(id).fetch_one(&s.pool).await?);
     let mut revision_query = "SELECT content_hash,observed_at,source_record_id,revision_seq FROM crm.notebook_social_revisions WHERE event_id=$1 UNION ALL SELECT content_hash,observed_at,source_record_id,revision FROM crm.connection_social_revisions WHERE event_id=$1".to_string();
     if let Some(provider) = row["provider"]
         .as_str()

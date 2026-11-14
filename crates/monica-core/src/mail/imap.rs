@@ -246,7 +246,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> Imap<S> {
         Ok(known
             .iter()
             .filter(|r| {
-                !current.contains(&r["uid"].as_u64().unwrap_or(0))
+                r["external_id"].as_str().and_then(stored_namespace)
+                    != Some((folder.to_owned(), validity))
                     || !present.contains(&r["uid"].as_u64().unwrap_or(0))
             })
             .map(|r| {
@@ -543,6 +544,37 @@ mod protocol_tests {
         );
         server.await.unwrap();
     }
+    #[tokio::test]
+    async fn uid_reuse_after_validity_reset_tombstones_only_old_namespace() {
+        let (mut imap, server) = fake(vec![
+            (
+                "EXAMINE \"INBOX\"",
+                "* OK [UIDVALIDITY 11] valid\r\n* OK [UIDNEXT 8] next\r\nM1 OK readonly\r\n".into(),
+            ),
+            ("UID SEARCH UID 2", "* SEARCH 2\r\nM2 OK search\r\n".into()),
+        ])
+        .await;
+        let removed = imap
+            .reconcile(
+                "INBOX",
+                &[
+                    json!({"external_id":"INBOX:10:2","uid":2}),
+                    json!({"external_id":"INBOX:11:2","uid":2}),
+                    json!({"external_id":"INBOX:10:7","uid":7}),
+                ],
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            removed,
+            vec![
+                json!({"external_id":"INBOX:10:2","uid":2,"deleted":true}),
+                json!({"external_id":"INBOX:10:7","uid":7,"deleted":true}),
+            ]
+        );
+        server.await.unwrap();
+    }
+
     #[tokio::test]
     async fn idle_wakes_and_sends_done() {
         let (mut imap, server) = fake(vec![
