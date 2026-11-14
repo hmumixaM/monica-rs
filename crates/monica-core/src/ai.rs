@@ -16,6 +16,8 @@ pub mod models;
 pub mod provider;
 #[path = "ai_slots.rs"]
 pub mod slots;
+#[path = "ai_visual.rs"]
+pub mod visual;
 #[path = "ai_weekly.rs"]
 pub mod weekly;
 
@@ -108,7 +110,7 @@ pub async fn snapshot(
             input["week_start"] = json!(week);
             let fields:Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',r.id,'kind','profile','text',r.value,'field_key',c.field_key,'at',r.observed_at) FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1 AND c.field_key=ANY($2) ORDER BY c.field_key LIMIT 80")
                 .bind(id).bind(vec!["wechat.alias","wechat.remark","wechat.nickname","wechat.description","wechat.signature","wechat.labels","wechat.city","wechat.province","wechat.country","linkedin.headline","linkedin.about","linkedin.location","residence","hometown","company","job","school","email","phone","food","interests","family","personal.residence","personal.hometown","employment.company","employment.title","education.school","contact.email","contact.phone","personal.food","personal.interests","personal.family","monica.residence","monica.hometown","monica.company","monica.job","monica.school","monica.email","monica.phone","monica.food_preferences","monica.interests","monica.family"]).fetch_all(&mut **tx).await?;
-            let posts:Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',id,'kind',event_type,'text',coalesce(content->>'text',content->>'caption',''),'at',occurred_at,'version',version) FROM crm.timeline_events WHERE profile_id=$1 AND status='active' AND ($2::date IS NULL OR (occurred_at>=($2::timestamp AT TIME ZONE 'America/Chicago') AND occurred_at<(($2+7)::timestamp AT TIME ZONE 'America/Chicago'))) ORDER BY occurred_at DESC NULLS LAST,id LIMIT 80").bind(id).bind(week).fetch_all(&mut **tx).await?;
+            let posts:Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',id,'kind',event_type,'text',coalesce(content->>'text',content->>'caption',''),'at',occurred_at,'version',version,'visual',crm.ai_social_visual(id)) FROM crm.timeline_events WHERE profile_id=$1 AND status='active' AND ($2::date IS NULL OR (occurred_at>=($2::timestamp AT TIME ZONE 'America/Chicago') AND occurred_at<(($2+7)::timestamp AT TIME ZONE 'America/Chicago'))) ORDER BY occurred_at DESC NULLS LAST,id LIMIT 80").bind(id).bind(week).fetch_all(&mut **tx).await?;
             let mut evidence = if week.is_some() { Vec::new() } else { fields };
             evidence.extend(posts);
             if privacy.include_private_notes {
@@ -130,7 +132,7 @@ pub async fn snapshot(
                 week.weekday().num_days_from_monday() == 0,
                 "week must begin Monday"
             );
-            let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',t.id,'kind',t.event_type,'profile_id',t.profile_id,'text',coalesce(t.content->>'text',t.content->>'caption',''),'at',t.occurred_at,'version',t.version) FROM crm.timeline_events t JOIN crm.profiles p ON p.id=t.profile_id WHERE p.archived_at IS NULL AND t.status='active' AND t.occurred_at>=($1::date::timestamp AT TIME ZONE 'America/Chicago') AND t.occurred_at<(($1::date+7)::timestamp AT TIME ZONE 'America/Chicago') ORDER BY t.occurred_at,t.id LIMIT 160").bind(week).fetch_all(&mut **tx).await?;
+            let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',t.id,'kind',t.event_type,'profile_id',t.profile_id,'text',coalesce(t.content->>'text',t.content->>'caption',''),'at',t.occurred_at,'version',t.version,'visual',crm.ai_social_visual(t.id)) FROM crm.timeline_events t JOIN crm.profiles p ON p.id=t.profile_id WHERE p.archived_at IS NULL AND t.status='active' AND t.occurred_at>=($1::date::timestamp AT TIME ZONE 'America/Chicago') AND t.occurred_at<(($1::date+7)::timestamp AT TIME ZONE 'America/Chicago') ORDER BY t.occurred_at,t.id LIMIT 160").bind(week).fetch_all(&mut **tx).await?;
             input["week_start"] = json!(week);
             input["evidence"] = json!(rows);
             input["facts"] = weekly::facts(tx, week).await?;

@@ -27,7 +27,16 @@ pub async fn replace_sources(
 ) -> Result<bool> {
     ensure!(
         items.len() <= 1000
-            && ["profile", "chat", "social", "note", "connection", "mail"].contains(&kind),
+            && [
+                "profile",
+                "chat",
+                "social",
+                "note",
+                "connection",
+                "mail",
+                "visual"
+            ]
+            .contains(&kind),
         "invalid Memory source batch"
     );
     if items.is_empty() {
@@ -171,6 +180,7 @@ pub async fn connection_evidence_many(
 }
 
 pub async fn enqueue_pending(pool: &PgPool) -> Result<()> {
+    super::visual::refresh_inputs(pool).await?;
     legacy::drain(pool).await?;
     let settings = sqlx::query(
         "SELECT enabled,model,model_routes,include_private_notes,include_messages FROM crm.ai_settings WHERE id",
