@@ -17,11 +17,11 @@ for name in files:
  original=source/relative
  if original.is_symlink() or not original.is_file():raise SystemExit('Source must be a regular explicit file: '+name)
  target=root/'app'/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(original,target)
-for module in ['collector-bridge.py','collector-chatlog.py','chatlog_moments.py']:
+for module in ['collector-bridge.py','collector-chatlog.py','chatlog_moments.py','collector_formats.py']:
  shutil.copy2(ROOT/'scripts'/module,root/module)
 manifest['collector_files']={name:sha(root/'app'/name) for name in sorted(files)}
 manifest['bridge_sha256']=sha(root/'collector-bridge.py')
-manifest['bridge_modules']={name:sha(root/name) for name in ['collector-bridge.py','collector-chatlog.py','chatlog_moments.py']}
+manifest['bridge_modules']={name:sha(root/name) for name in ['collector-bridge.py','collector-chatlog.py','chatlog_moments.py','collector_formats.py']}
 (root/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 print(json.dumps({'runtime':str(root),'refreshed_explicit_files':len(files),'bridge_sha256':manifest['bridge_sha256']}))
 
