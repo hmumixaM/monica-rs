@@ -213,7 +213,20 @@ fn field_key(kind: &str) -> String {
 }
 async fn pending(s: &AppState, id: Option<Uuid>) -> Result<Vec<Value>> {
     let mut rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'generated_at',max(v.generated_at),'current',(SELECT jsonb_object_agg(c.field_key,r.value) FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=p.id),'birthday',(SELECT jsonb_build_object('month',month,'day',day) FROM crm.profile_dates WHERE profile_id=p.id AND kind='birthday'),'items',jsonb_agg(jsonb_build_object('fingerprint',v.fingerprint,'kind',v.kind,'value',v.value,'date',v.date,'evidence',v.evidence,'quote',v.quote,'confidence',v.confidence) ORDER BY v.generated_at DESC,v.fingerprint)) FROM crm.profile_suggestions v JOIN crm.profiles p ON p.id=v.profile_id WHERE p.archived_at IS NULL AND ($1::uuid IS NULL OR p.id=$1) AND EXISTS(SELECT 1 FROM crm.ai_visible_outputs o WHERE o.kind IN ('ai.profile','ai.profile_updates') AND o.subject=p.id::text AND o.input_hash=v.input_hash) AND NOT EXISTS(SELECT 1 FROM crm.profile_suggestion_decisions d WHERE d.profile_id=p.id AND d.fingerprint=v.fingerprint) GROUP BY p.id ORDER BY max(v.generated_at) DESC,p.id").bind(id).fetch_all(&s.pool).await?;
+    let profiles: Vec<Uuid> = rows
+        .iter()
+        .filter_map(|p| p["profile_id"].as_str()?.parse().ok())
+        .collect();
+    let structured = ai::known::structured(&s.pool, &profiles).await?;
     for person in &mut rows {
+        let profile = person["profile_id"]
+            .as_str()
+            .and_then(|id| id.parse::<Uuid>().ok());
+        let facts = profile
+            .as_ref()
+            .and_then(|id| structured.get(id))
+            .map(Vec::as_slice)
+            .unwrap_or_default();
         let known = person
             .as_object_mut()
             .unwrap()
@@ -241,7 +254,7 @@ async fn pending(s: &AppState, id: Option<Uuid>) -> Result<Vec<Value>> {
                     .is_some_and(|old| normal(old) == normal(value))
             };
             item["label"] = json!(label(&kind));
-            !duplicate
+            !duplicate && !ai::known::represented(item, facts)
         });
     }
     rows.retain(|p| p["items"].as_array().is_some_and(|items| !items.is_empty()));
