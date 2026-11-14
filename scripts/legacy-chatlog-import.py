@@ -34,6 +34,37 @@ def atomic(path,value):
     partial=path.with_suffix(".partial");partial.write_text(reader.encode(value));partial.replace(path)
 
 
+def bind_state(db,state,snapshot):
+    """Never let another database inherit completed scan cursors or ACKs."""
+    system,name,oid=db.execute("SELECT system_identifier::text,current_database(),d.oid::text FROM pg_control_system() CROSS JOIN pg_database d WHERE d.datname=current_database()").fetchone()
+    identity={'format':1,'system_identifier':system,'database':name,'database_oid':oid,'snapshot_id':str(snapshot)}
+    marker=state/'target.json'
+    if marker.is_symlink():raise ValueError('Chatlog target marker is a symlink')
+    if marker.exists():
+        if json.loads(marker.read_text())!=identity:raise ValueError('Chatlog state belongs to another target database or snapshot')
+        return
+    # Older versions did not write a target marker. Upgrade only if every ACK
+    # is backed by an atomic page receipt in this actual database. Otherwise
+    # require a new state directory, which safely replays the frozen source.
+    existing=[*state.glob('raw/wechat/*/reader.sqlite3'),*(state/'reconcile').glob('raw/wechat/*/reader.sqlite3')]
+    if len(existing)>16:raise ValueError('Chatlog state inventory exceeds its account budget')
+    for saved in existing:
+        receipts=[];count=0
+        def confirm():
+            found={r[0] for r in db.execute('SELECT digest FROM crm.legacy_chatlog_pages WHERE snapshot_id=%s AND digest=ANY(%s)',(snapshot,receipts))}
+            if found!=set(receipts):raise ValueError('unbound Chatlog state has no matching target receipts; use a new state directory')
+            receipts.clear()
+        for ack in (saved.parent/'acks').glob('*.ack'):
+            if ack.is_symlink() or ack.stat().st_size>4096:raise ValueError('invalid Chatlog state receipt')
+            value=json.loads(ack.read_text())
+            if value.get('page_sha256')!=ack.stem or value.get('receipt_id')!=str(snapshot):raise ValueError('Chatlog state receipt belongs to another snapshot')
+            receipts.append(ack.stem);count+=1
+            if len(receipts)==500:confirm()
+        if receipts:confirm()
+        if not count:raise ValueError('cannot establish the target of an old Chatlog state; use a new state directory')
+    atomic(marker,identity);marker.chmod(0o600)
+
+
 def inspect(root,own_id):
     root=root.resolve(strict=True)
     files=[]
@@ -418,6 +449,7 @@ def main():
         if not db.execute("SELECT pg_try_advisory_lock(hashtextextended('monica-offline-chatlog',0))").fetchone()[0]:raise ValueError('another offline Chatlog operation is active on this target')
         reconciling=a.action=='reconcile'
         importer=Importer(db,manifest,verifying,reconciling)
+        if not verifying:bind_state(db,state,importer.id)
         import tempfile
         temporary=tempfile.TemporaryDirectory(prefix="verify-",dir=state) if verifying else None
         reader_state=Path(temporary.name) if temporary else state

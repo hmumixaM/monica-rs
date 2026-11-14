@@ -203,6 +203,7 @@ class MigrationContract(unittest.TestCase):
             state.mkdir()
             current=chatlog.inspect(source,"synthetic-self")
             target=chatlog.Importer(self.target,current,verify,reconcile)
+            if not verify:chatlog.bind_state(self.target,state,target.id)
             scan=chatlog.reader.Reader(state,source,"synthetic-self",chatlog.atomic,lambda path:json.loads(Path(path).read_text()),own_id="synthetic-self",allow_unknown_source_sender=True,immutable_scan=verify or reconcile)
             frames=[]
             def emit(frame):
@@ -256,6 +257,27 @@ class MigrationContract(unittest.TestCase):
         # A successful old receipt must not prevent an explicit correction of
         # an older projection. Preserve counts and immutable original evidence.
         counts=self.target.execute('SELECT records,inserted FROM crm.legacy_chatlog_snapshots WHERE id=%s',(chatlog.Importer(self.target,latest).id,)).fetchone()
+        # A different target, including a recreated database with the same
+        # name, cannot inherit another database's already acknowledged cursors.
+        other_name='monica_rust_other_'+self.suffix
+        self.admin.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(other_name)))
+        other_url=f'postgresql:///{other_name}?host={self.folder}'
+        subprocess.run([str(SERVER),'--database-url',other_url,'migrate'],check=True,stdout=subprocess.DEVNULL)
+        state_a=self.folder/('chatlog-later-state-'+self.suffix)
+        state_b=self.folder/('other-state-'+self.suffix);state_b.mkdir()
+        with psycopg.connect(other_url,autocommit=True) as other:
+            with self.assertRaisesRegex(ValueError,'another target'):
+                chatlog.bind_state(other,state_a,chatlog.Importer(self.target,latest).id)
+            legacy_state=self.folder/('unbound-state-'+self.suffix)
+            shutil.copytree(state_a,legacy_state);(legacy_state/'target.json').unlink()
+            with self.assertRaisesRegex(ValueError,'matching target receipts'):
+                chatlog.bind_state(other,legacy_state,chatlog.Importer(self.target,latest).id)
+            chatlog.bind_state(other,state_b,chatlog.Importer(self.target,latest).id)
+        self.admin.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(other_name)))
+        self.admin.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(other_name)))
+        with psycopg.connect(other_url,autocommit=True) as other:
+            with self.assertRaisesRegex(ValueError,'another target'):
+                chatlog.bind_state(other,state_b,chatlog.Importer(self.target,latest).id)
         self.target.execute("UPDATE crm.message_search SET sender='synthetic-old-attribution' WHERE body='Additional snapshot message'")
         run(later,self.folder/('replay-old-receipt-'+self.suffix))
         self.assertEqual(self.target.execute("SELECT sender FROM crm.message_search WHERE body='Additional snapshot message'").fetchone()[0],'synthetic-old-attribution')
