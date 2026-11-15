@@ -28,7 +28,7 @@ type Audit = {
 
 const STATES: Record<string, string> = {
   ready: "本地可用", pending: "等待下载", downloading: "下载中", expired: "来源已过期", unavailable: "来源不可用",
-  failed: "处理失败", durable: "已核对", receiving: "待处理", projected: "对象已投影", reconciled: "已对账",
+  failed: "处理失败", durable: "已核对", receiving: "待处理", projected: "内容已转换", reconciled: "已对账",
 };
 const label = (state: string) => STATES[state] ?? state;
 
@@ -56,16 +56,20 @@ export function ImportsView() {
   useEffect(() => {void load();}, [load]);
 
   return <Page width="wide">
-    <PageHeader title="导入中心"
+    <PageHeader title="导入中心" description="查看数据是否已接收、能否查询，以及照片和后台分析还在处理什么。"
       actions={<Button size="sm" onClick={() => void load()} disabled={loading}><RefreshCw size={14} />刷新</Button>} />
     {error && <Failure onRetry={() => void load()}>{error}</Failure>}
     <ImportProgress />
     <LegacyMigrations />
+    <details className={styles.explanation}><summary>数据补齐与修复：群聊图片、人物归属和修改历史</summary><div>
     <WechatImages />
     <IdentityReview />
     <HistoryChanges />
+    </div></details>
+    <details className={styles.explanation}><summary>完整性核对：来源记录、媒体引用和导入批次</summary><div>
 
-    <Section title="来源对账" className={styles.panel}>
+    <Section title="来源记录核对" className={styles.panel}>
+      <p className={styles.note}>比较已接收记录和转换后的内容。“排除”表示按来源规则保留在原文中、未展示为业务内容的记录。此处不统计媒体下载或 AI 完成情况。</p>
       {audit && (audit.sources.length ? <ul className={styles.sources}>
         {audit.sources.map((source) => <li key={`${source.source}:${source.stream}`}>
           <div className={styles.sourceHead}>
@@ -87,7 +91,8 @@ export function ImportsView() {
       {!audit && loading && <Loading />}
     </Section>
 
-    {audit?.media.length ? <Section title="媒体归档" className={styles.panel}>
+    {audit?.media.length ? <Section title="媒体引用核对" className={styles.panel}>
+      <p className={styles.note}>按内容对照片和文件的引用计数。同一文件在多条消息中出现时，会计为多个引用。</p>
       <dl className={styles.media}>
         {audit.media.map((media) => <div key={media.state} data-state={media.state}><dt>{label(media.state)}</dt><dd>{formatNumber(media.count)}<small> 个来源引用</small></dd></div>)}
       </dl>
@@ -108,7 +113,8 @@ export function ImportsView() {
       </ul>}
     </Section>
 
-    <CollectorTokens />
+    </div></details>
+    <details className={styles.explanation}><summary>采集器接入与导入凭据</summary><div><CollectorTokens /></div></details>
 
     {selected && <BatchAudit batch={selected} onClose={() => setSelected(null)} onReplayed={load} />}
   </Page>;

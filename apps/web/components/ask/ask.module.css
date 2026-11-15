@@ -1,10 +1,28 @@
-.page {min-inline-size:0}
-.people, .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
-
-.page button:disabled { opacity: .4; cursor: default; }
-.transcript { min-height: 160px; margin: 28px 0; }
-.transcript article { border-top: 1px solid var(--color-rule); padding: 20px 0; }
+.page { min-inline-size: 0; max-inline-size: 1200px; }
+.workspace { min-inline-size: 0; display: grid; gap: var(--space-5); padding: var(--space-5); border-radius: var(--radius-panel); background: var(--color-surface); }
+.toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-2); padding-block-end: var(--space-4); border-block-end: 1px solid var(--color-rule); }
+.session { flex: 0 1 320px; min-inline-size: min(100%, 200px); }
+.transfer { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-inline-start: auto; align-items: center; }
+.file { display: none; }
+.context { display: grid; gap: var(--space-3); }
+.contextTitle { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.contextTitle strong { font-weight: 600; font-size: var(--text-sm); }
+.contextTitle span, .actions span, .status { color: var(--color-text-soft); font-size: var(--text-xs); }
+.people, .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.people:empty { display: none; }
+.people button { background: var(--color-tint); }
+.transcript { min-inline-size: 0; overflow-wrap: anywhere; }
+.transcript article { padding: var(--space-4) 0; border-block-start: 1px solid var(--color-rule); }
 .transcript strong { font-size: var(--text-xs); color: var(--color-text-soft); }
-
+.prompts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); margin-block-start: var(--space-3); }
+.composer { display: grid; gap: var(--space-3); }
+.composer textarea { resize: vertical; min-block-size: 100px; max-block-size: 45dvh; }
 .actions { justify-content: space-between; }
-.actions span { font-size: var(--text-xs); color: var(--color-text-soft); }
+@media (max-width: 600px) {
+ .workspace { padding: var(--space-4); gap: var(--space-4); }
+ .session { flex-basis: 100%; }
+ .transfer { margin-inline-start: 0; }
+ .toolbar button, .people button, .prompts button { min-block-size: 44px; }
+ .actions span { flex-basis: 100%; }
+ .actions > button { margin-inline-start: auto; }
+}
