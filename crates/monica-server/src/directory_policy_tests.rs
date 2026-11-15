@@ -184,8 +184,35 @@ async fn retained_contacts_backfill_directory_search_graph_and_preserve_history(
     assert!(ids_returned.contains(&extra));
     let directory = get(&app, "/api/v1/directory").await;
     assert_eq!(directory["profiles"].as_array().unwrap().len(), 5);
+    // Date reads retain directory policy and multiple reminders per person.
+    for (owner, days, kind, precision) in [
+        (ids[0], 5, "birthday", "exact"),
+        (ids[1], 10, "birthday", "exact"),
+        (ids[1], 20, "anniversary", "month_day"),
+        (ids[5], 30, "other", "approximate"),
+        (ids[2], 61, "birthday", "month_day"),
+        (ids[3], 5, "birthday", "exact"),
+    ] {
+        sqlx::query("INSERT INTO crm.profile_dates(id,profile_id,kind,label,date_precision,year,month,day) SELECT $1,$2,$3,'Synthetic reminder',$4,CASE WHEN $4='exact' THEN 2000 END,extract(month from d.reminder_date)::int,extract(day from d.reminder_date)::int FROM(SELECT (now() AT TIME ZONE 'UTC')::date+$5::int AS reminder_date) d")
+            .bind(Uuid::new_v4()).bind(owner).bind(kind).bind(precision).bind(days)
+            .execute(&pool).await.unwrap();
+    }
     let insights = get(&app, "/api/v1/insights?dormant_days=90").await;
     assert_eq!(insights["dormant_days"], 90);
+    let reminders = insights["upcoming_dates"].as_array().unwrap();
+    assert_eq!(reminders.len(), 3);
+    assert_eq!(reminders[0]["profile_id"], ids[1].to_string());
+    assert_eq!(reminders[0]["kind"], "birthday");
+    assert_eq!(reminders[0]["days_until"], 10);
+    let next_year: i32 = reminders[0]["date"].as_str().unwrap()[..4].parse().unwrap();
+    assert_eq!(reminders[0]["years"], next_year - 2000);
+    assert_eq!(reminders[1]["profile_id"], ids[1].to_string());
+    assert_eq!(reminders[1]["kind"], "anniversary");
+    assert!(reminders[1]["years"].is_null());
+    assert_eq!(reminders[2]["profile_id"], ids[5].to_string());
+    assert_eq!(reminders[2]["label"], "Synthetic reminder");
+    assert!(reminders[2]["years"].is_null());
+
     get(&app, "/api/v1/insights/calendar/day?day=2026-01-01").await;
     get(&app, "/api/v1/insights/orbit").await;
     let search = get(&app, "/api/v1/search?q=Synthetic%20official").await;
@@ -223,5 +250,12 @@ async fn retained_contacts_backfill_directory_search_graph_and_preserve_history(
             .unwrap()
             .len(),
         6
+    );
+    assert!(
+        get(&app, "/api/v1/insights?dormant_days=90").await["upcoming_dates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["profile_id"] == ids[0].to_string())
     );
 }
