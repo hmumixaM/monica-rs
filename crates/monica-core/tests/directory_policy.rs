@@ -5,8 +5,8 @@ async fn official(pool: &PgPool) -> Uuid {
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Synthetic directory person')")
         .bind(id).execute(pool).await.unwrap();
-    sqlx::query("INSERT INTO crm.identities(id,profile_id,provider,external_id,status) VALUES($1,$2,'wechat','gh_synthetic_directory','active')")
-        .bind(Uuid::new_v4()).bind(id).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.identities(id,profile_id,provider,external_id,status) VALUES($1,$2,'wechat',$3,'active')")
+        .bind(Uuid::new_v4()).bind(id).bind(format!("gh_synthetic_{id}")).execute(pool).await.unwrap();
     id
 }
 async fn visible(pool: &PgPool, id: Uuid) -> bool {
@@ -206,4 +206,60 @@ async fn directory_projection_serializes_publication_after_existing_epoch_locks(
         !visible(&pool, id).await,
         "both legitimate sources are gone; the later publisher must not retain a stale visible result"
     );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn directory_dependencies_cover_parent_metadata_before_new_owner_is_visible(pool: PgPool) {
+    for kind in ["account", "connection"] {
+        let owner = official(&pool).await;
+        let parent = Uuid::new_v4();
+        if kind == "account" {
+            sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'linkedin',$2,'group','Synthetic parent')")
+                .bind(parent).bind(parent.to_string()).execute(&pool).await.unwrap();
+        } else {
+            sqlx::query("INSERT INTO crm.source_connections(id,provider,external_account,display_name,connection_method) VALUES($1,'linkedin',$2,'Synthetic parent','manual')")
+                .bind(parent).bind(parent.to_string()).execute(&pool).await.unwrap();
+            sqlx::query("INSERT INTO crm.connection_people(connection_id,external_id,display_name) VALUES($1,'gh_synthetic_parent','Synthetic native')")
+                .bind(parent).execute(&pool).await.unwrap();
+        }
+        let mut linking = pool.begin().await.unwrap();
+        let mut metadata = pool.begin().await.unwrap();
+        if kind == "account" {
+            sqlx::query(
+                "INSERT INTO crm.source_account_links(account_id,profile_id) VALUES($1,$2)",
+            )
+            .bind(parent)
+            .bind(owner)
+            .execute(&mut *linking)
+            .await
+            .unwrap();
+            sqlx::query("UPDATE crm.source_accounts SET object_kind='person' WHERE id=$1")
+                .bind(parent)
+                .execute(&mut *metadata)
+                .await
+                .unwrap();
+        } else {
+            sqlx::query(
+                "UPDATE crm.connection_people SET resolved_profile_id=$2 WHERE connection_id=$1",
+            )
+            .bind(parent)
+            .bind(owner)
+            .execute(&mut *linking)
+            .await
+            .unwrap();
+            sqlx::query("UPDATE crm.source_connections SET provider='wechat' WHERE id=$1")
+                .bind(parent)
+                .execute(&mut *metadata)
+                .await
+                .unwrap();
+        }
+        linking.commit().await.unwrap();
+        assert_eq!(visible(&pool, owner).await, kind == "connection");
+        metadata.commit().await.unwrap();
+        assert_eq!(
+            visible(&pool, owner).await,
+            kind == "account",
+            "late parent metadata must invalidate the old eligibility result"
+        );
+    }
 }

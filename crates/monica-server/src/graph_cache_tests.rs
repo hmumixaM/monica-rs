@@ -181,3 +181,59 @@ async fn relationship_cache_reuses_results_and_tracks_committed_facts(pool: sqlx
     let (_, archived) = graph(&app, path).await;
     assert!(archived["edges"].as_array().unwrap().is_empty());
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn concurrent_classification_invalidates_cached_graph_for_previously_invisible_owner(
+    pool: sqlx::PgPool,
+) {
+    let (state, actor, peer, _root) = super::tests::fixture(&pool).await;
+    let owner = Uuid::new_v4();
+    let connection = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Synthetic official owner')").bind(owner).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.identities(id,profile_id,provider,external_id,status) VALUES($1,$2,'wechat','gh_invisible_owner','active')").bind(Uuid::new_v4()).bind(owner).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.source_connections(id,provider,external_account,display_name,connection_method) VALUES($1,'wechat','synthetic-race','Synthetic source','manual')").bind(connection).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.relationship_edges(id,from_profile_id,to_profile_id,relationship_type) VALUES($1,$2,$3,'friend')").bind(Uuid::new_v4()).bind(owner).bind(peer).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 hour')").bind(Uuid::new_v4()).bind(actor).bind(monica_core::identity::bytes_hash(b"graph-cache-session")).execute(&pool).await.unwrap();
+    let app = crate::auth::routes(state);
+    let path = "/api/v1/relationships/graph?format=monica";
+    assert!(
+        graph(&app, path).await.1["edges"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let mut linking = pool.begin().await.unwrap();
+    let mut classification = pool.begin().await.unwrap();
+    sqlx::query("INSERT INTO crm.connection_people(connection_id,external_id,display_name,resolved_profile_id) VALUES($1,'wxid_invisible_owner','Synthetic native',$2)")
+        .bind(connection).bind(owner).execute(&mut *linking).await.unwrap();
+    sqlx::query("SELECT crm.observe_wechat_contact('wxid_invisible_owner','{\"verify_flag\":8}',now(),'synthetic-race')").execute(&mut *classification).await.unwrap();
+    linking.commit().await.unwrap();
+    let (old_tag, before) = graph(&app, path).await;
+    assert_eq!(
+        before["edges"].as_array().unwrap().len(),
+        1,
+        "the uncommitted classification is still invisible"
+    );
+    // The metadata writer sees the newly committed owner even before its own
+    // deferred source epoch is published. Then another reader validates cache.
+    let own: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.directory_profiles WHERE id=$1)")
+            .bind(owner)
+            .fetch_one(&mut *classification)
+            .await
+            .unwrap();
+    assert!(!own);
+    classification.commit().await.unwrap();
+    let response = request(&app, path, Some(&old_tag), true).await;
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "a source epoch must invalidate the previous cached graph"
+    );
+    let after: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 2_000_000).await.unwrap()).unwrap();
+    assert!(
+        after["edges"].as_array().unwrap().is_empty(),
+        "the committed classification must hide the official-only owner"
+    );
+}
