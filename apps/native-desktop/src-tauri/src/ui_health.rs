@@ -4,7 +4,9 @@
 use std::time::{Duration, Instant, SystemTime};
 
 const POLL_TIMEOUT: Duration = Duration::from_secs(30);
-const MONITOR_GAP: Duration = Duration::from_secs(45);
+// Native checks normally run every two seconds. Missed checks must receive
+// grace before the thirty-second renderer deadline can be mistaken for a stall.
+const MONITOR_GAP: Duration = Duration::from_secs(10);
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum UiAction {
@@ -84,37 +86,35 @@ impl UiHealth {
 mod tests {
     use super::*;
 
+    fn foreground(health: &mut UiHealth, start: Instant, seconds: u64) -> UiAction {
+        let elapsed = Duration::from_secs(seconds);
+        health.check(
+            start + elapsed,
+            SystemTime::UNIX_EPOCH + elapsed,
+            true,
+            false,
+            false,
+        )
+    }
+
     #[test]
     fn healthy_polls_preserve_forms_and_stalled_foreground_reloads_with_backoff() {
         let start = Instant::now();
-        let wall = SystemTime::UNIX_EPOCH;
-        let mut health = UiHealth::new(start, wall);
+        let mut health = UiHealth::new(start, SystemTime::UNIX_EPOCH);
         for seconds in 0..=120 {
-            let elapsed = Duration::from_secs(seconds);
             if seconds % 5 == 0 {
-                health.heartbeat(start + elapsed);
+                health.heartbeat(start + Duration::from_secs(seconds));
             }
-            assert_eq!(
-                health.check(start + elapsed, wall + elapsed, true, false, false),
-                UiAction::Wait
-            );
+            assert_eq!(foreground(&mut health, start, seconds), UiAction::Wait);
         }
-        for (seconds, reload) in [
-            (150, false),
-            (152, true),
-            (154, false),
-            (182, false),
-            (184, true),
-        ] {
-            let elapsed = Duration::from_secs(seconds);
-            assert_eq!(
-                health.check(start + elapsed, wall + elapsed, true, false, false),
-                if reload {
-                    UiAction::Reload
-                } else {
-                    UiAction::Wait
-                }
-            );
+        // The native monitor continues sampling even while the renderer stalls.
+        for seconds in (122..=184).step_by(2) {
+            let expected = if matches!(seconds, 152 | 184) {
+                UiAction::Reload
+            } else {
+                UiAction::Wait
+            };
+            assert_eq!(foreground(&mut health, start, seconds), expected);
         }
     }
 
@@ -125,46 +125,34 @@ mod tests {
         let mut health = UiHealth::new(start, wall);
         let at = |seconds| start + Duration::from_secs(seconds);
         let wall_at = |seconds| wall + Duration::from_secs(seconds);
-        assert_eq!(
-            health.check(at(5), wall_at(5), true, false, false),
-            UiAction::Wait
-        );
+        assert_eq!(foreground(&mut health, start, 5), UiAction::Wait);
         assert_eq!(
             health.check(at(3600), wall_at(3600), false, false, false),
             UiAction::Wait
         );
-        assert_eq!(
-            health.check(at(3601), wall_at(3601), true, false, false),
-            UiAction::Wait
-        );
+        assert_eq!(foreground(&mut health, start, 3601), UiAction::Wait);
         health.heartbeat(at(3606));
-        assert_eq!(
-            health.check(at(3629), wall_at(3629), true, false, false),
-            UiAction::Wait
-        );
+        for seconds in (3607..=3629).step_by(2) {
+            assert_eq!(foreground(&mut health, start, seconds), UiAction::Wait);
+        }
         health.focus_changed(at(3630));
-        assert_eq!(
-            health.check(at(3631), wall_at(3631), true, false, false),
-            UiAction::Wait
-        );
+        assert_eq!(foreground(&mut health, start, 3631), UiAction::Wait);
         // The window stayed focused during sleep; no background sample exists.
-        assert_eq!(
-            health.check(at(7200), wall_at(7200), true, false, false),
-            UiAction::Wait
-        );
+        assert_eq!(foreground(&mut health, start, 7200), UiAction::Wait);
         health.heartbeat(at(7205));
-        assert_eq!(
-            health.check(at(7230), wall_at(7230), true, false, false),
-            UiAction::Wait
-        );
+        for seconds in (7207..=7229).step_by(2) {
+            assert_eq!(foreground(&mut health, start, seconds), UiAction::Wait);
+        }
         assert_eq!(
             health.check(at(7240), wall_at(7000), true, false, false),
             UiAction::Wait
         );
-        assert_eq!(
-            health.check(at(7270), wall_at(7030), true, false, false),
-            UiAction::Wait
-        );
+        for seconds in (7242..=7270).step_by(2) {
+            assert_eq!(
+                health.check(at(seconds), wall_at(seconds - 240), true, false, false),
+                UiAction::Wait
+            );
+        }
         assert_eq!(
             health.check(at(7272), wall_at(7032), true, false, false),
             UiAction::Reload
@@ -174,32 +162,23 @@ mod tests {
     #[test]
     fn final_check_cancels_recovery_after_heartbeat_or_focus_returns() {
         let start = Instant::now();
-        let wall = SystemTime::UNIX_EPOCH;
-        let mut health = UiHealth::new(start, wall);
-        let at = |seconds| start + Duration::from_secs(seconds);
-        let wall_at = |seconds| wall + Duration::from_secs(seconds);
-        assert_eq!(
-            health.check(at(0), wall_at(0), true, false, false),
-            UiAction::Wait
-        );
-        // The worker queues a check after the timeout but does not compute a
-        // Reload action. A resumed poll arrives before that task can run.
-        health.heartbeat(at(33));
-        assert_eq!(
-            health.check(at(34), wall_at(34), true, false, false),
-            UiAction::Wait
-        );
-        // The next queued check is also stale by arrival; a new focus grace
-        // must win at the final check rather than replaying an earlier action.
-        health.focus_changed(at(67));
-        assert_eq!(
-            health.check(at(68), wall_at(68), true, false, false),
-            UiAction::Wait
-        );
-        assert_eq!(
-            health.check(at(99), wall_at(99), true, false, false),
-            UiAction::Reload
-        );
+        let mut health = UiHealth::new(start, SystemTime::UNIX_EPOCH);
+        for seconds in (0..=30).step_by(2) {
+            assert_eq!(foreground(&mut health, start, seconds), UiAction::Wait);
+        }
+        // A due check is queued at32; a recovered poll is accepted before it runs.
+        health.heartbeat(start + Duration::from_secs(33));
+        assert_eq!(foreground(&mut health, start, 34), UiAction::Wait);
+        for seconds in (36..=62).step_by(2) {
+            assert_eq!(foreground(&mut health, start, seconds), UiAction::Wait);
+        }
+        // Another due check is queued at64; new focus grace must win at68.
+        health.focus_changed(start + Duration::from_secs(67));
+        assert_eq!(foreground(&mut health, start, 68), UiAction::Wait);
+        for seconds in (70..=98).step_by(2) {
+            assert_eq!(foreground(&mut health, start, seconds), UiAction::Wait);
+        }
+        assert_eq!(foreground(&mut health, start, 100), UiAction::Reload);
     }
 
     #[test]
@@ -207,26 +186,42 @@ mod tests {
         let start = Instant::now();
         let wall = SystemTime::UNIX_EPOCH;
         let mut health = UiHealth::new(start, wall);
-        for (seconds, quitting, exit_allowed, expected) in [
-            (0, false, false, UiAction::Wait),
-            (31, true, false, UiAction::Wait),
-            (151, true, false, UiAction::Wait),
-            (152, false, false, UiAction::Wait),
-            (182, false, false, UiAction::Wait),
-            (184, false, false, UiAction::Reload),
-            (185, true, true, UiAction::Stop),
-        ] {
+        for (seconds, quitting) in [(0, false), (31, true), (151, true), (152, false)] {
             let elapsed = Duration::from_secs(seconds);
             assert_eq!(
-                health.check(
-                    start + elapsed,
-                    wall + elapsed,
-                    true,
-                    quitting,
-                    exit_allowed
-                ),
-                expected
+                health.check(start + elapsed, wall + elapsed, true, quitting, false),
+                UiAction::Wait
             );
         }
+        for seconds in (154..=182).step_by(2) {
+            assert_eq!(foreground(&mut health, start, seconds), UiAction::Wait);
+        }
+        assert_eq!(foreground(&mut health, start, 184), UiAction::Reload);
+        assert_eq!(
+            health.check(
+                start + Duration::from_secs(185),
+                wall + Duration::from_secs(185),
+                true,
+                true,
+                true
+            ),
+            UiAction::Stop
+        );
+    }
+
+    #[test]
+    fn blocked_native_loop_does_not_refresh_a_healthy_renderer_on_return() {
+        let start = Instant::now();
+        let mut health = UiHealth::new(start, SystemTime::UNIX_EPOCH);
+        assert_eq!(foreground(&mut health, start, 0), UiAction::Wait);
+        assert_eq!(foreground(&mut health, start, 2), UiAction::Wait);
+        // A synchronous native call blocks main-loop checks and heartbeats for
+        // 33 seconds. Its queued check can run before the waiting status IPC.
+        assert_eq!(foreground(&mut health, start, 35), UiAction::Wait);
+        health.heartbeat(start + Duration::from_secs(36));
+        for seconds in (37..=65).step_by(2) {
+            assert_eq!(foreground(&mut health, start, seconds), UiAction::Wait);
+        }
+        assert_eq!(foreground(&mut health, start, 67), UiAction::Reload);
     }
 }
