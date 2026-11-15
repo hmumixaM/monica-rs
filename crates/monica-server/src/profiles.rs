@@ -203,12 +203,19 @@ fn revision_out(row: &Value, with_value: bool) -> Value {
         "field_key",
         "content_hash",
         "source_type",
+        "source_account_id",
+        "source_record_id",
         "operation",
         "observed_at",
         "is_conflict",
     ] {
         result[key] = row[key].clone();
     }
+    // PostgreSQL sequences can exceed JavaScript's exact integer range.
+    result["cursor"] = row["revision_seq"]
+        .as_i64()
+        .map(|sequence| json!(sequence.to_string()))
+        .unwrap_or(Value::Null);
     result["value"] = if with_value {
         row["value"].clone()
     } else {
@@ -229,7 +236,9 @@ async fn history(
     Query(q): Query<History>,
 ) -> Result<Json<Value>> {
     user(&s, &h).await?;
-    let rows:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(r) FROM crm.field_revisions r WHERE ((r.source_account_id IS NULL AND r.profile_id=$1) OR EXISTS(SELECT 1 FROM crm.source_account_links l WHERE l.account_id=r.source_account_id AND l.profile_id=$1)) AND ($2::text IS NULL OR field_key=$2) AND ($3::bigint IS NULL OR revision_seq<$3) ORDER BY revision_seq DESC LIMIT $4").bind(id).bind(q.field_key).bind(q.before).bind(q.limit.unwrap_or(100).clamp(1,200)).fetch_all(&s.pool).await?;
+    // Bound each disjoint owner stream before merging. An OR/EXISTS over the
+    // global sequence can scan other people's entire imported histories.
+    let rows:Vec<Value>=sqlx::query_scalar("WITH candidates AS ((SELECT r.* FROM crm.field_revisions r WHERE r.source_account_id IS NULL AND r.profile_id=$1 AND ($2::text IS NULL OR field_key=$2) AND ($3::bigint IS NULL OR revision_seq<$3) ORDER BY revision_seq DESC LIMIT $4) UNION ALL SELECT r.* FROM crm.source_account_links l JOIN LATERAL (SELECT r.* FROM crm.field_revisions r WHERE r.source_account_id=l.account_id AND ($2::text IS NULL OR field_key=$2) AND ($3::bigint IS NULL OR revision_seq<$3) ORDER BY revision_seq DESC LIMIT $4) r ON true WHERE l.profile_id=$1) SELECT to_jsonb(r) FROM candidates r ORDER BY revision_seq DESC LIMIT $4").bind(id).bind(q.field_key).bind(q.before).bind(q.limit.unwrap_or(100).clamp(1,200)).fetch_all(&s.pool).await?;
     Ok(Json(json!(
         rows.iter()
             .map(|row| revision_out(row, true))
@@ -384,6 +393,231 @@ mod tests {
         .await
         .unwrap();
         (state, actor, id, root)
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn profile_history_pages_and_restore_keep_source_versions(pool: PgPool) {
+        use axum::{
+            body::{Body, to_bytes},
+            http::Request,
+        };
+        use sha2::{Digest, Sha256};
+        use tower::ServiceExt;
+        async fn call(router: &Router, method: &str, path: &str, expected: StatusCode) -> Value {
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri(path)
+                        .header("host", "localhost:17494")
+                        .header(
+                            "cookie",
+                            "crm_session=history-session; crm_csrf=history-csrf",
+                        )
+                        .header("x-csrf-token", "history-csrf")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let status = response.status();
+            let body = to_bytes(response.into_body(), 1_000_000).await.unwrap();
+            assert_eq!(
+                status,
+                expected,
+                "{path}: {}",
+                String::from_utf8_lossy(&body)
+            );
+            serde_json::from_slice(&body).unwrap()
+        }
+        let (s, actor, id, _root) = fixture(&pool).await;
+        sqlx::query("INSERT INTO crm.sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 hour')")
+            .bind(Uuid::new_v4()).bind(actor).bind(format!("{:x}", Sha256::digest(b"history-session"))).execute(&pool).await.unwrap();
+        sqlx::query("SELECT setval(pg_get_serial_sequence('crm.field_revisions','revision_seq'),9007199254740992,true)").execute(&pool).await.unwrap();
+        let mut first = Value::Null;
+        for name in ["Earlier name", "Current name"] {
+            let row = change(
+                &s,
+                id,
+                actor,
+                Field {
+                    field_key: "display_name".into(),
+                    value: json!(name),
+                    source_type: None,
+                },
+                "manual_edit",
+            )
+            .await
+            .unwrap();
+            if first.is_null() {
+                first = row;
+            }
+        }
+        sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,field_key,value,content_hash,source_type,operation) SELECT gen_random_uuid(),$1,'biography',to_jsonb(n),'fixture','manual','manual_edit' FROM generate_series(1,125) n").bind(id).execute(&pool).await.unwrap();
+        let account = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Other person')").bind(other).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'linkedin','history','person','History source')").bind(account).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.source_account_links(account_id,profile_id) VALUES($1,$2)")
+            .bind(account)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let value = json!({"title":"Historical role"});
+        let content = monica_core::content::register(&mut tx, "structured_fact", &value)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        sqlx::query("INSERT INTO crm.source_structured_revisions(id,source_account_id,fact_type,fact_key,content_object_id,content_hash,value,source_type,source_record_id,object_id,source_version,observed_at) SELECT gen_random_uuid(),$1,CASE WHEN n=206 THEN 'education' ELSE 'employment' END,'job-'||n,$2,$3,$4,'linkedin','history',gen_random_uuid(),1,'2026-01-01T12:00:00.123456Z' FROM generate_series(1,206)n").bind(account).bind(content.id).bind(content.hash).bind(value).execute(&pool).await.unwrap();
+        let router = crate::auth::routes(s);
+        let mut cursor = String::new();
+        let mut fields = Vec::new();
+        loop {
+            let page = call(
+                &router,
+                "GET",
+                &format!("/api/v1/profiles/{id}/history?limit=40{cursor}"),
+                StatusCode::OK,
+            )
+            .await;
+            let rows = page.as_array().unwrap();
+            if rows.is_empty() {
+                break;
+            }
+            let token = rows.last().unwrap()["cursor"].as_str().unwrap();
+            assert!(token.parse::<i64>().unwrap() > 9_007_199_254_740_992);
+            cursor = format!("&before={token}");
+            fields.extend(rows.iter().map(|r| r["id"].as_str().unwrap().to_owned()));
+        }
+        assert_eq!(fields.len(), 127);
+        assert_eq!(
+            fields
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            127
+        );
+        let mut cursor = String::new();
+        let mut facts = Vec::new();
+        loop {
+            let page = call(
+                &router,
+                "GET",
+                &format!("/api/v1/profiles/{id}/structured-history?limit=40{cursor}"),
+                StatusCode::OK,
+            )
+            .await;
+            let rows = page.as_array().unwrap();
+            let Some(last) = rows.last() else { break };
+            cursor = format!(
+                "&before={}&before_id={}",
+                last["observed_at"].as_str().unwrap().replace('+', "%2B"),
+                last["id"].as_str().unwrap()
+            );
+            facts.extend(rows.iter().map(|r| r["id"].as_str().unwrap().to_owned()));
+        }
+        assert_eq!(facts.len(), 206);
+        assert!(facts.windows(2).all(|pair| pair[0] > pair[1]));
+        assert_eq!(
+            call(
+                &router,
+                "GET",
+                &format!("/api/v1/profiles/{id}/structured-history?fact_type=education"),
+                StatusCode::OK
+            )
+            .await
+            .as_array()
+            .unwrap()
+            .len(),
+            1
+        );
+        call(
+            &router,
+            "GET",
+            &format!("/api/v1/profiles/{id}/structured-history?before_id={account}"),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        )
+        .await;
+        assert!(
+            call(
+                &router,
+                "GET",
+                &format!("/api/v1/profiles/{other}/structured-history"),
+                StatusCode::OK
+            )
+            .await
+            .as_array()
+            .unwrap()
+            .is_empty()
+        );
+        call(
+            &router,
+            "POST",
+            &format!(
+                "/api/v1/profiles/{other}/history/{}/restore",
+                first["id"].as_str().unwrap()
+            ),
+            StatusCode::NOT_FOUND,
+        )
+        .await;
+        let restored = call(
+            &router,
+            "POST",
+            &format!(
+                "/api/v1/profiles/{id}/history/{}/restore",
+                first["id"].as_str().unwrap()
+            ),
+            StatusCode::OK,
+        )
+        .await;
+        assert_eq!(restored["operation"], "restore");
+        assert_eq!(
+            call(
+                &router,
+                "GET",
+                &format!("/api/v1/profiles/{id}"),
+                StatusCode::OK
+            )
+            .await["display_name"],
+            "Earlier name"
+        );
+        let counts:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM crm.field_revisions),(SELECT count(*) FROM crm.source_structured_revisions),(SELECT count(*) FROM crm.audit_events WHERE action='profile.field.edited')").fetch_one(&pool).await.unwrap();
+        assert_eq!(counts, (128, 206, 3));
+        // Source history follows the current owner after an explicit relink.
+        sqlx::query("UPDATE crm.source_account_links SET profile_id=$2 WHERE account_id=$1")
+            .bind(account)
+            .bind(other)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            call(
+                &router,
+                "GET",
+                &format!("/api/v1/profiles/{id}/structured-history"),
+                StatusCode::OK
+            )
+            .await
+            .as_array()
+            .unwrap()
+            .is_empty()
+        );
+        assert_eq!(
+            call(
+                &router,
+                "GET",
+                &format!("/api/v1/profiles/{other}/structured-history?limit=200"),
+                StatusCode::OK
+            )
+            .await
+            .as_array()
+            .unwrap()
+            .len(),
+            200
+        );
     }
 
     #[sqlx::test(migrations = "../../migrations")]

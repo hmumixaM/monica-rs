@@ -60,6 +60,23 @@ test('real Rust populated directory, calendar, orbit, map and profile overview',
  await page.screenshot({path:'../../.local-validation/frontend-real-digest-mobile.png',fullPage:true});
  expect(errors).toEqual([]);expect(failures).toEqual([]);
 });
+test('profile history reads all pages and restores whole historical values',async({page})=>{
+ const failures:string[]=[];page.on('pageerror',error=>failures.push(error.message));page.on('response',r=>{if(r.status()>=400&&new URL(r.url()).pathname.startsWith('/api/v1/'))failures.push(`${r.status()} ${new URL(r.url()).pathname}`);});
+ await page.goto('/login');await page.getByLabel('邮箱').fill('pages@example.invalid');await page.getByLabel('密码',{exact:true}).fill('synthetic-pages-password');await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(/\/dashboard$/);
+ const profiles=await(await page.request.get('/api/v1/profiles?q=History%20Current')).json();const id=profiles[0].id;
+ await page.goto(`/profiles/${id}?tab=history`);
+ const fields=page.getByRole('region',{name:'字段变更记录',exact:true});
+ await expect(fields.getByText('已加载 40 个版本 · 展示 40 个',{exact:true})).toBeVisible();
+ for(const total of [80,120,129]){await fields.getByRole('button',{name:'读取更早的字段版本',exact:true}).click();await expect(fields.getByText(`已加载 ${total} 个版本 · 展示 ${total} 个`,{exact:true})).toBeVisible();}
+ await expect(fields.getByRole('button',{name:'读取更早的字段版本',exact:true})).toHaveCount(0);
+ const custom=fields.locator('article').filter({has:page.locator('[data-to]').filter({hasText:'old-keep'})});
+ await custom.getByRole('button',{name:'恢复此版本',exact:true}).click();const restore=page.getByRole('dialog',{name:'恢复自定义字段',exact:true});await expect(restore.getByText(/全部自定义字段/)).toBeVisible();await expect(restore.locator('pre')).toContainText('old-extra');await restore.getByRole('button',{name:'恢复为当前值',exact:true}).click();await expect(restore).toHaveCount(0);
+ const current=await(await page.request.get(`/api/v1/profiles/${id}`)).json();expect(current.fields.find((f:{field_key:string})=>f.field_key==='monica.custom_fields').value).toEqual({kept:'old-keep',removed:'old-extra'});
+ const name=fields.locator('article').filter({has:page.locator('[data-to]').filter({hasText:'Earlier history name'})});await name.getByRole('button',{name:'恢复此版本',exact:true}).click();await page.getByRole('dialog',{name:'恢复姓名或群名',exact:true}).getByRole('button',{name:'恢复为当前值',exact:true}).click();await expect(page.getByRole('heading',{level:1,name:/^Earlier history name/})).toBeVisible();
+ const structured=page.getByRole('region',{name:'结构化资料历史',exact:true});await structured.getByRole('button',{name:'读取更早的结构化版本',exact:true}).click();await expect(structured.getByText('已加载 46 个版本',{exact:true})).toBeVisible();await structured.getByLabel('经历类型',{exact:true}).selectOption('education');await expect(structured.getByText('已加载 1 个版本',{exact:true})).toBeVisible();
+ for(const width of [1440,390]){await page.setViewportSize({width,height:1000});for(const theme of ['light','dark']){await page.evaluate(t=>{document.documentElement.dataset.theme=t;window.scrollTo(0,0);},theme);await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:`../../.local-validation/profile-history-${width}-${theme}.png`,fullPage:true});}}
+ expect(failures).toEqual([]);
+});
 test('MCP settings and operational views use real Rust APIs across themes and sizes',async({page})=>{
  await page.goto('/login');await page.getByLabel('邮箱').fill('pages@example.invalid');await page.getByLabel('密码',{exact:true}).fill('synthetic-pages-password');await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(/\/dashboard$/);
  await page.goto('/settings');await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'AI 与 MCP',exact:true}).click();await page.getByLabel('启用 MCP',{exact:true}).check();await page.getByRole('button',{name:'保存 MCP 设置'}).click();await expect(page.getByRole('status').filter({hasText:'MCP 设置已保存'})).toBeVisible();

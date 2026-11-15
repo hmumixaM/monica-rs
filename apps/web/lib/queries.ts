@@ -228,6 +228,23 @@ export function useUpdateProfileField(id: string) {
   });
 }
 
+/** Restoring writes a new manual revision; the original source version stays intact. */
+export function useRestoreProfileRevision(id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (revision: { id: string; field_key: string; value: unknown }) =>
+      fetchJson(`/api/v1/profiles/${id}/history/${revision.id}/restore`, { method: "POST" }),
+    onSuccess: (_result, revision) => {
+      const column = revision.field_key === "display_name" ? "name" : revision.field_key === "summary" ? "summary" : null;
+      if (column) {
+        patchDirectoryProfile(client, id, { [column]: revision.value });
+        client.setQueryData<Record<string, unknown>>(queryKeys.profile(id), (previous) => previous ? { ...previous, [revision.field_key]: revision.value } : previous);
+      }
+      invalidateProfile(client, id);
+    },
+  });
+}
+
 /** The API's error code (such as `birthday_exists`), for a message next to the form. */
 export class DateRejected extends Error {
   constructor(readonly code: string) { super(code); }

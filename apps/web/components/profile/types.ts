@@ -26,7 +26,7 @@ export type Profile = {
   birthday?: SignificantDate | null; significant_dates?: SignificantDate[];
 };
 
-export type Revision = { id: string; field_key: string; value: unknown; source_type: string; operation: string; observed_at: string; is_conflict: boolean };
+export type Revision = { id: string; cursor: string; field_key: string; value: unknown; source_type: string; source_account_id?: string | null; source_record_id?: string | null; operation: string; observed_at: string; is_conflict: boolean };
 
 export type Relationship = {
   id: string; related_profile_id: string; related_display_name: string; related_profile_type: "person" | "group"; relationship_type: string;
