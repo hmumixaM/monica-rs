@@ -74,10 +74,14 @@ def contact(row):
     if row.get('username') is not None and not isinstance(row['username'],str):raise ValueError('Chatlog contact identity is not UTF-8')
     external=str(row.get('username') or '').strip()
     if not external:raise ValueError('Chatlog contact has no stable username')
-    if external.endswith(('@chatroom','@openim')) or external.startswith(('gh_','@')) or external in SYSTEM or row.get('local_type') in (2,3,5,6):return None
+    if external.endswith('@chatroom') or external.startswith('@') or external in SYSTEM:return None
+    if not external.endswith('@openim') and row.get('local_type') in (2,3,5,6):return None
     name=row.get('remark') or row.get('nick_name') or row.get('alias') or external
     fields={k:row.get(k) for k in ['alias','remark','nick_name','description','big_head_url','small_head_url'] if row.get(k)}
-    return dict(external_id='contact:'+external,kind='contact',deleted=bool(row.get('delete_flag')),display_name=name,fields=fields,participants=[dict(id=external,name=name,is_self=False,role='contact')])
+    # Keep classification evidence in the source journal. The Rust directory
+    # excludes official accounts without deleting their contact/message history.
+    raw_contact={k:row[k] for k in ['verify_flag','local_type','delete_flag'] if k in row}
+    return dict(external_id='contact:'+external,kind='contact',deleted=bool(row.get('delete_flag')),display_name=name,fields=fields,raw_contact=raw_contact,participants=[dict(id=external,name=name,is_self=False,role='contact')])
 
 def message(row,names,talker,file,table,own_id,allow_unknown_source_sender=False):
     row=dict(row);sender=names.get(row.get('real_sender_id'))

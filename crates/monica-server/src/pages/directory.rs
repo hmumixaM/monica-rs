@@ -25,9 +25,9 @@ pub(super) async fn rows(tx: &mut Transaction<'_, Postgres>) -> Result<Vec<Value
  'tag_ids',coalesce((SELECT jsonb_agg(m.tag_id ORDER BY m.tag_id) FROM crm.presented_tag_memberships m WHERE m.profile_id=p.id),'[]'),
  'birthday_md',(SELECT lpad(d.month::text,2,'0')||'-'||lpad(d.day::text,2,'0') FROM crm.profile_dates d WHERE d.profile_id=p.id AND d.kind='birthday'),
  'last_contact_at',s.last_contact_at,'direct_message_count',nullif(s.direct_message_count,0),
- 'member_count',CASE WHEN p.profile_type='group' THEN (SELECT count(DISTINCT m.person_profile_id) FROM crm.current_group_memberships m JOIN crm.profiles member ON member.id=m.person_profile_id AND member.archived_at IS NULL AND member.profile_type='person' WHERE m.group_profile_id=p.id AND m.left_at IS NULL) END,
+ 'member_count',CASE WHEN p.profile_type='group' THEN (SELECT count(DISTINCT m.person_profile_id) FROM crm.current_group_memberships m JOIN crm.directory_profiles member ON member.id=m.person_profile_id AND member.archived_at IS NULL AND member.profile_type='person' WHERE m.group_profile_id=p.id AND m.left_at IS NULL) END,
  'conversation_id',(SELECT c.id FROM crm.conversations c WHERE c.profile_id=p.id ORDER BY c.conversation_type='direct' DESC,c.last_message_at DESC NULLS LAST,c.id LIMIT 1))
- FROM crm.profiles p LEFT JOIN crm.page_contact_stats s ON s.profile_id=p.id WHERE p.archived_at IS NULL ORDER BY p.display_name,p.id"#).fetch_all(&mut **tx).await?)
+ FROM crm.directory_profiles p LEFT JOIN crm.page_contact_stats s ON s.profile_id=p.id WHERE p.archived_at IS NULL ORDER BY p.display_name,p.id"#).fetch_all(&mut **tx).await?)
 }
 
 async fn directory(State(s): State<AppState>, h: HeaderMap) -> Result<Response> {
@@ -175,10 +175,10 @@ async fn search(
         .replace('_', "\\_");
     let like = format!("%{escaped}%");
     let rows:Vec<Value>=sqlx::query_scalar(r#"SELECT to_jsonb(hits) FROM (
- (SELECT p.id,'profile' entity_type,p.display_name title,coalesce(p.summary,'') summary,NULL::timestamptz occurred_at,p.id profile_id,p.display_name profile_name,p.profile_type kind,p.avatar_media_id,NULL::text provider FROM crm.profiles p WHERE p.archived_at IS NULL AND(p.display_name ILIKE $1 OR p.summary ILIKE $1) ORDER BY p.display_name ILIKE $2 DESC,length(p.display_name),p.display_name LIMIT $3)
+ (SELECT p.id,'profile' entity_type,p.display_name title,coalesce(p.summary,'') summary,NULL::timestamptz occurred_at,p.id profile_id,p.display_name profile_name,p.profile_type kind,p.avatar_media_id,NULL::text provider FROM crm.directory_profiles p WHERE p.archived_at IS NULL AND(p.display_name ILIKE $1 OR p.summary ILIKE $1) ORDER BY p.display_name ILIKE $2 DESC,length(p.display_name),p.display_name LIMIT $3)
  UNION ALL (SELECT t.id,'tag',t.name,'',NULL,NULL,NULL,NULL,NULL,NULL FROM crm.tags t WHERE t.name ILIKE $1 ORDER BY length(t.name),t.name LIMIT $3)
- UNION ALL (SELECT x.id,'timeline',coalesce(p.display_name,x.provider),left(x.text,240),x.occurred_at,x.profile_id,p.display_name,x.kind,p.avatar_media_id,x.provider FROM crm.page_posts x LEFT JOIN crm.profiles p ON p.id=x.profile_id WHERE x.text ILIKE $1 ORDER BY x.occurred_at DESC NULLS LAST,x.id LIMIT $3)
- UNION ALL (SELECT a.id,'activity',a.title,coalesce(a.body,''),a.occurred_at,p.id,p.display_name,a.activity_type,NULL,a.source_type FROM crm.activities a LEFT JOIN LATERAL(SELECT p.id,p.display_name FROM crm.activity_participants ap JOIN crm.profiles p ON p.id=ap.profile_id WHERE ap.activity_id=a.id ORDER BY p.display_name,p.id LIMIT 1) p ON true WHERE a.activity_type NOT IN('wechat_direct_summary','wechat_group_summary') AND(a.title ILIKE $1 OR a.body ILIKE $1) ORDER BY a.occurred_at DESC,a.id LIMIT $3)
+ UNION ALL (SELECT x.id,'timeline',coalesce(p.display_name,x.provider),left(x.text,240),x.occurred_at,x.profile_id,p.display_name,x.kind,p.avatar_media_id,x.provider FROM crm.page_posts x LEFT JOIN crm.directory_profiles p ON p.id=x.profile_id WHERE x.text ILIKE $1 ORDER BY x.occurred_at DESC NULLS LAST,x.id LIMIT $3)
+ UNION ALL (SELECT a.id,'activity',a.title,coalesce(a.body,''),a.occurred_at,p.id,p.display_name,a.activity_type,NULL,a.source_type FROM crm.activities a LEFT JOIN LATERAL(SELECT p.id,p.display_name FROM crm.activity_participants ap JOIN crm.directory_profiles p ON p.id=ap.profile_id WHERE ap.activity_id=a.id ORDER BY p.display_name,p.id LIMIT 1) p ON true WHERE a.activity_type NOT IN('wechat_direct_summary','wechat_group_summary') AND(a.title ILIKE $1 OR a.body ILIKE $1) ORDER BY a.occurred_at DESC,a.id LIMIT $3)
  ) hits"#).bind(like).bind(format!("{escaped}%")).bind(q.limit.unwrap_or(30).clamp(1,100)).fetch_all(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(json!(rows)))

@@ -35,7 +35,7 @@ async fn graph(
             projection(&s.pool, q.limit.unwrap_or(900).clamp(50, 2000), q.focus).await?,
         ));
     }
-    let edges:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',e.id,'from_profile_id',a.id,'to_profile_id',b.id,'from_display_name',a.display_name,'to_display_name',b.display_name,'from_profile_type',a.profile_type,'to_profile_type',b.profile_type,'relationship_type',e.relationship_type,'source_type',e.source_type,'confidence',e.confidence,'note',e.note,'created_at',e.created_at) FROM crm.presented_relationship_edges e JOIN crm.profiles a ON a.id=e.from_profile_id JOIN crm.profiles b ON b.id=e.to_profile_id WHERE ($1::text IS NULL OR e.source_type=$1) AND ($2::text IS NULL OR e.relationship_type=$2) AND ($3<=0 OR coalesce(e.confidence,0)>=$3) ORDER BY coalesce(e.confidence,0) DESC,e.created_at DESC,e.id DESC LIMIT $4").bind(&q.source_type).bind(&q.relationship_type).bind(q.min_confidence.unwrap_or(0.0).min(1.0)).bind(q.limit.unwrap_or(900).clamp(50,5000)).fetch_all(&s.pool).await?;
+    let edges:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',e.id,'from_profile_id',a.id,'to_profile_id',b.id,'from_display_name',a.display_name,'to_display_name',b.display_name,'from_profile_type',a.profile_type,'to_profile_type',b.profile_type,'relationship_type',e.relationship_type,'source_type',e.source_type,'confidence',e.confidence,'note',e.note,'created_at',e.created_at) FROM crm.directory_relationship_edges e JOIN crm.directory_profiles a ON a.id=e.from_profile_id JOIN crm.directory_profiles b ON b.id=e.to_profile_id WHERE ($1::text IS NULL OR e.source_type=$1) AND ($2::text IS NULL OR e.relationship_type=$2) AND ($3<=0 OR coalesce(e.confidence,0)>=$3) ORDER BY coalesce(e.confidence,0) DESC,e.created_at DESC,e.id DESC LIMIT $4").bind(&q.source_type).bind(&q.relationship_type).bind(q.min_confidence.unwrap_or(0.0).min(1.0)).bind(q.limit.unwrap_or(900).clamp(50,5000)).fetch_all(&s.pool).await?;
     let mut nodes = Vec::<Value>::new();
     for edge in &edges {
         for prefix in ["from", "to"] {
@@ -47,13 +47,13 @@ async fn graph(
             }
         }
     }
-    let total_edges:i64=sqlx::query_scalar("SELECT count(*) FROM crm.presented_relationship_edges e WHERE ($1::text IS NULL OR e.source_type=$1) AND ($2::text IS NULL OR e.relationship_type=$2) AND ($3<=0 OR coalesce(e.confidence,0)>=$3)").bind(q.source_type).bind(q.relationship_type).bind(q.min_confidence.unwrap_or(0.0).min(1.0)).fetch_one(&s.pool).await?;
+    let total_edges:i64=sqlx::query_scalar("SELECT count(*) FROM crm.directory_relationship_edges e WHERE ($1::text IS NULL OR e.source_type=$1) AND ($2::text IS NULL OR e.relationship_type=$2) AND ($3<=0 OR coalesce(e.confidence,0)>=$3)").bind(q.source_type).bind(q.relationship_type).bind(q.min_confidence.unwrap_or(0.0).min(1.0)).fetch_one(&s.pool).await?;
     let total_nodes: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM crm.profiles WHERE archived_at IS NULL")
+        sqlx::query_scalar("SELECT count(*) FROM crm.directory_profiles WHERE archived_at IS NULL")
             .fetch_one(&s.pool)
             .await?;
-    let types:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('relationship_type',relationship_type,'edge_count',count(*)) FROM crm.presented_relationship_edges GROUP BY relationship_type ORDER BY count(*) DESC,relationship_type").fetch_all(&s.pool).await?;
-    let sources:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('source_type',source_type,'edge_count',count(*)) FROM crm.presented_relationship_edges GROUP BY source_type ORDER BY count(*) DESC,source_type").fetch_all(&s.pool).await?;
+    let types:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('relationship_type',relationship_type,'edge_count',count(*)) FROM crm.directory_relationship_edges GROUP BY relationship_type ORDER BY count(*) DESC,relationship_type").fetch_all(&s.pool).await?;
+    let sources:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('source_type',source_type,'edge_count',count(*)) FROM crm.directory_relationship_edges GROUP BY source_type ORDER BY count(*) DESC,source_type").fetch_all(&s.pool).await?;
     Ok(Json(
         json!({"nodes":nodes,"visible_edges":edges.len(),"edges":edges,"total_edges":total_edges,"total_nodes":total_nodes,"relationship_types":types,"sources":sources}),
     ))
@@ -88,8 +88,8 @@ async fn projection(pool: &PgPool, limit: i64, focus: Option<Uuid>) -> Result<Va
  FROM resolved r LEFT JOIN crm.identities i ON i.provider='wechat' AND i.external_id=r.target AND i.status NOT IN ('invalid','merged')
  UNION ALL SELECT r.a,i.profile_id,'reply',r.occurred_at FROM resolved r JOIN crm.identities i ON i.provider='wechat' AND i.external_id=r.reference AND i.status NOT IN ('invalid','merged') WHERE r.interaction_type='reply')
  SELECT f.a,f.b,f.kind,count(*) n,max(f.occurred_at)::date::text last FROM facts f
- JOIN crm.profiles a ON a.id=f.a AND a.archived_at IS NULL AND a.profile_type='person'
- JOIN crm.profiles b ON b.id=f.b AND b.archived_at IS NULL AND b.profile_type='person'
+ JOIN crm.directory_profiles a ON a.id=f.a AND a.archived_at IS NULL AND a.profile_type='person'
+ JOIN crm.directory_profiles b ON b.id=f.b AND b.archived_at IS NULL AND b.profile_type='person'
  WHERE f.a<>f.b AND ($1::uuid IS NULL OR f.a=$1 OR f.b=$1) GROUP BY f.a,f.b,f.kind ORDER BY count(*) DESC,f.a,f.b,f.kind LIMIT $2"#).bind(focus).bind(limit).fetch_all(pool).await?;
     for r in rows {
         let a: Uuid = r.get("a");
@@ -116,7 +116,7 @@ async fn projection(pool: &PgPool, limit: i64, focus: Option<Uuid>) -> Result<Va
     if let Some(focus) = focus {
         ids.insert(focus);
     }
-    let memberships:Vec<(Uuid,Uuid)>=sqlx::query_as("WITH small AS(SELECT group_profile_id FROM crm.current_group_memberships WHERE left_at IS NULL GROUP BY group_profile_id HAVING count(*)<=80) SELECT m.group_profile_id,m.person_profile_id FROM crm.current_group_memberships m JOIN small USING(group_profile_id) JOIN crm.profiles p ON p.id=m.person_profile_id AND p.profile_type='person' AND p.archived_at IS NULL JOIN crm.profiles g ON g.id=m.group_profile_id AND g.profile_type='group' AND g.archived_at IS NULL WHERE m.left_at IS NULL AND ($1::uuid IS NULL OR m.group_profile_id IN(SELECT group_profile_id FROM crm.current_group_memberships WHERE person_profile_id=$1 AND left_at IS NULL))").bind(focus).fetch_all(pool).await?;
+    let memberships:Vec<(Uuid,Uuid)>=sqlx::query_as("WITH small AS(SELECT group_profile_id FROM crm.current_group_memberships WHERE left_at IS NULL GROUP BY group_profile_id HAVING count(*)<=80) SELECT m.group_profile_id,m.person_profile_id FROM crm.current_group_memberships m JOIN small USING(group_profile_id) JOIN crm.directory_profiles p ON p.id=m.person_profile_id AND p.profile_type='person' AND p.archived_at IS NULL JOIN crm.directory_profiles g ON g.id=m.group_profile_id AND g.profile_type='group' AND g.archived_at IS NULL WHERE m.left_at IS NULL AND ($1::uuid IS NULL OR m.group_profile_id IN(SELECT group_profile_id FROM crm.current_group_memberships WHERE person_profile_id=$1 AND left_at IS NULL))").bind(focus).fetch_all(pool).await?;
     let mut by_person: BTreeMap<Uuid, BTreeSet<Uuid>> = BTreeMap::new();
     for (g, p) in memberships {
         by_person.entry(p).or_default().insert(g);
@@ -135,14 +135,14 @@ async fn projection(pool: &PgPool, limit: i64, focus: Option<Uuid>) -> Result<Va
             pairs.entry(ordered(f, p)).or_default();
         }
     }
-    let relations:Vec<(Uuid,Uuid,String)>=sqlx::query_as("SELECT e.from_profile_id,e.to_profile_id,e.relationship_type FROM crm.presented_relationship_edges e JOIN crm.profiles a ON a.id=e.from_profile_id AND a.archived_at IS NULL AND a.profile_type='person' JOIN crm.profiles b ON b.id=e.to_profile_id AND b.archived_at IS NULL AND b.profile_type='person' WHERE lower(e.relationship_type) NOT SIMILAR TO '%(group|member|owner|群)%' AND ($1::uuid IS NULL OR a.id=$1 OR b.id=$1) ORDER BY e.created_at DESC,e.id DESC LIMIT $2").bind(focus).bind(limit).fetch_all(pool).await?;
+    let relations:Vec<(Uuid,Uuid,String)>=sqlx::query_as("SELECT e.from_profile_id,e.to_profile_id,e.relationship_type FROM crm.directory_relationship_edges e JOIN crm.directory_profiles a ON a.id=e.from_profile_id AND a.archived_at IS NULL AND a.profile_type='person' JOIN crm.directory_profiles b ON b.id=e.to_profile_id AND b.archived_at IS NULL AND b.profile_type='person' WHERE lower(e.relationship_type) NOT SIMILAR TO '%(group|member|owner|群)%' AND ($1::uuid IS NULL OR a.id=$1 OR b.id=$1) ORDER BY e.created_at DESC,e.id DESC LIMIT $2").bind(focus).bind(limit).fetch_all(pool).await?;
     for (a, b, name) in relations {
         ids.extend([a, b]);
         let e = pairs.entry(ordered(a, b)).or_default();
         e.direct += 1;
         e.relationships.push(name);
     }
-    let audience:Vec<(Uuid,Uuid)>=sqlx::query_as("SELECT DISTINCT p.profile_id,coalesce(s.author_profile_id,l.profile_id,i.profile_id) FROM crm.social_interactions s JOIN crm.timeline_events p ON p.id=s.post_id LEFT JOIN crm.source_account_links l ON l.account_id=s.author_account_id LEFT JOIN crm.identities i ON i.provider='wechat' AND i.external_id=s.author_external_id AND i.status NOT IN ('invalid','merged') JOIN crm.profiles author ON author.id=coalesce(s.author_profile_id,l.profile_id,i.profile_id) AND author.archived_at IS NULL AND author.profile_type='person' WHERE s.provider='wechat' AND NOT s.is_deleted AND p.profile_id=ANY($1) AND p.profile_id<>author.id").bind(ids.iter().copied().collect::<Vec<_>>()).fetch_all(pool).await?;
+    let audience:Vec<(Uuid,Uuid)>=sqlx::query_as("SELECT DISTINCT p.profile_id,coalesce(s.author_profile_id,l.profile_id,i.profile_id) FROM crm.social_interactions s JOIN crm.timeline_events p ON p.id=s.post_id LEFT JOIN crm.source_account_links l ON l.account_id=s.author_account_id LEFT JOIN crm.identities i ON i.provider='wechat' AND i.external_id=s.author_external_id AND i.status NOT IN ('invalid','merged') JOIN crm.directory_profiles author ON author.id=coalesce(s.author_profile_id,l.profile_id,i.profile_id) AND author.archived_at IS NULL AND author.profile_type='person' WHERE s.provider='wechat' AND NOT s.is_deleted AND p.profile_id=ANY($1) AND p.profile_id<>author.id").bind(ids.iter().copied().collect::<Vec<_>>()).fetch_all(pool).await?;
     let mut audiences: BTreeMap<Uuid, BTreeSet<Uuid>> = BTreeMap::new();
     for (owner, author) in audience {
         audiences.entry(owner).or_default().insert(author);
@@ -171,7 +171,7 @@ async fn projection(pool: &PgPool, limit: i64, focus: Option<Uuid>) -> Result<Va
             shared_audience.entry(*id).or_default().extend(&co);
         }
     }
-    let rows=sqlx::query("SELECT p.id,p.display_name,p.profile_type,(SELECT external_id FROM crm.identities i WHERE i.profile_id=p.id AND i.provider='wechat' AND i.status NOT IN ('invalid','merged') ORDER BY i.first_seen_at,i.id LIMIT 1) wxid FROM crm.profiles p WHERE p.id=ANY($1) AND p.archived_at IS NULL ORDER BY p.id").bind(ids.iter().copied().collect::<Vec<_>>()).fetch_all(pool).await?;
+    let rows=sqlx::query("SELECT p.id,p.display_name,p.profile_type,(SELECT external_id FROM crm.identities i WHERE i.profile_id=p.id AND i.provider='wechat' AND i.status NOT IN ('invalid','merged') ORDER BY i.first_seen_at,i.id LIMIT 1) wxid FROM crm.directory_profiles p WHERE p.id=ANY($1) AND p.archived_at IS NULL ORDER BY p.id").bind(ids.iter().copied().collect::<Vec<_>>()).fetch_all(pool).await?;
     let mut nodes = Vec::new();
     let mut index = BTreeMap::new();
     for r in rows {
@@ -256,7 +256,7 @@ async fn circle(
 ) -> Result<Json<Value>> {
     user(&s, &h).await?;
     let kind: Option<String> =
-        sqlx::query_scalar("SELECT profile_type FROM crm.profiles WHERE id=$1")
+        sqlx::query_scalar("SELECT profile_type FROM crm.directory_profiles WHERE id=$1")
             .bind(id)
             .fetch_optional(&s.pool)
             .await?;

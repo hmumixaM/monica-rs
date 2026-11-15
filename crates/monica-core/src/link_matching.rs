@@ -623,7 +623,7 @@ fn extract_contacts(a: &mut AccountSignals) {
 }
 pub async fn load(pool: &PgPool) -> Result<Snapshot> {
     let mut result = Snapshot::default();
-    let rows=sqlx::query("SELECT a.id,a.provider,a.external_id,a.display_name,a.username,a.profile_url,l.profile_id,p.display_name AS profile_name,coalesce((SELECT ml.media_id FROM crm.media_links ml WHERE ml.source_account_id=a.id AND ml.role IN ('wechat_avatar_small','wechat_avatar','instagram_avatar','linkedin_avatar') ORDER BY (ml.role='wechat_avatar_small') DESC,ml.media_id LIMIT 1),p.avatar_media_id) AS avatar_media_id FROM crm.source_accounts a LEFT JOIN crm.source_account_links l ON l.account_id=a.id LEFT JOIN crm.profiles p ON p.id=l.profile_id WHERE a.object_kind='person' AND (p.id IS NULL OR (p.profile_type='person' AND p.archived_at IS NULL)) ORDER BY a.id").fetch_all(pool).await?;
+    let rows=sqlx::query("SELECT a.id,a.provider,a.external_id,a.display_name,a.username,a.profile_url,l.profile_id,p.display_name AS profile_name,coalesce((SELECT ml.media_id FROM crm.media_links ml WHERE ml.source_account_id=a.id AND ml.role IN ('wechat_avatar_small','wechat_avatar','instagram_avatar','linkedin_avatar') ORDER BY (ml.role='wechat_avatar_small') DESC,ml.media_id LIMIT 1),p.avatar_media_id) AS avatar_media_id FROM crm.source_accounts a LEFT JOIN crm.source_account_links l ON l.account_id=a.id LEFT JOIN crm.directory_profiles p ON p.id=l.profile_id WHERE NOT(a.provider='wechat' AND crm.wechat_is_official(a.external_id)) AND a.object_kind='person' AND (l.profile_id IS NULL OR (p.profile_type='person' AND p.archived_at IS NULL)) ORDER BY a.id").fetch_all(pool).await?;
     for row in rows {
         result.accounts.push(AccountSignals {
             account_id: row.get::<Uuid, _>("id").to_string(),
@@ -670,7 +670,7 @@ pub async fn load(pool: &PgPool) -> Result<Snapshot> {
                 .insert(account.account_id.clone(), reason.clone());
         }
     }
-    let fields=sqlx::query("SELECT c.profile_id,c.field_key,r.value,p.display_name FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id JOIN crm.profiles p ON p.id=c.profile_id WHERE c.field_key=ANY($1)").bind(FIELDS.map(|(k,_)|k).to_vec()).fetch_all(pool).await?;
+    let fields=sqlx::query("SELECT c.profile_id,c.field_key,r.value,p.display_name FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id JOIN crm.directory_profiles p ON p.id=c.profile_id WHERE c.field_key=ANY($1)").bind(FIELDS.map(|(k,_)|k).to_vec()).fetch_all(pool).await?;
     let mut shown: BTreeMap<String, BTreeMap<String, Vec<String>>> = BTreeMap::new();
     for row in fields {
         let profile = row.get::<Uuid, _>("profile_id").to_string();

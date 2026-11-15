@@ -684,15 +684,16 @@ async fn project_revision_reserved(
         let name = string(p, "name", external);
         let own = truth(p.get("is_self"), false);
         sqlx::query("INSERT INTO crm.connection_people(connection_id,external_id,display_name,is_self) VALUES($1,$2,$3,$4) ON CONFLICT(connection_id,external_id) DO UPDATE SET display_name=excluded.display_name,is_self=excluded.is_self").bind(cid).bind(external).bind(name).bind(own).execute(&mut **tx).await?;
-        let blocked:bool=sqlx::query_scalar("SELECT coalesce((SELECT blocked FROM crm.connection_identity_links WHERE connection_id=$1 AND external_id=$2),false)").bind(cid).bind(external).fetch_one(&mut **tx).await?;
-        let mut person = resolve_person(tx, cid, p, kind == "contact").await?;
-        if person.is_none() && !blocked && kind == "contact" && !deleted {
+        let (blocked,official):(bool,bool)=sqlx::query_as("SELECT coalesce((SELECT blocked FROM crm.connection_identity_links WHERE connection_id=$1 AND external_id=$2),false),$3 AND crm.wechat_is_official($2)").bind(cid).bind(external).bind(kind == "contact" && matches!(provider, Provider::Wechat)).fetch_one(&mut **tx).await?;
+        let directory_contact = kind == "contact" && !official;
+        let mut person = resolve_person(tx, cid, p, directory_contact).await?;
+        if person.is_none() && !blocked && directory_contact && !deleted {
             let id = Uuid::new_v5(&cid, format!("contact:{external}").as_bytes());
             sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person',$2) ON CONFLICT DO NOTHING").bind(id).bind(name.chars().take(255).collect::<String>()).execute(&mut **tx).await?;
             person = Some(id);
         }
         if let Some(profile) = person {
-            if kind == "contact" && !deleted {
+            if directory_contact && !deleted {
                 sqlx::query("INSERT INTO crm.connection_identity_links(connection_id,external_id,profile_id,confirmed) VALUES($1,$2,$3,true) ON CONFLICT DO NOTHING").bind(cid).bind(external).bind(profile).execute(&mut **tx).await?;
                 for (kind, value) in identifiers(p) {
                     sqlx::query("INSERT INTO crm.connection_identifiers VALUES($1,$2,$3,$4,$5,true) ON CONFLICT(connection_id,external_id,kind,value) DO UPDATE SET active=true,profile_id=excluded.profile_id").bind(cid).bind(&row.external_id).bind(profile).bind(&kind).bind(&value).execute(&mut **tx).await?;
