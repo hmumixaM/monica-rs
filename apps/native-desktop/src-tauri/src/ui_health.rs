@@ -172,6 +172,37 @@ mod tests {
     }
 
     #[test]
+    fn final_check_cancels_recovery_after_heartbeat_or_focus_returns() {
+        let start = Instant::now();
+        let wall = SystemTime::UNIX_EPOCH;
+        let mut health = UiHealth::new(start, wall);
+        let at = |seconds| start + Duration::from_secs(seconds);
+        let wall_at = |seconds| wall + Duration::from_secs(seconds);
+        assert_eq!(
+            health.check(at(0), wall_at(0), true, false, false),
+            UiAction::Wait
+        );
+        // The worker queues a check after the timeout but does not compute a
+        // Reload action. A resumed poll arrives before that task can run.
+        health.heartbeat(at(33));
+        assert_eq!(
+            health.check(at(34), wall_at(34), true, false, false),
+            UiAction::Wait
+        );
+        // The next queued check is also stale by arrival; a new focus grace
+        // must win at the final check rather than replaying an earlier action.
+        health.focus_changed(at(67));
+        assert_eq!(
+            health.check(at(68), wall_at(68), true, false, false),
+            UiAction::Wait
+        );
+        assert_eq!(
+            health.check(at(99), wall_at(99), true, false, false),
+            UiAction::Reload
+        );
+    }
+
+    #[test]
     fn aborted_quit_keeps_monitoring_until_exit_is_committed() {
         let start = Instant::now();
         let wall = SystemTime::UNIX_EPOCH;

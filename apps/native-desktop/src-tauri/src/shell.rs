@@ -5,6 +5,7 @@ use std::{
     sync::{
         Mutex,
         atomic::{AtomicBool, Ordering},
+        mpsc::{self, RecvTimeoutError},
     },
     thread,
     time::{Duration, Instant, SystemTime},
@@ -353,48 +354,86 @@ fn install_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .build(app)?;
     Ok(())
 }
+// This function runs as one native main-thread task. Native getters execute
+// inline there, and a heartbeat/focus event accepted before the task is reflected
+// in its final health check; no background Reload decision is carried across IPC.
+fn check_ui(app: &AppHandle) -> UiAction {
+    let Some(state) = app.try_state::<AppState>() else {
+        return UiAction::Stop;
+    };
+    let quitting = state.quitting.load(Ordering::SeqCst);
+    let exit_allowed = state.allow_exit.load(Ordering::SeqCst);
+    let window = app.get_webview_window("settings");
+    let active = !quitting
+        && window.as_ref().is_some_and(|window| {
+            window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false)
+        });
+    // Release the health lock before making a native call. The final decision
+    // and reload still execute in the same event-loop turn.
+    let action = state
+        .ui_health
+        .lock()
+        .map(|mut health| {
+            health.check(
+                Instant::now(),
+                SystemTime::now(),
+                active,
+                quitting,
+                exit_allowed,
+            )
+        })
+        .unwrap_or(if exit_allowed {
+            UiAction::Stop
+        } else {
+            UiAction::Wait
+        });
+    if action == UiAction::Reload
+        && !state.quitting.load(Ordering::SeqCst)
+        && !state.allow_exit.load(Ordering::SeqCst)
+        && let Some(window) = window
+    {
+        // Native reload works even when WebKit's content process has died.
+        if let Err(error) = window.reload() {
+            eprintln!("无法恢复 Monica Rust 设置界面：{error}");
+        }
+    }
+    action
+}
+
 fn monitor_ui(app: AppHandle) {
     thread::spawn(move || {
         loop {
             thread::sleep(Duration::from_secs(2));
-            let state = app.state::<AppState>();
-            let quitting = state.quitting.load(Ordering::SeqCst);
-            let exit_allowed = state.allow_exit.load(Ordering::SeqCst);
-            let window = app.get_webview_window("settings");
-            let active = !quitting
-                && window.as_ref().is_some_and(|window| {
-                    window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false)
-                });
-            let action = state
-                .ui_health
-                .lock()
-                .map(|mut health| {
-                    health.check(
-                        Instant::now(),
-                        SystemTime::now(),
-                        active,
-                        quitting,
-                        exit_allowed,
-                    )
-                })
-                .unwrap_or(if exit_allowed {
-                    UiAction::Stop
-                } else {
-                    UiAction::Wait
-                });
-            if action == UiAction::Stop {
+            if app
+                .try_state::<AppState>()
+                .is_none_or(|state| state.allow_exit.load(Ordering::SeqCst))
+            {
                 return;
             }
-            if action == UiAction::Reload
-                && !state.quitting.load(Ordering::SeqCst)
-                && let Some(window) = window
-                && window.is_visible().unwrap_or(false)
-                && window.is_focused().unwrap_or(false)
+            let task_app = app.clone();
+            let (done, result) = mpsc::channel();
+            if app
+                .run_on_main_thread(move || {
+                    let _ = done.send(check_ui(&task_app));
+                })
+                .is_err()
             {
-                // A native reload still works after WebKit's content process dies.
-                // Never restart Postgres, server or collectors to recover this view.
-                if let Err(error) = window.reload() {
-                    eprintln!("无法恢复 Monica Rust 设置界面：{error}");
+                continue;
+            }
+            // Only one check may be queued. Wait for that same task if the native
+            // loop is busy instead of accumulating more tasks every two seconds.
+            loop {
+                match result.recv_timeout(Duration::from_secs(2)) {
+                    Ok(UiAction::Stop) => return,
+                    Ok(_) | Err(RecvTimeoutError::Disconnected) => break,
+                    Err(RecvTimeoutError::Timeout) => {
+                        if app
+                            .try_state::<AppState>()
+                            .is_none_or(|state| state.allow_exit.load(Ordering::SeqCst))
+                        {
+                            return;
+                        }
+                    }
                 }
             }
         }
