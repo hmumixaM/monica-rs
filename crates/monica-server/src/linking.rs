@@ -320,7 +320,7 @@ async fn contacts(
     if query.trim().is_empty() {
         return Ok(Json(json!([])));
     }
-    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('profile_id',p.id,'display_name',p.display_name,'avatar_media_id',p.avatar_media_id,'accounts',coalesce((SELECT jsonb_agg(to_jsonb(a)) FROM crm.source_account_links l JOIN crm.source_accounts a ON a.id=l.account_id WHERE l.profile_id=p.id),'[]')) FROM crm.profiles p WHERE p.archived_at IS NULL AND p.profile_type='person' AND p.display_name ILIKE '%'||$1||'%' AND ($2::text IS NULL OR NOT EXISTS(SELECT 1 FROM crm.source_account_links l JOIN crm.source_accounts a ON a.id=l.account_id WHERE l.profile_id=p.id AND a.provider=$2)) ORDER BY p.display_name LIMIT 30").bind(query).bind(q.provider).fetch_all(&s.pool).await?;
+    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('profile_id',p.id,'display_name',p.display_name,'avatar_media_id',p.avatar_media_id,'accounts',coalesce((SELECT jsonb_agg(to_jsonb(a)) FROM crm.source_account_links l JOIN crm.source_accounts a ON a.id=l.account_id WHERE l.profile_id=p.id),'[]')) FROM crm.directory_profiles p WHERE p.archived_at IS NULL AND p.profile_type='person' AND p.display_name ILIKE '%'||$1||'%' AND ($2::text IS NULL OR NOT EXISTS(SELECT 1 FROM crm.source_account_links l JOIN crm.source_accounts a ON a.id=l.account_id WHERE l.profile_id=p.id AND a.provider=$2)) ORDER BY p.display_name LIMIT 30").bind(query).bind(q.provider).fetch_all(&s.pool).await?;
     Ok(Json(json!(rows)))
 }
 async fn review(
@@ -431,7 +431,7 @@ async fn matching_queue(s: &AppState) -> Result<std::sync::Arc<Vec<Value>>> {
     static CACHE: OnceLock<tokio::sync::Mutex<Entry>> = OnceLock::new();
     static BUILD: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
     let pool = &s.pool;
-    let version:String=sqlx::query_scalar("SELECT md5(coalesce(string_agg(v,',' ORDER BY v),'')) FROM (SELECT 'a'||id::text||xmin::text AS v FROM crm.source_accounts UNION ALL SELECT 'l'||account_id::text||xmin::text FROM crm.source_account_links UNION ALL SELECT 'p'||id::text||xmin::text FROM crm.profiles UNION ALL SELECT 'f'||profile_id::text||field_key||revision_id::text FROM crm.field_current UNION ALL SELECT 'd'||account_id::text||profile_id::text||xmin::text FROM crm.platform_link_decisions UNION ALL SELECT 'm'||entity_id::text||role||generation::text FROM crm.media_slots WHERE entity_type='source_account') versions").fetch_one(pool).await?;
+    let version:String=sqlx::query_scalar("SELECT md5(coalesce(string_agg(v,',' ORDER BY v),'')) FROM (SELECT 'v'||domain||shard::text||version::text AS v FROM crm.cache_domain_versions WHERE domain IN('profile','identity') UNION ALL SELECT 'a'||id::text||xmin::text FROM crm.source_accounts UNION ALL SELECT 'l'||account_id::text||xmin::text FROM crm.source_account_links UNION ALL SELECT 'p'||id::text||xmin::text FROM crm.profiles UNION ALL SELECT 'f'||profile_id::text||field_key||revision_id::text FROM crm.field_current UNION ALL SELECT 'd'||account_id::text||profile_id::text||xmin::text FROM crm.platform_link_decisions UNION ALL SELECT 'm'||entity_id::text||role||generation::text FROM crm.media_slots WHERE entity_type='source_account') versions").fetch_one(pool).await?;
     let cache = CACHE.get_or_init(Default::default);
     if let Some((v, rows)) = &*cache.lock().await
         && *v == version
@@ -635,7 +635,7 @@ async fn candidates(
     Query(q): Query<Filter>,
 ) -> Result<Json<Value>> {
     user(&s, &h).await?;
-    let rows:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(c)||jsonb_build_object('source_profile_id',i.profile_id,'provider',i.provider,'external_id',i.external_id,'username',i.username,'candidate_display_name',p.display_name) FROM crm.identity_candidates c JOIN crm.identities i ON i.id=c.identity_id JOIN crm.profiles p ON p.id=c.candidate_profile_id WHERE c.status=$1 ORDER BY c.score DESC,c.id LIMIT 100").bind(q.status_filter.unwrap_or_else(||"pending".into())).fetch_all(&s.pool).await?;
+    let rows:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(c)||jsonb_build_object('source_profile_id',i.profile_id,'provider',i.provider,'external_id',i.external_id,'username',i.username,'candidate_display_name',p.display_name) FROM crm.identity_candidates c JOIN crm.identities i ON i.id=c.identity_id JOIN crm.directory_profiles p ON p.id=c.candidate_profile_id WHERE NOT(i.provider='wechat' AND crm.wechat_is_official(i.external_id)) AND c.status=$1 ORDER BY c.score DESC,c.id LIMIT 100").bind(q.status_filter.unwrap_or_else(||"pending".into())).fetch_all(&s.pool).await?;
     Ok(Json(json!(rows)))
 }
 async fn accept_candidate(

@@ -27,6 +27,22 @@ fn message() -> Value {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn wechat_official_contacts_keep_journal_without_creating_people(pool: PgPool) {
+    let cid = connection(&pool, Provider::Wechat, "directory-policy").await;
+    let rows:Vec<Value>=[("wxid_synthetic_publisher",24),("gh_synthetic",8),("synthetic@openim",8),("wxid_synthetic_person",0)].into_iter().map(|(external,flag)|json!({"external_id":format!("contact:{external}"),"kind":"contact","display_name":"Synthetic","raw_contact":{"verify_flag":flag},"participants":[{"id":external,"name":"Synthetic","role":"contact","is_self":false}]})).collect();
+    page(&pool, Provider::Wechat, cid, &rows).await;
+    assert_eq!(deliver(&pool, Provider::Wechat, cid, 100).await.unwrap(), 4);
+    let (people,records,evidence):(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM crm.profiles),(SELECT count(*) FROM wechat.connection_records WHERE connection_id=$1),(SELECT count(*) FROM crm.connection_evidence WHERE connection_id=$1)").bind(cid).fetch_one(&pool).await.unwrap();
+    assert_eq!((people, records, evidence), (2, 4, 4));
+    let (enterprise,person):(bool,bool)=sqlx::query_as("SELECT EXISTS(SELECT 1 FROM crm.connection_people p JOIN crm.directory_profiles d ON d.id=p.resolved_profile_id WHERE p.connection_id=$1 AND p.external_id='synthetic@openim'),EXISTS(SELECT 1 FROM crm.connection_people p JOIN crm.directory_profiles d ON d.id=p.resolved_profile_id WHERE p.connection_id=$1 AND p.external_id='wxid_synthetic_person')").bind(cid).fetch_one(&pool).await.unwrap();
+    assert!(enterprise && person);
+    page(&pool, Provider::Wechat, cid, &rows).await;
+    assert_eq!(deliver(&pool, Provider::Wechat, cid, 100).await.unwrap(), 0);
+    let retained:Value=sqlx::query_scalar("SELECT metadata->'raw_contact' FROM crm.connection_evidence WHERE connection_id=$1 AND external_id='contact:wxid_synthetic_publisher'").bind(cid).fetch_one(&pool).await.unwrap();
+    assert_eq!(retained["verify_flag"], 24);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn import_owner_presence_preserves_explicit_annotations_and_group_authors(pool: PgPool) {
     use monica_core::imports;
     use std::collections::BTreeMap;

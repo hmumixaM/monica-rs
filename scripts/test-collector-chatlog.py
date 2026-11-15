@@ -78,8 +78,14 @@ class SnapshotTests(unittest.TestCase):
         before=len(self.frames);self.drain();self.assertEqual(before,len(self.frames),'unchanged exports must not reread or republish source pages')
     def test_contact_filter_and_deletion_reconcile(self):
         self.contact_snapshot([(1,'wxid_synthetic_peer',0,0,'','Friend','',''),(2,'gh_public',0,0,'','Official','',''),(3,'synthetic@chatroom',2,0,'','Group','',''),(4,'wxid_stranger',3,0,'','Stranger','','')]);self.drain()
-        values=[r['content'] for f in self.frames for r in f['batch']['records']];self.assertEqual([v['external_id'] for v in values],['contact:wxid_synthetic_peer'])
+        values=[r['content'] for f in self.frames for r in f['batch']['records']];self.assertEqual([v['external_id'] for v in values],['contact:wxid_synthetic_peer','contact:gh_public'])
         self.contact_snapshot([]);self.drain();self.assertTrue(self.frames[-1]['batch']['records'][0]['content']['deleted'])
+    def test_official_evidence_retained_and_enterprise_not_filtered(self):
+        for external,flag,kind in [('wxid_synthetic_public',24,1),('gh_synthetic_public',8,1),('synthetic@openim',0,5),('wxid_synthetic_person',0,1)]:
+            with self.subTest(external=external):
+                value=chatlog.contact(dict(username=external,verify_flag=flag,local_type=kind,nick_name='Synthetic'))
+                self.assertEqual(value['participants'][0]['id'],external)
+                self.assertEqual(value['raw_contact'],dict(verify_flag=flag,local_type=kind))
     def test_group_sender_uses_name2id_and_private_binary_retained(self):
         room='synthetic@chatroom';table='Msg_'+hashlib.md5(room.encode()).hexdigest()
         self.create('message/message_1.db','CREATE TABLE Name2Id(user_name TEXT);CREATE TABLE "'+table+'"(local_id INTEGER PRIMARY KEY,server_id INTEGER,create_time INTEGER,local_type INTEGER,real_sender_id INTEGER,message_content BLOB,compress_content BLOB);',[('INSERT INTO Name2Id VALUES(?)',[(room,),('wxid_synthetic_sender',)]),('INSERT INTO "'+table+'" VALUES(?,?,?,?,?,?,?)',[(1,0,1767225600,1,2,b'colliding-display:\nReal text',None),(2,0,1767225601,3,2,b'\xff\xfe',None)])]);self.drain()

@@ -164,6 +164,15 @@ pub async fn project(tx: &mut Transaction<'_, Postgres>, lease: &Lease) -> Resul
     sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO NOTHING")
         .bind(account).bind(s).bind(&external).bind(row.get::<String,_>("account_kind")).bind(name).execute(&mut **tx).await?;
     let fields_projection = ["profile", "record", "field", "contact"].contains(&kind.as_str());
+    if fields_projection && matches!(lease.provider, Provider::Wechat) {
+        sqlx::query("SELECT crm.observe_wechat_contact($1,$2,$3::text::timestamptz,$4)")
+            .bind(&external)
+            .bind(&payload)
+            .bind(row.get::<String, _>("observed_at"))
+            .bind(format!("object:{}:{:020}", lease.object, lease.version))
+            .execute(&mut **tx)
+            .await?;
+    }
     let membership_person = if kind == "group_membership" {
         let external = payload
             .get("person_external_id")

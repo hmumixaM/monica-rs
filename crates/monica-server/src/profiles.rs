@@ -4,6 +4,9 @@ mod activities;
 mod dates;
 #[path = "profile_details.rs"]
 mod details;
+#[cfg(test)]
+#[path = "directory_policy_tests.rs"]
+mod directory_policy_tests;
 #[path = "profile_read.rs"]
 mod read;
 #[path = "profile_relationships.rs"]
@@ -98,7 +101,7 @@ async fn list(
     let profile_type = q
         .profile_type
         .filter(|x| ["person", "group"].contains(&x.as_str()));
-    let rows:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(p)-'generation' FROM crm.profiles p WHERE archived_at IS NULL AND ($1::text IS NULL OR display_name ILIKE '%'||$1||'%' OR summary ILIKE '%'||$1||'%') AND ($2::uuid IS NULL OR id>$2) AND ($3::text IS NULL OR profile_type=$3) AND ($4::uuid IS NULL OR EXISTS(SELECT 1 FROM crm.presented_tag_memberships t WHERE t.profile_id=p.id AND tag_id=$4)) AND ($6::text IS NULL OR $6='' OR EXISTS(SELECT 1 FROM crm.profile_structured_current f WHERE f.profile_id=p.id AND f.company_name=$6)) AND ($7::text IS NULL OR $7='' OR EXISTS(SELECT 1 FROM crm.profile_structured_current f WHERE f.profile_id=p.id AND f.school_name=$7)) ORDER BY id LIMIT $5")
+    let rows:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(p)-'generation' FROM crm.directory_profiles p WHERE archived_at IS NULL AND ($1::text IS NULL OR display_name ILIKE '%'||$1||'%' OR summary ILIKE '%'||$1||'%') AND ($2::uuid IS NULL OR id>$2) AND ($3::text IS NULL OR profile_type=$3) AND ($4::uuid IS NULL OR EXISTS(SELECT 1 FROM crm.presented_tag_memberships t WHERE t.profile_id=p.id AND tag_id=$4)) AND ($6::text IS NULL OR $6='' OR EXISTS(SELECT 1 FROM crm.profile_structured_current f WHERE f.profile_id=p.id AND f.company_name=$6)) AND ($7::text IS NULL OR $7='' OR EXISTS(SELECT 1 FROM crm.profile_structured_current f WHERE f.profile_id=p.id AND f.school_name=$7)) ORDER BY id LIMIT $5")
  .bind(q.q).bind(q.cursor).bind(profile_type).bind(q.tag).bind(q.limit.unwrap_or(50).clamp(1,100)).bind(q.company).bind(q.school).fetch_all(&s.pool).await?;
     Ok(Json(json!(rows)))
 }

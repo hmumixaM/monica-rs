@@ -15,8 +15,8 @@ pub fn routes() -> Router<AppState> {
 }
 async fn summary_value(tx: &mut Transaction<'_, Postgres>) -> Result<Value> {
     Ok(sqlx::query_scalar(r#"SELECT jsonb_build_object(
- 'people',(SELECT count(*) FROM crm.profiles WHERE profile_type='person' AND archived_at IS NULL),
- 'groups',(SELECT count(*) FROM crm.profiles WHERE profile_type='group' AND archived_at IS NULL),
+ 'people',(SELECT count(*) FROM crm.directory_profiles WHERE profile_type='person' AND archived_at IS NULL),
+ 'groups',(SELECT count(*) FROM crm.directory_profiles WHERE profile_type='group' AND archived_at IS NULL),
  'identities',(SELECT count(*) FROM crm.identities WHERE status='active'),
  'wechat_identities',(SELECT count(*) FROM crm.identities WHERE provider='wechat' AND status='active'),
  'instagram_identities',(SELECT count(*) FROM crm.identities WHERE provider='instagram' AND status='active'),
@@ -47,9 +47,9 @@ async fn people(
     read_pool: Option<axum::Extension<BackgroundReadPool>>,
 ) -> Result<Response> {
     let mut tx = snapshot_on(&s, &h, read_pool.map(|p| p.0.0)).await?;
-    let mut result:Value=sqlx::query_scalar("SELECT jsonb_build_object('people',count(*) FILTER(WHERE profile_type='person'),'groups',count(*) FILTER(WHERE profile_type='group')) FROM crm.profiles WHERE archived_at IS NULL").fetch_one(&mut *tx).await?;
+    let mut result:Value=sqlx::query_scalar("SELECT jsonb_build_object('people',count(*) FILTER(WHERE profile_type='person'),'groups',count(*) FILTER(WHERE profile_type='group')) FROM crm.directory_profiles WHERE archived_at IS NULL").fetch_one(&mut *tx).await?;
     for (key, column) in [("companies", "company_name"), ("schools", "school_name")] {
-        let rows:Vec<Value>=sqlx::query_scalar(&format!("SELECT jsonb_build_object('name',f.{column},'count',count(DISTINCT f.profile_id)) FROM crm.profile_structured_current f JOIN crm.profiles p ON p.id=f.profile_id AND p.archived_at IS NULL WHERE f.{column} IS NOT NULL GROUP BY f.{column} ORDER BY count(DISTINCT f.profile_id) DESC,f.{column} LIMIT 8")).fetch_all(&mut *tx).await?;
+        let rows:Vec<Value>=sqlx::query_scalar(&format!("SELECT jsonb_build_object('name',f.{column},'count',count(DISTINCT f.profile_id)) FROM crm.profile_structured_current f JOIN crm.directory_profiles p ON p.id=f.profile_id AND p.archived_at IS NULL WHERE f.{column} IS NOT NULL GROUP BY f.{column} ORDER BY count(DISTINCT f.profile_id) DESC,f.{column} LIMIT 8")).fetch_all(&mut *tx).await?;
         result[key] = json!(rows);
     }
     tx.commit().await?;
