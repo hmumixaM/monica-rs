@@ -556,16 +556,24 @@ async fn weekly_facts_and_person_evidence_keep_dates_and_authors(pool: PgPool) {
     sqlx::query("INSERT INTO crm.profile_dates(id,profile_id,kind,date_precision,month,day) VALUES($1,$2,'birthday','month_day',1,12)").bind(Uuid::new_v4()).bind(id).execute(&pool).await.unwrap();
     let post = Uuid::new_v4();
     sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,profile_id,event_type,external_id,occurred_at,content,content_hash,version) VALUES($1,'wechat',$1,$2,'post','weekly-post','2026-01-06T12:00:00Z','{\"text\":\"WEEK_POST\"}','post',1)").bind(post).bind(id).execute(&pool).await.unwrap();
+    while ai::week_window::refresh_observations(&pool).await.unwrap() > 0 {}
     let mut tx = pool.begin().await.unwrap();
     let data = ai::snapshot(&mut tx, "ai.person_week", &format!("{id}:2026-01-05"))
         .await
         .unwrap();
-    let text = data.input.to_string();
+    let rows: Vec<serde_json::Value> = sqlx::query_scalar(
+        "SELECT payload FROM crm.ai_week_sources('2026-01-05',$1,true,false) ORDER BY source_key",
+    )
+    .bind(id)
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(data.input["window"]["source_count"], rows.len());
+    let text = serde_json::to_string(&rows).unwrap();
     assert!(text.contains("CONTACT_GROUP_WORDS"));
     assert!(!text.contains("UNRELATED_GROUP_WORDS"));
     assert!(!text.contains("NEXT_WEEK_WORDS"));
     assert!(!text.contains("OLD_BACKGROUND"));
-    let rows = data.input["evidence"].as_array().unwrap();
     assert_eq!(
         rows.iter().find(|v| v["text"] == "OWN_WORDS").unwrap()["speaker"],
         "我"
@@ -578,7 +586,7 @@ async fn weekly_facts_and_person_evidence_keep_dates_and_authors(pool: PgPool) {
         .iter()
         .find(|v| v["text"] == "CONTACT_GROUP_WORDS")
         .unwrap();
-    let resolved = ai::resolve_evidence(&data.input, &json!([source["id"]]));
+    let resolved = ai::resolve_evidence(&json!({"evidence":rows}), &json!([source["id"]]));
     assert_eq!(resolved[0]["kind"], "group");
     assert!(
         resolved[0]["citation"]
@@ -598,8 +606,14 @@ async fn weekly_facts_and_person_evidence_keep_dates_and_authors(pool: PgPool) {
     assert_eq!(digest.input["facts"], facts);
     tx.rollback().await.unwrap();
     ai::enqueue(&pool, "ai.digest", "2026-01-05").await.unwrap();
-    let claimed = ai::claim(&pool).await.unwrap().unwrap();
-    assert!(ai::finish(&pool,&claimed,json!({"summary":"Synthetic digest","life_events":[],"suggestions":[{"profile_id":id,"reason":"Supported by actual contact counts"}],"facts":{"totals":{"messages":999999}}})).await.unwrap());
+    let provider = FakeProvider {
+        output: json!({"summary":"Synthetic digest","life_events":[],"suggestions":[{"profile_id":id,"reason":"Supported by actual contact counts"}],"facts":{"totals":{"messages":999999}}}),
+    };
+    for _ in 0..100 {
+        if !ai::run_one(&pool, &provider).await.unwrap() {
+            break;
+        }
+    }
     let stored: serde_json::Value =
         sqlx::query_scalar("SELECT output FROM crm.weekly_digests WHERE week_start='2026-01-05'")
             .fetch_one(&pool)

@@ -367,6 +367,10 @@ async fn progress_rollup_replay_projection_and_timezones(pool: sqlx::PgPool) {
     let (status, state) = call(&app, "GET", "/api/v1/imports/status", Value::Null, None).await;
     assert_eq!(status, StatusCode::OK, "{state}");
     assert_eq!(state["connections"][0]["provider"], "apple_contacts");
+    assert_eq!(state["analysis_execution_enabled"], false);
+    assert_eq!(state["stages"]["observation_records_pending"], 0);
+    assert_eq!(state["stages"]["week_refresh_pending"], 0);
+    assert_eq!(state["week_analysis"], json!([]));
     // Failure and recovery retain one failure while updating the same run.
     let lease = Uuid::new_v4();
     sqlx::query("UPDATE crm.source_connections SET lease_token=$2,enabled=true WHERE id=$1")

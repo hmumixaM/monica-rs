@@ -65,7 +65,10 @@ pub async fn permits_call(
     if selected != model {
         return Ok(false);
     }
-    if lease.kind == "ai.profile" {
+    if matches!(
+        lease.kind.as_str(),
+        "ai.profile" | "ai.person_week" | "ai.digest"
+    ) {
         let chunk = lease.input["chunk_model"].as_str().unwrap_or(&lease.model);
         if chunk != resolve(&default, &routes, "ai.memory_chunk") {
             return Ok(false);
