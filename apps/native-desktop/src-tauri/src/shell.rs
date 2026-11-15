@@ -1,5 +1,5 @@
 use crate::supervisor::{Paths, RuntimeStatus, Supervisor};
-use crate::ui_health::UiHealth;
+use crate::ui_health::{UiAction, UiHealth};
 use std::{
     path::PathBuf,
     sync::{
@@ -358,19 +358,34 @@ fn monitor_ui(app: AppHandle) {
         loop {
             thread::sleep(Duration::from_secs(2));
             let state = app.state::<AppState>();
-            if state.quitting.load(Ordering::SeqCst) {
-                return;
-            }
+            let quitting = state.quitting.load(Ordering::SeqCst);
+            let exit_allowed = state.allow_exit.load(Ordering::SeqCst);
             let window = app.get_webview_window("settings");
-            let active = window.as_ref().is_some_and(|window| {
-                window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false)
-            });
-            let recover = state
+            let active = !quitting
+                && window.as_ref().is_some_and(|window| {
+                    window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false)
+                });
+            let action = state
                 .ui_health
                 .lock()
-                .map(|mut health| health.should_reload(Instant::now(), SystemTime::now(), active))
-                .unwrap_or(false);
-            if recover
+                .map(|mut health| {
+                    health.check(
+                        Instant::now(),
+                        SystemTime::now(),
+                        active,
+                        quitting,
+                        exit_allowed,
+                    )
+                })
+                .unwrap_or(if exit_allowed {
+                    UiAction::Stop
+                } else {
+                    UiAction::Wait
+                });
+            if action == UiAction::Stop {
+                return;
+            }
+            if action == UiAction::Reload
                 && !state.quitting.load(Ordering::SeqCst)
                 && let Some(window) = window
                 && window.is_visible().unwrap_or(false)

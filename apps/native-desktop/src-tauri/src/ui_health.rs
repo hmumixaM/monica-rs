@@ -6,6 +6,13 @@ use std::time::{Duration, Instant, SystemTime};
 const POLL_TIMEOUT: Duration = Duration::from_secs(30);
 const MONITOR_GAP: Duration = Duration::from_secs(45);
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum UiAction {
+    Wait,
+    Reload,
+    Stop,
+}
+
 pub(crate) struct UiHealth {
     last_poll: Instant,
     last_check: SystemTime,
@@ -32,7 +39,27 @@ impl UiHealth {
         self.active = false;
     }
 
-    pub(crate) fn should_reload(&mut self, now: Instant, wall: SystemTime, active: bool) -> bool {
+    pub(crate) fn check(
+        &mut self,
+        now: Instant,
+        wall: SystemTime,
+        active: bool,
+        quitting: bool,
+        exit_allowed: bool,
+    ) -> UiAction {
+        if exit_allowed {
+            return UiAction::Stop;
+        }
+        // A graceful quit can fail and leave the application running. Keep the
+        // monitor alive, with fresh foreground grace if that quit is cancelled.
+        if self.should_reload(now, wall, active && !quitting) {
+            UiAction::Reload
+        } else {
+            UiAction::Wait
+        }
+    }
+
+    fn should_reload(&mut self, now: Instant, wall: SystemTime, active: bool) -> bool {
         // Instant's treatment of suspended time varies by platform. Wall time
         // detects missed monitor ticks; a clock discontinuity also gets grace.
         let resumed = wall
@@ -67,7 +94,10 @@ mod tests {
             if seconds % 5 == 0 {
                 health.heartbeat(start + elapsed);
             }
-            assert!(!health.should_reload(start + elapsed, wall + elapsed, true));
+            assert_eq!(
+                health.check(start + elapsed, wall + elapsed, true, false, false),
+                UiAction::Wait
+            );
         }
         for (seconds, reload) in [
             (150, false),
@@ -78,8 +108,12 @@ mod tests {
         ] {
             let elapsed = Duration::from_secs(seconds);
             assert_eq!(
-                health.should_reload(start + elapsed, wall + elapsed, true),
-                reload
+                health.check(start + elapsed, wall + elapsed, true, false, false),
+                if reload {
+                    UiAction::Reload
+                } else {
+                    UiAction::Wait
+                }
             );
         }
     }
@@ -91,19 +125,77 @@ mod tests {
         let mut health = UiHealth::new(start, wall);
         let at = |seconds| start + Duration::from_secs(seconds);
         let wall_at = |seconds| wall + Duration::from_secs(seconds);
-        assert!(!health.should_reload(at(5), wall_at(5), true));
-        assert!(!health.should_reload(at(3600), wall_at(3600), false));
-        assert!(!health.should_reload(at(3601), wall_at(3601), true));
+        assert_eq!(
+            health.check(at(5), wall_at(5), true, false, false),
+            UiAction::Wait
+        );
+        assert_eq!(
+            health.check(at(3600), wall_at(3600), false, false, false),
+            UiAction::Wait
+        );
+        assert_eq!(
+            health.check(at(3601), wall_at(3601), true, false, false),
+            UiAction::Wait
+        );
         health.heartbeat(at(3606));
-        assert!(!health.should_reload(at(3629), wall_at(3629), true));
+        assert_eq!(
+            health.check(at(3629), wall_at(3629), true, false, false),
+            UiAction::Wait
+        );
         health.focus_changed(at(3630));
-        assert!(!health.should_reload(at(3631), wall_at(3631), true));
+        assert_eq!(
+            health.check(at(3631), wall_at(3631), true, false, false),
+            UiAction::Wait
+        );
         // The window stayed focused during sleep; no background sample exists.
-        assert!(!health.should_reload(at(7200), wall_at(7200), true));
+        assert_eq!(
+            health.check(at(7200), wall_at(7200), true, false, false),
+            UiAction::Wait
+        );
         health.heartbeat(at(7205));
-        assert!(!health.should_reload(at(7230), wall_at(7230), true));
-        assert!(!health.should_reload(at(7240), wall_at(7000), true));
-        assert!(!health.should_reload(at(7270), wall_at(7030), true));
-        assert!(health.should_reload(at(7272), wall_at(7032), true));
+        assert_eq!(
+            health.check(at(7230), wall_at(7230), true, false, false),
+            UiAction::Wait
+        );
+        assert_eq!(
+            health.check(at(7240), wall_at(7000), true, false, false),
+            UiAction::Wait
+        );
+        assert_eq!(
+            health.check(at(7270), wall_at(7030), true, false, false),
+            UiAction::Wait
+        );
+        assert_eq!(
+            health.check(at(7272), wall_at(7032), true, false, false),
+            UiAction::Reload
+        );
+    }
+
+    #[test]
+    fn aborted_quit_keeps_monitoring_until_exit_is_committed() {
+        let start = Instant::now();
+        let wall = SystemTime::UNIX_EPOCH;
+        let mut health = UiHealth::new(start, wall);
+        for (seconds, quitting, exit_allowed, expected) in [
+            (0, false, false, UiAction::Wait),
+            (31, true, false, UiAction::Wait),
+            (151, true, false, UiAction::Wait),
+            (152, false, false, UiAction::Wait),
+            (182, false, false, UiAction::Wait),
+            (184, false, false, UiAction::Reload),
+            (185, true, true, UiAction::Stop),
+        ] {
+            let elapsed = Duration::from_secs(seconds);
+            assert_eq!(
+                health.check(
+                    start + elapsed,
+                    wall + elapsed,
+                    true,
+                    quitting,
+                    exit_allowed
+                ),
+                expected
+            );
+        }
     }
 }
