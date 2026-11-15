@@ -8,7 +8,7 @@ use axum::{
 use serde_json::Value;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
-mod cache;
+pub(crate) mod cache;
 mod cities;
 mod directory;
 mod engagement;

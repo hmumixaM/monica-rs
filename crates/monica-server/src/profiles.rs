@@ -7,6 +7,9 @@ mod details;
 #[cfg(test)]
 #[path = "directory_policy_tests.rs"]
 mod directory_policy_tests;
+#[cfg(test)]
+#[path = "graph_cache_tests.rs"]
+mod graph_cache_tests;
 #[path = "profile_read.rs"]
 mod read;
 #[path = "profile_relationships.rs"]

@@ -1,8 +1,9 @@
 use super::{ApiError, AppState, Result, user};
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{OriginalUri, Path, Query, State},
     http::{HeaderMap, StatusCode},
+    response::Response,
     routing::get,
 };
 use serde::Deserialize;
@@ -28,12 +29,19 @@ async fn graph(
     State(s): State<AppState>,
     h: HeaderMap,
     Query(q): Query<Filter>,
-) -> Result<Json<Value>> {
+    OriginalUri(uri): OriginalUri,
+) -> Result<Response> {
     user(&s, &h).await?;
+    let version = crate::pages::cache::version(&s, uri.path()).await?;
+    let value = s
+        .read_cache
+        .get_or_try_init(format!("page:{uri}"), version, || graph_value(&s, q))
+        .await?;
+    Ok(value.response(&h))
+}
+async fn graph_value(s: &AppState, q: Filter) -> Result<Value> {
     if q.format.as_deref() == Some("monica") {
-        return Ok(Json(
-            projection(&s.pool, q.limit.unwrap_or(900).clamp(50, 2000), q.focus).await?,
-        ));
+        return projection(&s.pool, q.limit.unwrap_or(900).clamp(50, 2000), q.focus).await;
     }
     let edges:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',e.id,'from_profile_id',a.id,'to_profile_id',b.id,'from_display_name',a.display_name,'to_display_name',b.display_name,'from_profile_type',a.profile_type,'to_profile_type',b.profile_type,'relationship_type',e.relationship_type,'source_type',e.source_type,'confidence',e.confidence,'note',e.note,'created_at',e.created_at) FROM crm.directory_relationship_edges e JOIN crm.directory_profiles a ON a.id=e.from_profile_id JOIN crm.directory_profiles b ON b.id=e.to_profile_id WHERE ($1::text IS NULL OR e.source_type=$1) AND ($2::text IS NULL OR e.relationship_type=$2) AND ($3<=0 OR coalesce(e.confidence,0)>=$3) ORDER BY coalesce(e.confidence,0) DESC,e.created_at DESC,e.id DESC LIMIT $4").bind(&q.source_type).bind(&q.relationship_type).bind(q.min_confidence.unwrap_or(0.0).min(1.0)).bind(q.limit.unwrap_or(900).clamp(50,5000)).fetch_all(&s.pool).await?;
     let mut nodes = Vec::<Value>::new();
@@ -54,9 +62,9 @@ async fn graph(
             .await?;
     let types:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('relationship_type',relationship_type,'edge_count',count(*)) FROM crm.directory_relationship_edges GROUP BY relationship_type ORDER BY count(*) DESC,relationship_type").fetch_all(&s.pool).await?;
     let sources:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('source_type',source_type,'edge_count',count(*)) FROM crm.directory_relationship_edges GROUP BY source_type ORDER BY count(*) DESC,source_type").fetch_all(&s.pool).await?;
-    Ok(Json(
+    Ok(
         json!({"nodes":nodes,"visible_edges":edges.len(),"edges":edges,"total_edges":total_edges,"total_nodes":total_nodes,"relationship_types":types,"sources":sources}),
-    ))
+    )
 }
 #[derive(Default)]
 struct Pair {
