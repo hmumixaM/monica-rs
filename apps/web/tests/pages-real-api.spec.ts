@@ -19,6 +19,17 @@ test('real Rust populated directory, calendar, orbit, map and profile overview',
  await expect(page.getByRole('heading',{name:/^Synthetic empty profile/})).toBeVisible();
  await expect(page.getByText('还没有关联的来源记录。',{exact:true})).toBeVisible();
  const emptyProfile=page.url();
+ await page.getByRole('button',{name:'群聊发言',exact:true}).click();
+ const speech=page.getByRole('dialog',{name:'群聊发言',exact:true});await expect(speech.getByText('已导入的记录中没有找到这个人的群聊发言。',{exact:true})).toBeVisible();
+ const speechPath='/api/v1'+new URL(emptyProfile).pathname+'/group-speech';let failNewSearch=true;
+ await page.route('**'+speechPath+'*',route=>{if(failNewSearch&&new URL(route.request().url()).searchParams.get('q')==='retry-needle'){failNewSearch=false;return route.fulfill({status:503,json:{detail:'Synthetic transient read failure'}});}return route.continue();});
+ const failureIndex=failures.length;
+ await speech.getByRole('searchbox',{name:'在发言里搜索',exact:true}).fill('retry-needle');await speech.getByRole('button',{name:'搜索发言',exact:true}).click();await expect(speech.getByRole('alert')).toBeVisible();
+ expect(failures.splice(failureIndex)).toEqual([`503 ${speechPath}`]);
+ const retryRequest=page.waitForRequest(request=>new URL(request.url()).pathname===speechPath);
+ await speech.getByRole('button',{name:'重试',exact:true}).click();expect(new URL((await retryRequest).url()).searchParams.get('q')).toBe('retry-needle');
+ await expect(speech.getByText('已导入的记录中没有找到这个人的群聊发言。',{exact:true})).toBeVisible();await page.unroute('**'+speechPath+'*');
+ await page.keyboard.press('Escape');await expect(speech).toHaveCount(0);
  await coverage.getByText('关联邮箱或手机号',{exact:true}).click();
  for(const width of [1440,390]){await page.setViewportSize({width,height:1000});for(const theme of ['light','dark']){
   await page.evaluate(t=>{document.documentElement.dataset.theme=t;window.scrollTo(0,0);},theme);
