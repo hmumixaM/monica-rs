@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"crypto/aes"
 	"encoding/binary"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"image"
 	"image/png"
 	"os"
@@ -12,6 +15,37 @@ import (
 
 	"github.com/sjzar/chatlog/pkg/util/dat2img"
 )
+
+func TestFailureProtocolIdentifiesStageWithoutLeakingCause(t *testing.T) {
+	_, _, imageErr := transform([]byte("unsupported image"), "image")
+	cases := []struct {
+		name string
+		err  error
+		code string
+	}{
+		{"image", imageErr, "image_conversion_failed"},
+		{"wrapped", fmt.Errorf("synthetic private context: %w", conversionFailure("wxgf_conversion_failed", errors.New("synthetic key and decrypted body"))), "wxgf_conversion_failed"},
+		{"unknown", errors.New("synthetic private path or credential"), "media_decode_failed"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			if test.err == nil {
+				t.Fatal("failure fixture unexpectedly succeeded")
+			}
+			var output bytes.Buffer
+			if err := writeFailure(&output, test.err); err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]string
+			if err := json.Unmarshal(output.Bytes(), &fields); err != nil {
+				t.Fatal(err)
+			}
+			if len(fields) != 2 || fields["error_code"] != test.code || fields["codec_commit"] != buildCommit || bytes.Contains(output.Bytes(), []byte("synthetic")) {
+				t.Fatal("failure protocol lost its stage or leaked private error details")
+			}
+		})
+	}
+}
 
 func TestDecodedCopiesAreIndependentAndPathsCannotEscape(t *testing.T) {
 	root, err := filepath.EvalSymlinks(t.TempDir())
