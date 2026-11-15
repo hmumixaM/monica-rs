@@ -6,7 +6,13 @@ https://nas.tailfb022c.ts.net {
     tls /certs/nas.tailfb022c.ts.net.crt /certs/nas.tailfb022c.ts.net.key
     encode zstd gzip {
         match {
-            header Content-Type application/json* application/javascript* text/javascript* text/css* text/html* image/svg+xml*
+            status 200
+            header Content-Type application/json*
+            header Content-Type application/javascript*
+            header Content-Type text/javascript*
+            header Content-Type text/css*
+            header Content-Type text/html*
+            header Content-Type image/svg+xml*
         }
     }
     reverse_proxy server:17494 {
