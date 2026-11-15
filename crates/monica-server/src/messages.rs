@@ -127,13 +127,35 @@ async fn read(s: &AppState, profile: Option<Uuid>, q: Params) -> Result<Json<Val
     // Restrict each candidate stream before its limit. A person's group search
     // includes only that person's speech, even when a room has newer messages
     // from other members. Candidate IDs stay small; bodies/media join afterward.
-    let filters = r#"NOT m.tombstone
-      AND ($12::timestamptz IS NULL OR m.occurred_at>=$12::timestamptz)
-      AND ($13::timestamptz IS NULL OR m.occurred_at<$13::timestamptz)
+    // Pick copies within the matching person/time/search scope, independently
+    // of the paging cursor, so losing copies cannot return on a later page.
+    let matching = |alias: &str| {
+        format!(
+            r#"NOT {alias}.tombstone
+      AND ($12::timestamptz IS NULL OR {alias}.occurred_at>=$12::timestamptz)
+      AND ($13::timestamptz IS NULL OR {alias}.occurred_at<$13::timestamptz)
+      AND ($5::text IS NULL OR position(lower($5) in lower({alias}.body))>0)
+      AND ($6::text IS NULL OR ({alias}.occurred_at>=($6||'-01')::timestamp AT TIME ZONE $7 AND {alias}.occurred_at<(($6||'-01')::timestamp+interval '1 month') AT TIME ZONE $7))"#
+        )
+    };
+    let filters = format!(
+        r#"{current}
       AND ($3::timestamptz IS NULL OR (m.occurred_at,m.message_id)<($3::timestamptz,coalesce($4::uuid,'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)))
-      AND ($5::text IS NULL OR position(lower($5) in lower(m.body))>0)
-      AND ($6::text IS NULL OR (m.occurred_at>=($6||'-01')::timestamp AT TIME ZONE $7 AND m.occurred_at<(($6||'-01')::timestamp+interval '1 month') AT TIME ZONE $7))
-      AND ($8::uuid IS NULL OR $3::text IS NOT NULL OR (m.occurred_at,m.message_id)<=(SELECT anchor.occurred_at,anchor.message_id FROM crm.message_search anchor WHERE anchor.message_id=$8 AND anchor.conversation_id=c.id))"#;
+      AND ($8::uuid IS NULL OR $3::text IS NOT NULL OR (m.occurred_at,m.message_id)<=(SELECT anchor.occurred_at,anchor.message_id FROM crm.message_search anchor WHERE anchor.message_id=$8 AND anchor.conversation_id=c.id))
+      AND (NOT $14 OR m.provider<>'mail' OR c.conversation_type<>'direct' OR NOT EXISTS(
+        SELECT 1 FROM crm.connection_evidence original
+        JOIN crm.connection_evidence duplicate ON duplicate.dedup_key=original.dedup_key
+        JOIN crm.message_search other ON other.message_id=duplicate.message_id
+        JOIN crm.conversations other_room ON other_room.id=other.conversation_id
+        WHERE original.message_id=m.message_id AND original.connection_id=c.connection_id
+          AND original.dedup_key IS NOT NULL AND duplicate.included AND NOT duplicate.deleted
+          AND duplicate.kind='message' AND duplicate.conversation_id=other_room.id AND duplicate.connection_id=other_room.connection_id
+          AND other_room.profile_id=$1 AND other_room.conversation_type='direct' AND other.provider='mail'
+          AND (other.occurred_at,other.message_id)>(m.occurred_at,m.message_id) AND {other}
+      ))"#,
+        current = matching("m"),
+        other = matching("other")
+    );
     let room = r#"($2::uuid IS NULL OR c.id=$2) AND ($9::text IS NULL OR c.conversation_type=$9)"#;
     let query = format!(
         r#"WITH owned_accounts AS MATERIALIZED (
@@ -184,6 +206,8 @@ async fn read(s: &AppState, profile: Option<Uuid>, q: Params) -> Result<Json<Val
         .bind(q.include_group_speech.unwrap_or(false))
         .bind(q.since)
         .bind(q.until)
+        // An explicit conversation or anchor keeps that account's originals.
+        .bind(profile.is_some() && q.conversation_id.is_none() && q.message.is_none())
         .fetch_all(&s.pool)
         .await?;
     // Resolve attachments only after the global message page is bounded.
@@ -360,6 +384,273 @@ mod tests {
         );
         serde_json::from_slice(&body).unwrap()
     }
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn mail_copies_fold_per_person_before_pages_and_week_inputs(pool: PgPool) {
+        use monica_core::{Provider, connections, mail};
+        use std::collections::BTreeSet;
+        async fn deliver(pool: &PgPool, cid: Uuid, rows: &[Value], cursor: i64) {
+            let mut tx = pool.begin().await.unwrap();
+            connections::commit_page(
+                &mut tx,
+                Provider::Mail,
+                cid,
+                "messages",
+                rows,
+                &json!({"position":cursor}),
+            )
+            .await
+            .unwrap();
+            tx.commit().await.unwrap();
+            connections::deliver(pool, Provider::Mail, cid, 100)
+                .await
+                .unwrap();
+        }
+        fn mail_record(cid: Uuid, n: usize, first_account: bool) -> Value {
+            let owner = format!("owner-{cid}@example.invalid");
+            let mut headers = json!({"from":"friend@example.invalid","to":owner,"subject":"Synthetic personal message"});
+            if n < 7 || n == 9 {
+                headers["message-id"] = json!(format!("<logical-{n}>"));
+            }
+            let body = if n == 9 {
+                format!("Different saved body {cid}")
+            } else {
+                format!("Shared logical message {n}")
+            };
+            let at = if n == 0 && first_account {
+                "2026-11-09T00:30:00Z"
+            } else {
+                "2026-11-10T12:00:00Z"
+            };
+            mail::normalize(json!({"external_id":format!("copy-{n}"),"thread_id":"shared-thread","headers":headers,"body":body,"occurred_at":at}),&BTreeSet::from([owner]),&mail::Decision{category:"personal".into(),reason:"synthetic".into()}).unwrap()
+        }
+        async fn week_count(pool: &PgPool, person: Option<Uuid>, chats: bool) -> i64 {
+            sqlx::query_scalar("SELECT count(*) FROM crm.ai_week_sources('2026-11-09',$1,$2,false) WHERE payload->>'kind'='direct'")
+                .bind(person).bind(chats).fetch_one(pool).await.unwrap()
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::new(
+            pool.clone(),
+            "synthetic-session-secret-32-characters",
+            "http://localhost:17494".into(),
+            dir.path().into(),
+        )
+        .await
+        .unwrap();
+        let router = crate::auth::routes(state);
+        let actor = Uuid::new_v4();
+        let person = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        sqlx::query("INSERT INTO crm.app_users(id,email,password_hash) VALUES($1,'mail-copies@example.test','unused')").bind(actor).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 hour')").bind(Uuid::new_v4()).bind(actor).bind(format!("{:x}",Sha256::digest(b"fixture-session"))).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Mail person'),($2,'person','Other mail person')").bind(person).bind(other).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.person_identifiers(profile_id,kind,value,confirmed) VALUES($1,'email','friend@example.invalid',true)").bind(person).execute(&pool).await.unwrap();
+        // The foreign person's copy sorts above both target copies, so a global
+        // dedup lookup that forgets current person ownership will lose mail.
+        let mut accounts = [
+            Uuid::from_u128(101),
+            Uuid::from_u128(102),
+            Uuid::from_u128(103),
+        ];
+        accounts.sort_by_key(|cid| connections::evidence_id(*cid, "copy-1"));
+        let [first, second, foreign] = accounts;
+        for cid in accounts {
+            sqlx::query("INSERT INTO crm.source_connections(id,provider,external_account,display_name,connection_method,enabled) VALUES($1,'mail',$2,'Synthetic mailbox','imap',true)").bind(cid).bind(format!("owner-{cid}@example.invalid")).execute(&pool).await.unwrap();
+        }
+        sqlx::query("INSERT INTO crm.connection_identity_links(connection_id,external_id,profile_id,confirmed) VALUES($1,'friend@example.invalid',$2,true)").bind(foreign).bind(other).execute(&pool).await.unwrap();
+        for cid in [first, second] {
+            let records: Vec<_> = (0..10).map(|n| mail_record(cid, n, cid == first)).collect();
+            deliver(&pool, cid, &records, 1).await;
+        }
+        deliver(&pool, foreign, &[mail_record(foreign, 1, false)], 1).await;
+        let mut ids = Vec::new();
+        let mut cursor = String::new();
+        loop {
+            let page = request(
+                router.clone(),
+                &format!("/api/v1/profiles/{person}/messages?limit=2{cursor}"),
+            )
+            .await;
+            let rows = page.as_array().unwrap();
+            if rows.is_empty() {
+                break;
+            }
+            assert_eq!(rows.len(), if ids.len() < 12 { 2 } else { 1 });
+            let last = rows.last().unwrap();
+            cursor = format!(
+                "&before={}&before_id={}",
+                last["occurred_at"].as_str().unwrap().replace('+', "%2B"),
+                last["id"].as_str().unwrap()
+            );
+            ids.extend(
+                rows.iter()
+                    .map(|r| Uuid::parse_str(r["id"].as_str().unwrap()).unwrap()),
+            );
+            assert!(ids.len() <= 13, "copies resurfaced after the paging cursor");
+        }
+        assert_eq!(ids.len(), 13);
+        assert_eq!(ids.iter().collect::<BTreeSet<_>>().len(), 13);
+        let distinct:(i64,i64)=sqlx::query_as("SELECT count(DISTINCT dedup_key),count(*) FILTER(WHERE dedup_key IS NULL) FROM crm.connection_evidence WHERE id=ANY($1)").bind(&ids).fetch_one(&pool).await.unwrap();
+        assert_eq!(
+            distinct,
+            (9, 4),
+            "missing stable Message-ID or distinct bodies must stay separate"
+        );
+        let conversation: Uuid =
+            sqlx::query_scalar("SELECT id FROM crm.conversations WHERE connection_id=$1")
+                .bind(first)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            request(
+                router.clone(),
+                &format!("/api/v1/conversations/{conversation}/messages?limit=100")
+            )
+            .await
+            .as_array()
+            .unwrap()
+            .len(),
+            10
+        );
+        assert_eq!(
+            request(
+                router.clone(),
+                &format!(
+                    "/api/v1/profiles/{person}/messages?conversation_id={conversation}&limit=100"
+                )
+            )
+            .await
+            .as_array()
+            .unwrap()
+            .len(),
+            10
+        );
+        let raw_id = connections::evidence_id(first, "copy-1");
+        assert!(
+            request(
+                router.clone(),
+                &format!("/api/v1/profiles/{person}/messages?message={raw_id}&limit=100")
+            )
+            .await
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["id"] == raw_id.to_string())
+        );
+        let bounded=request(router.clone(),&format!("/api/v1/profiles/{person}/messages?since=2026-11-09T00:00:00Z&until=2026-11-09T01:00:00Z")).await;
+        assert_eq!(bounded.as_array().unwrap().len(), 1);
+        assert_eq!(
+            bounded[0]["id"],
+            connections::evidence_id(first, "copy-0").to_string()
+        );
+        assert_eq!(
+            request(
+                router.clone(),
+                &format!("/api/v1/profiles/{person}/messages?q=Shared%20logical%20message%201")
+            )
+            .await
+            .as_array()
+            .unwrap()
+            .len(),
+            1
+        );
+        assert_eq!(week_count(&pool, Some(person), true).await, 13);
+        assert_eq!(week_count(&pool, Some(other), true).await, 1);
+        assert_eq!(week_count(&pool, None, true).await, 14);
+        assert_eq!(week_count(&pool, None, false).await, 0);
+        let policy: String = sqlx::query_scalar("SELECT crm.ai_week_source_policy()")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE crm.source_connections SET enabled=false,generation=generation+1 WHERE id=$1",
+        )
+        .bind(second)
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert_eq!(week_count(&pool, Some(person), true).await, 9);
+        assert_ne!(
+            policy,
+            sqlx::query_scalar::<_, String>("SELECT crm.ai_week_source_policy()")
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            request(
+                router.clone(),
+                &format!("/api/v1/profiles/{person}/messages?limit=100")
+            )
+            .await
+            .as_array()
+            .unwrap()
+            .len(),
+            13,
+            "paused sources remain readable in the UI"
+        );
+        sqlx::query(
+            "UPDATE crm.source_connections SET enabled=true,generation=generation+1 WHERE id=$1",
+        )
+        .bind(second)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let mut excluded = mail_record(second, 1, false);
+        excluded["included"] = json!(false);
+        deliver(&pool, second, &[excluded], 2).await;
+        let mut deleted = mail_record(first, 2, true);
+        deleted["deleted"] = json!(true);
+        deliver(&pool, first, &[deleted], 2).await;
+        assert_eq!(
+            request(
+                router.clone(),
+                &format!("/api/v1/profiles/{person}/messages?limit=100")
+            )
+            .await
+            .as_array()
+            .unwrap()
+            .len(),
+            13
+        );
+        let old_id = connections::evidence_id(second, "copy-3");
+        let mut edited = mail_record(second, 3, false);
+        edited["body"] = json!("Corrected content with its own logical identity");
+        let edited = mail::normalize(
+            edited,
+            &BTreeSet::from([format!("owner-{second}@example.invalid")]),
+            &mail::Decision {
+                category: "personal".into(),
+                reason: "synthetic edit".into(),
+            },
+        )
+        .unwrap();
+        deliver(&pool, second, &[edited], 3).await;
+        let latest = request(
+            router.clone(),
+            &format!("/api/v1/profiles/{person}/messages?limit=100"),
+        )
+        .await;
+        assert_eq!(latest.as_array().unwrap().len(), 14);
+        let changed = latest
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"] == old_id.to_string())
+            .unwrap();
+        assert_eq!(changed["evidence_revision"], 2);
+        assert_eq!(
+            request(router, &format!("/api/v1/evidence/{old_id}?revision=1")).await["body"],
+            "Shared logical message 3"
+        );
+        let originals: (i64, i64) =
+            sqlx::query_as("SELECT count(*),sum(revision)::bigint FROM crm.connection_evidence")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(originals, (21, 24));
+    }
+
     #[sqlx::test(migrations = "../../migrations")]
     async fn real_http_message_pagination_linkage_months_and_timeline(pool: PgPool) {
         let dir = tempfile::tempdir().unwrap();
