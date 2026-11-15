@@ -10,10 +10,10 @@ test('real Rust login, create profile, directory search and deep link',async({pa
  const profileUrl=page.url();await page.reload();await expect(page.getByRole('heading',{level:1,name:'Rust 测试联系人'})).toBeVisible();
  await page.goto('/profiles');await page.getByRole('searchbox',{name:'筛选联系人'}).fill('ceshi');await expect(page.getByText('Rust 测试联系人',{exact:true}).first()).toBeVisible();await page.getByText('Rust 测试联系人',{exact:true}).first().click();await expect(page).toHaveURL(profileUrl);
  await page.screenshot({path:'../../.local-validation/frontend-real-profile.png',fullPage:true});
- await page.goto('/settings');await expect(page.getByRole('heading',{name:'模型设置',exact:true})).toBeVisible();
+ await page.goto('/settings');await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'AI 与 MCP',exact:true}).click();await expect(page.getByRole('heading',{name:'模型设置',exact:true})).toBeVisible();
  await page.getByLabel('服务地址',{exact:true}).fill('http://127.0.0.1:1/v1');
- await page.getByLabel('模型名称',{exact:true}).fill('synthetic-browser-model');
- await page.getByLabel('API Key',{exact:true}).fill('synthetic-browser-model-key');
+ await page.getByLabel(/^默认模型/).fill('synthetic-browser-model');
+ await page.getByLabel(/^API Key/).fill('synthetic-browser-model-key');
  await page.getByLabel('启用模型服务',{exact:true}).check();
  await page.getByRole('button',{name:'保存模型设置',exact:true}).click();
  await expect(page.getByText('模型设置已保存。',{exact:true})).toBeVisible();
@@ -24,7 +24,7 @@ test('real Rust login, create profile, directory search and deep link',async({pa
  await page.getByRole('button',{name:'保存',exact:true}).click();expect((await savedLimit).ok()).toBeTruthy();
  await page.reload();await expect(page.getByLabel('启用模型服务',{exact:true})).toBeChecked();
  await expect(page.getByRole('spinbutton',{name:'每天最多处理图片数'})).toHaveValue('125');
- await expect(page.getByLabel('API Key',{exact:true})).toHaveValue('');
+ await expect(page.getByLabel(/^API Key/)).toHaveValue('');
  await expect(page.getByText('删除已保存的密钥',{exact:true})).toBeVisible();
  await page.screenshot({path:'../../.local-validation/frontend-real-model-settings.png',fullPage:true});
  await page.getByLabel('启用模型服务',{exact:true}).uncheck();

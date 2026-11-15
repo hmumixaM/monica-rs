@@ -28,10 +28,12 @@ still leaves final writing. Reconciliation, repair and credentials stay availabl
 in clearly named expandable sections. Contact association uses a compact opt-in
 form with separate email/phone labels, validation and saved/error feedback.
 
-Focused validation uses synthetic API responses only: Ask, imports, AI settings
+Focused validation uses synthetic API responses: Ask, imports, AI settings
 and background status at 1440px/390px in both themes, with no document overflow
 or browser script errors; prompt insertion and file chooser access; contact
 submission and broken-avatar fallback; TypeScript and production web build.
+Existing real-Rust browser checks follow the settings category and expanded
+contact form while preserving login, persisted model/key and MCP regressions.
 No live NAS mutation, model request or collector activation is part of UI QA.
 Fresh independent bugbot/code-review/excessive-tests review is required before
 merge. Screenshots and request evidence are retained in the local validation

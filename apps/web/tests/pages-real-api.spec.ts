@@ -19,10 +19,11 @@ test('real Rust populated directory, calendar, orbit, map and profile overview',
  await expect(page.getByRole('heading',{name:/^Synthetic empty profile/})).toBeVisible();
  await expect(page.getByText('还没有关联的来源记录。',{exact:true})).toBeVisible();
  const emptyProfile=page.url();
+ await coverage.getByText('关联邮箱或手机号',{exact:true}).click();
  for(const width of [1440,390]){await page.setViewportSize({width,height:1000});for(const theme of ['light','dark']){
   await page.evaluate(t=>{document.documentElement.dataset.theme=t;window.scrollTo(0,0);},theme);
   await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
-  const form=await page.getByLabel('关联邮箱或手机号',{exact:true}).boundingBox();expect(form!.width).toBeLessThan(400);
+  const form=await coverage.getByLabel('邮箱地址',{exact:true}).boundingBox();expect(form!.width).toBeLessThan(400);
   if(width===1440)await expect.poll(async()=>{const facts=await coverage.locator('..').boundingBox();const activity=await timeline.boundingBox();return Math.abs(activity!.y-facts!.y);}).toBeLessThan(1);
   await page.screenshot({path:`../../.local-validation/frontend-profile-empty-${width}-${theme}.png`,fullPage:true});
  }}
@@ -50,7 +51,7 @@ test('real Rust populated directory, calendar, orbit, map and profile overview',
 });
 test('MCP settings and operational views use real Rust APIs across themes and sizes',async({page})=>{
  await page.goto('/login');await page.getByLabel('邮箱').fill('pages@example.invalid');await page.getByLabel('密码',{exact:true}).fill('synthetic-pages-password');await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(/\/dashboard$/);
- await page.goto('/settings');await page.getByLabel('启用 MCP',{exact:true}).check();await page.getByRole('button',{name:'保存 MCP 设置'}).click();await expect(page.getByRole('status').filter({hasText:'MCP 设置已保存'})).toBeVisible();
+ await page.goto('/settings');await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'AI 与 MCP',exact:true}).click();await page.getByLabel('启用 MCP',{exact:true}).check();await page.getByRole('button',{name:'保存 MCP 设置'}).click();await expect(page.getByRole('status').filter({hasText:'MCP 设置已保存'})).toBeVisible();
  await page.getByLabel('客户端名称',{exact:true}).fill('Synthetic AI');await page.getByRole('button',{name:'创建 access key'}).click();await expect(page.getByText('请保存新密钥，仅本次显示。')).toBeVisible();
  const key=await page.locator('code').filter({hasText:/^monica_/}).textContent();expect(key?.length).toBeGreaterThan(32);
  const mcp=await page.request.post('/mcp',{headers:{Authorization:`Bearer ${key}`,Accept:'application/json, text/event-stream','MCP-Protocol-Version':'2025-06-18'},data:{jsonrpc:'2.0',id:1,method:'tools/list',params:{}}});expect(mcp.ok()).toBeTruthy();expect((await mcp.json()).result.tools.length).toBeGreaterThan(10);
