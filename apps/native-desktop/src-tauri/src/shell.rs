@@ -169,20 +169,22 @@ async fn runtime_action(app: AppHandle, action: String) -> Result<RuntimeStatus,
     let result = tauri::async_runtime::spawn_blocking(move || {
         let state = copy.state::<AppState>();
         let mut runtime = state.runtime.lock().map_err(|_| "运行状态已锁定")?;
-        if ["pause", "stop"].contains(&action.as_str()) {
-            state
-                .collectors
-                .lock()
-                .map_err(|_| "采集状态已锁定")?
-                .stop()?;
-        }
-        let result = match action.as_str() {
-            "start" => runtime.start(),
-            "pause" => runtime.pause(),
-            "resume" => runtime.resume(),
-            "stop" => runtime.stop(),
-            _ => unreachable!(),
-        };
+        let result = (|| {
+            if ["pause", "stop"].contains(&action.as_str()) {
+                state
+                    .collectors
+                    .lock()
+                    .map_err(|_| "采集状态已锁定")?
+                    .stop()?;
+            }
+            match action.as_str() {
+                "start" => runtime.start(),
+                "pause" => runtime.pause(),
+                "resume" => runtime.resume(),
+                "stop" => runtime.stop(),
+                _ => unreachable!(),
+            }
+        })();
         publish(&copy, runtime.status());
         result
     })
@@ -191,6 +193,12 @@ async fn runtime_action(app: AppHandle, action: String) -> Result<RuntimeStatus,
     .and_then(|value| value);
     app.state::<AppState>().busy.store(false, Ordering::SeqCst);
     if let Err(error) = &result {
+        if !app.state::<AppState>().quitting.load(Ordering::SeqCst)
+            && let Ok(mut snapshot) = app.state::<AppState>().snapshot.lock()
+            && ["starting", "stopping"].contains(&snapshot.phase.as_str())
+        {
+            snapshot.phase = "failed".into();
+        }
         publish_error(&app, error.clone());
     }
     result
