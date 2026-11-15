@@ -1,7 +1,14 @@
 use monica_core::ai::{self, provider::Provider};
 use serde_json::{Value, json};
 use sqlx::PgPool;
-use std::{future::Future, pin::Pin, sync::Mutex};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 use uuid::Uuid;
 
 struct Offline {
@@ -9,6 +16,7 @@ struct Offline {
     important: Uuid,
     update: Uuid,
     person: Uuid,
+    fail_next: AtomicBool,
 }
 impl Provider for Offline {
     fn name(&self) -> &'static str {
@@ -28,6 +36,9 @@ impl Provider for Offline {
                 .lock()
                 .unwrap()
                 .push((job.kind.clone(), job.model.clone(), text));
+            if self.fail_next.swap(false, Ordering::SeqCst) {
+                anyhow::bail!("synthetic-provider-error-must-not-be-persisted");
+            }
             let content = if job.kind == "ai.week_chunk" {
                 &job.input["content"]
             } else {
@@ -110,6 +121,7 @@ async fn whole_week_volume_privacy_citations_and_role_cache(pool: PgPool) {
         .execute(&pool).await.unwrap();
     let provider = Offline {
         calls: Mutex::new(Vec::new()),
+        fail_next: AtomicBool::new(false),
         important,
         update,
         person,
@@ -260,6 +272,7 @@ async fn retained_observation_dates_recovery_and_stale_window_retry(pool: PgPool
     let important = monica_core::identity::object_id(account, "post", "known-old");
     let provider = Offline {
         calls: Mutex::new(Vec::new()),
+        fail_next: AtomicBool::new(false),
         important,
         update: Uuid::nil(),
         person,
@@ -377,7 +390,10 @@ async fn retained_observation_dates_recovery_and_stale_window_retry(pool: PgPool
         .execute(&pool)
         .await
         .unwrap();
-    ai::week_window::prune_completed(&pool).await.unwrap();
+    // Cleanup remains bounded to one terminal window per turn.
+    for _ in 0..3 {
+        ai::week_window::prune_completed(&pool).await.unwrap();
+    }
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM crm.ai_week_evidence")
             .fetch_one(&pool)
@@ -398,5 +414,185 @@ async fn retained_observation_dates_recovery_and_stale_window_retry(pool: PgPool
             .await
             .unwrap(),
         1
+    );
+    // A newer published input may replace this output; retrying the original
+    // unchanged input must rebuild a capture already pruned by retention.
+    sqlx::query("UPDATE crm.ai_outputs SET input_hash='replacement-input' WHERE kind='ai.digest'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let replay = ai::enqueue(&pool, "ai.digest", "2026-11-09").await.unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, bool>("SELECT pruned FROM crm.ai_week_runs WHERE job_id=$1")
+            .bind(replay)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        true
+    );
+    run(&pool, &provider).await;
+    let replayed: Value = sqlx::query_scalar("SELECT output FROM crm.ai_outputs WHERE job_id=$1")
+        .bind(replay)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(replayed["coverage"]["sources"], 1);
+    assert_eq!(replayed["coverage"]["processed"], 1);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn native_source_policy_contact_updates_and_chunk_failure_retry(pool: PgPool) {
+    use monica_core::{Provider as Source, connections};
+    let person = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Synthetic native week')").bind(person).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.person_identifiers(profile_id,kind,value,confirmed) VALUES($1,'email','native@example.test',true)").bind(person).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE crm.ai_settings SET enabled=true,execution_enabled=true,provider='fake',include_messages=true")
+        .execute(&pool).await.unwrap();
+    let mut ids = Vec::new();
+    for (provider, value) in [
+        (
+            Source::AppleContacts,
+            json!({"external_id":"friend-contact","kind":"contact","emails":["native@example.test"],"organization":"GENUINE-NATIVE-COMPANY","participants":[{"id":"friend-contact","role":"contact","emails":["native@example.test"]}]}),
+        ),
+        (
+            Source::AppleMessages,
+            json!({"external_id":"native-message","kind":"message","thread_id":"friend","occurred_at":"2026-11-10T12:00:00Z","body":"PRIVATE-NATIVE".to_owned()+&"x".repeat(85000),"participants":[{"id":"friend-message","role":"sender","emails":["native@example.test"]},{"id":"me","role":"recipient","is_self":true}]}),
+        ),
+    ] {
+        let cid = connections::connection_id(provider, "synthetic-week");
+        sqlx::query("INSERT INTO crm.source_connections(id,provider,external_account,display_name,connection_method,enabled) VALUES($1,$2,'synthetic-week','Synthetic','local',true)").bind(cid).bind(provider.schema()).execute(&pool).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        connections::commit_page(&mut tx, provider, cid, "fixture", &[value], &json!({}))
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        connections::deliver(&pool, provider, cid, 100)
+            .await
+            .unwrap();
+        ids.push(cid);
+    }
+    sqlx::query(
+        "UPDATE crm.field_revisions SET observed_at='2026-11-11T12:00:00Z' WHERE profile_id=$1",
+    )
+    .bind(person)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,field_key,value,content_hash,source_type,operation,observed_at) VALUES(gen_random_uuid(),$1,'monica.company','\"LEGACY-IMPORT-ONLY\"','legacy','manual','import','2026-11-11T12:00:00Z')").bind(person).execute(&pool).await.unwrap();
+    let fields:Vec<Value>=sqlx::query_scalar("SELECT payload FROM crm.ai_week_sources('2026-11-09',$1,true,false) WHERE payload->>'kind'='profile'").bind(person).fetch_all(&pool).await.unwrap();
+    assert_eq!(fields.len(), 2);
+    assert!(
+        fields
+            .iter()
+            .any(|f| f["field_key"] == "apple_contacts.organization"
+                && f["text"] == "GENUINE-NATIVE-COMPANY")
+    );
+    assert!(!json!(fields).to_string().contains("LEGACY-IMPORT-ONLY"));
+    let provider = Offline {
+        calls: Mutex::new(Vec::new()),
+        fail_next: AtomicBool::new(false),
+        important: Uuid::nil(),
+        update: Uuid::nil(),
+        person,
+    };
+    // Disabled source data remains searchable, but must not be sent to AI.
+    sqlx::query("UPDATE crm.source_connections SET enabled=false WHERE id=$1")
+        .bind(ids[1])
+        .execute(&pool)
+        .await
+        .unwrap();
+    ai::enqueue(&pool, "ai.digest", "2026-11-09").await.unwrap();
+    run(&pool, &provider).await;
+    assert!(
+        !provider
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(_, _, text)| text.contains("PRIVATE-NATIVE"))
+    );
+    sqlx::query("UPDATE crm.source_connections SET enabled=true WHERE id=$1")
+        .bind(ids[1])
+        .execute(&pool)
+        .await
+        .unwrap();
+    let job = ai::enqueue(&pool, "ai.digest", "2026-11-09").await.unwrap();
+    provider.calls.lock().unwrap().clear();
+    assert!(ai::run_one(&pool, &provider).await.unwrap());
+    let first = provider.calls.lock().unwrap()[0].2.clone();
+    provider.fail_next.store(true, Ordering::SeqCst);
+    assert!(ai::run_one(&pool, &provider).await.unwrap());
+    let state: (String, Option<Uuid>, Option<String>) =
+        sqlx::query_as("SELECT status,token,error FROM crm.ai_jobs WHERE id=$1")
+            .bind(job)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(state.0, "failed");
+    assert!(state.1.is_none());
+    assert_eq!(
+        state.2.as_deref(),
+        Some("weekly evidence processing failed")
+    );
+    assert_eq!(
+        ai::enqueue(&pool, "ai.digest", "2026-11-09").await.unwrap(),
+        job
+    );
+    run(&pool, &provider).await;
+    assert_eq!(
+        provider
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, _, text)| text == &first)
+            .count(),
+        1,
+        "retry lost the completed part cache"
+    );
+    let output: Value = sqlx::query_scalar("SELECT output FROM crm.ai_outputs WHERE job_id=$1")
+        .bind(job)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(output["coverage"]["sources"], 3);
+    // A source disabled after capture invalidates publication of that window.
+    sqlx::query("UPDATE crm.message_search SET body=body||'new revision' WHERE account=$1")
+        .bind(ids[1].to_string())
+        .execute(&pool)
+        .await
+        .unwrap();
+    ai::enqueue(&pool, "ai.digest", "2026-11-09").await.unwrap();
+    let lease = ai::claim(&pool).await.unwrap().unwrap();
+    while ai::week_window::prepare(&pool, &provider, &lease)
+        .await
+        .unwrap()
+        .is_none()
+    {}
+    sqlx::query("UPDATE crm.source_connections SET enabled=false WHERE id=$1")
+        .bind(ids[1])
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        !ai::finish(
+            &pool,
+            &lease,
+            json!({"summary":"must not publish","life_events":[],"suggestions":[]})
+        )
+        .await
+        .unwrap()
+    );
+    let before = provider.calls.lock().unwrap().len();
+    assert!(
+        ai::week_window::prepare(&pool, &provider, &lease)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        provider.calls.lock().unwrap().len(),
+        before,
+        "source disabled after capture triggered another provider call"
     );
 }

@@ -3,7 +3,8 @@
 CREATE TABLE crm.ai_week_runs (
  job_id uuid PRIMARY KEY REFERENCES crm.ai_jobs(id) ON DELETE CASCADE,
  source_hash text NOT NULL,source_count bigint NOT NULL,
- captured_at timestamptz NOT NULL DEFAULT now(),ready_summary jsonb
+ captured_at timestamptz NOT NULL DEFAULT now(),ready_summary jsonb,
+ pruned boolean NOT NULL DEFAULT false
 );
 CREATE TABLE crm.ai_week_evidence (
  job_id uuid NOT NULL REFERENCES crm.ai_week_runs(job_id) ON DELETE CASCADE,
@@ -72,6 +73,14 @@ CREATE INDEX ON crm.message_search(occurred_at,message_id) WHERE NOT tombstone;
 CREATE INDEX ON crm.field_revisions(observed_at,profile_id,id);
 CREATE INDEX ON crm.source_structured_revisions(observed_at,id);
 
+-- Compact source-policy fence; checking this between provider calls does not
+-- repeatedly hash the whole captured window.
+CREATE FUNCTION crm.ai_week_source_policy() RETURNS text LANGUAGE sql STABLE AS $$
+ SELECT encode(sha256(convert_to(coalesce(jsonb_object_agg(id::text,
+  jsonb_build_array(enabled,generation)),'{}'::jsonb)::text,'UTF8')),'hex')
+ FROM crm.source_connections
+$$;
+
 CREATE FUNCTION crm.ai_week_sources(first_day date,wanted_person uuid,chats boolean,notes boolean)
 RETURNS TABLE(source_key text,payload jsonb) LANGUAGE sql STABLE AS $$
  WITH bounds AS (
@@ -119,6 +128,10 @@ RETURNS TABLE(source_key text,payload jsonb) LANGUAGE sql STABLE AS $$
   THEN coalesce(m.sender_profile_id,l.profile_id) ELSE c.profile_id END,bounds b
  WHERE chats AND NOT m.tombstone AND (wanted_person IS NULL OR p.id=wanted_person)
   AND m.occurred_at>=b.start_at AND m.occurred_at<b.end_at
+  AND (c.connection_id IS NULL OR EXISTS(SELECT 1 FROM crm.connection_evidence e
+   JOIN crm.source_connections sc ON sc.id=e.connection_id AND sc.enabled
+   WHERE e.connection_id=c.connection_id AND e.message_id=m.message_id
+    AND e.included AND NOT e.deleted AND (sc.provider<>'mail' OR e.category='personal')))
  UNION ALL
  SELECT 'activity:'||a.id::text||':'||p.id::text,
   jsonb_build_object('id',a.id,'profile_id',p.id,'kind','note','activity_type',a.activity_type,
@@ -143,7 +156,8 @@ RETURNS TABLE(source_key text,payload jsonb) LANGUAGE sql STABLE AS $$
   AND (r.field_key LIKE 'monica.%' OR r.field_key=ANY(ARRAY[
    'residence','hometown','company','job','school','email','phone','food','interests','family',
    'personal.residence','personal.hometown','employment.company','employment.title','education.school',
-   'contact.email','contact.phone','personal.food','personal.interests','personal.family'])
+   'contact.email','contact.phone','personal.food','personal.interests','personal.family',
+   'apple_contacts.emails','apple_contacts.phones','apple_contacts.organization','apple_contacts.job_title','apple_contacts.birthday'])
    OR r.field_key LIKE 'linkedin.%' OR r.field_key LIKE 'wechat.%')
  UNION ALL
  SELECT 'structured-update:'||r.id::text||':'||p.id::text,

@@ -677,14 +677,20 @@ pub async fn run_with_media<P: provider::Provider>(
             let _ = enqueue(pool, &lease.kind, &lease.subject).await;
             return Ok(true);
         }
-        match week_window::prepare(pool, provider, &lease).await? {
-            Some(summary) => {
+        match week_window::prepare(pool, provider, &lease).await {
+            Ok(Some(summary)) => {
                 submitted.input["evidence"] = summary["evidence"].clone();
                 submitted.input["window_summary"] = summary;
             }
-            None => {
+            Ok(None) => {
                 sqlx::query("UPDATE crm.ai_jobs SET status='queued',token=NULL,lease_until=NULL,attempts=greatest(0,attempts-1) WHERE id=$1 AND token=$2 AND status='running' AND lease_until>clock_timestamp()")
                     .bind(lease.id).bind(lease.token).execute(pool).await?;
+                return Ok(true);
+            }
+            Err(_) => {
+                // A chunk is a provider boundary too. Settle the owned token;
+                // explicit retry preserves compatible cached parts.
+                fail(pool, &lease, "weekly evidence processing failed").await?;
                 return Ok(true);
             }
         }

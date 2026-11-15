@@ -34,23 +34,40 @@ pub async fn manifest(
     ensure!(!pending, CONTEXT_PENDING);
     let row=sqlx::query("SELECT count(*) source_count,encode(sha256(convert_to(coalesce(string_agg(source_key||':'||encode(sha256(convert_to(payload::text,'UTF8')),'hex'),',' ORDER BY source_key),''),'UTF8')),'hex') source_hash FROM crm.ai_week_sources($1,$2,$3,$4)")
         .bind(week).bind(person).bind(privacy.include_messages).bind(privacy.include_private_notes).fetch_one(&mut **tx).await?;
+    let source_policy: String = sqlx::query_scalar("SELECT crm.ai_week_source_policy()")
+        .fetch_one(&mut **tx)
+        .await?;
     Ok(
-        json!({"version":PROMPT,"source_count":row.get::<i64,_>("source_count"),"source_hash":row.get::<String,_>("source_hash")}),
+        json!({"source_policy":source_policy,"version":PROMPT,"source_count":row.get::<i64,_>("source_count"),"source_hash":row.get::<String,_>("source_hash")}),
     )
 }
 
 async fn freeze(pool: &PgPool, lease: &Lease) -> Result<bool> {
-    if sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM crm.ai_week_runs WHERE job_id=$1)",
-    )
-    .bind(lease.id)
-    .fetch_one(pool)
-    .await?
-    {
-        return Ok(true);
-    }
     let (week, person) = scope(&lease.kind, &lease.subject)?;
     let mut tx = pool.begin().await?;
+    // Retention takes the same mutable job lock, so an admitted replay cannot
+    // race with pruning its capture. No source rows are explicitly locked.
+    let owned: Option<Uuid>=sqlx::query_scalar("SELECT id FROM crm.ai_jobs WHERE id=$1 AND token=$2 AND status='running' AND lease_until>clock_timestamp() FOR UPDATE")
+        .bind(lease.id).bind(lease.token).fetch_optional(&mut *tx).await?;
+    if owned.is_none() {
+        return Ok(false);
+    }
+    if sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM crm.ai_week_runs WHERE job_id=$1 AND NOT pruned)",
+    )
+    .bind(lease.id)
+    .fetch_one(&mut *tx)
+    .await?
+    {
+        tx.commit().await?;
+        return Ok(true);
+    }
+    // A retained metadata row is not an intact capture. Rebuild it from the
+    // original evidence when an unchanged terminal job is explicitly retried.
+    sqlx::query("DELETE FROM crm.ai_week_runs WHERE job_id=$1 AND pruned")
+        .bind(lease.id)
+        .execute(&mut *tx)
+        .await?;
     // Only this job's mutable run record is reserved. Source facts are read
     // under the INSERT statement's MVCC snapshot, without FOR SHARE/UPDATE.
     sqlx::query("INSERT INTO crm.ai_week_runs(job_id,source_hash,source_count) VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
@@ -354,6 +371,17 @@ pub async fn prepare<P: Provider>(
     provider: &P,
     lease: &Lease,
 ) -> Result<Option<Value>> {
+    let source_policy: String = sqlx::query_scalar("SELECT crm.ai_week_source_policy()")
+        .fetch_one(pool)
+        .await?;
+    if Some(source_policy.as_str()) != lease.input["window"]["source_policy"].as_str() {
+        let changed=sqlx::query("UPDATE crm.ai_jobs SET status='cancelled',token=NULL,lease_until=NULL,completed_at=now() WHERE id=$1 AND token=$2 AND status='running' AND lease_until>clock_timestamp()")
+            .bind(lease.id).bind(lease.token).execute(pool).await?.rows_affected();
+        if changed > 0 {
+            request_refresh(pool, &lease.kind, &lease.subject).await?;
+        }
+        return Ok(None);
+    }
     if !freeze(pool, lease).await? {
         return Ok(None);
     }
@@ -458,10 +486,20 @@ pub async fn output_lease(pool: &PgPool, lease: &Lease, output: &Value) -> Resul
 /// Retain detailed captured inputs and cached reductions for 90 days. Published
 /// results and all original source evidence remain intact. Each tick is bounded.
 pub async fn prune_completed(pool: &PgPool) -> Result<()> {
-    sqlx::query("DELETE FROM crm.ai_week_evidence WHERE (job_id,source_key) IN (SELECT e.job_id,e.source_key FROM crm.ai_week_runs r JOIN crm.ai_jobs j ON j.id=r.job_id JOIN crm.ai_week_evidence e ON e.job_id=r.job_id WHERE r.captured_at<now()-interval '90 days' AND j.status IN ('complete','cancelled','failed') ORDER BY r.captured_at,r.job_id,e.source_key LIMIT 1000)")
-        .execute(pool).await?;
-    sqlx::query("DELETE FROM crm.ai_week_buckets WHERE (job_id,bucket) IN (SELECT b.job_id,b.bucket FROM crm.ai_week_runs r JOIN crm.ai_jobs j ON j.id=r.job_id JOIN crm.ai_week_buckets b ON b.job_id=r.job_id WHERE r.captured_at<now()-interval '90 days' AND j.status IN ('complete','cancelled','failed') ORDER BY r.captured_at,r.job_id,b.bucket LIMIT 1000)")
-        .execute(pool).await?;
+    let mut tx = pool.begin().await?;
+    let id:Option<Uuid>=sqlx::query_scalar("SELECT j.id FROM crm.ai_jobs j JOIN crm.ai_week_runs r ON r.job_id=j.id WHERE r.captured_at<now()-interval '90 days' AND j.status IN ('complete','cancelled','failed') AND (NOT r.pruned OR EXISTS(SELECT 1 FROM crm.ai_week_evidence e WHERE e.job_id=j.id) OR EXISTS(SELECT 1 FROM crm.ai_week_buckets b WHERE b.job_id=j.id)) ORDER BY r.captured_at,r.job_id LIMIT 1 FOR UPDATE OF j SKIP LOCKED")
+        .fetch_optional(&mut *tx).await?;
+    if let Some(id) = id {
+        sqlx::query("UPDATE crm.ai_week_runs SET pruned=true,ready_summary=NULL WHERE job_id=$1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM crm.ai_week_evidence WHERE job_id=$1 AND source_key IN (SELECT source_key FROM crm.ai_week_evidence WHERE job_id=$1 ORDER BY source_key LIMIT 1000)")
+            .bind(id).execute(&mut *tx).await?;
+        sqlx::query("DELETE FROM crm.ai_week_buckets WHERE job_id=$1 AND bucket IN (SELECT bucket FROM crm.ai_week_buckets WHERE job_id=$1 ORDER BY bucket LIMIT 1000)")
+            .bind(id).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
     sqlx::query("DELETE FROM crm.ai_week_parts WHERE cache_key IN (SELECT cache_key FROM crm.ai_week_parts WHERE created_at<now()-interval '90 days' AND NOT EXISTS(SELECT 1 FROM crm.ai_jobs WHERE kind IN ('ai.person_week','ai.digest') AND status IN ('queued','running')) ORDER BY created_at,cache_key LIMIT 1000)")
         .execute(pool).await?;
     Ok(())
