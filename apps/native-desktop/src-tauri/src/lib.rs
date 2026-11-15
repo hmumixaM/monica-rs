@@ -2,6 +2,9 @@
 pub mod shell;
 pub mod supervisor;
 
+#[cfg(any(feature = "desktop", test))]
+mod ui_health;
+
 #[cfg(target_os = "macos")]
 pub mod native_sources;
 

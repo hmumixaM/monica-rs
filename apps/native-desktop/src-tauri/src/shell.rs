@@ -1,4 +1,5 @@
 use crate::supervisor::{Paths, RuntimeStatus, Supervisor};
+use crate::ui_health::UiHealth;
 use std::{
     path::PathBuf,
     sync::{
@@ -6,7 +7,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant, SystemTime},
 };
 use tauri::{
     AppHandle, Manager, RunEvent, WindowEvent,
@@ -21,6 +22,7 @@ struct AppState {
     native: crate::native_control::NativeControl,
     collectors: Mutex<crate::collectors::Collectors>,
     snapshot: Mutex<RuntimeStatus>,
+    ui_health: Mutex<UiHealth>,
     busy: AtomicBool,
     quitting: AtomicBool,
     allow_exit: AtomicBool,
@@ -130,6 +132,9 @@ async fn native_action(app: AppHandle, provider: String, action: String) -> Resu
 }
 #[tauri::command]
 fn runtime_status(app: AppHandle) -> Result<RuntimeStatus, String> {
+    if let Ok(mut health) = app.state::<AppState>().ui_health.lock() {
+        health.heartbeat(Instant::now());
+    }
     app.state::<AppState>()
         .snapshot
         .lock()
@@ -348,6 +353,39 @@ fn install_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .build(app)?;
     Ok(())
 }
+fn monitor_ui(app: AppHandle) {
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(2));
+            let state = app.state::<AppState>();
+            if state.quitting.load(Ordering::SeqCst) {
+                return;
+            }
+            let window = app.get_webview_window("settings");
+            let active = window.as_ref().is_some_and(|window| {
+                window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false)
+            });
+            let recover = state
+                .ui_health
+                .lock()
+                .map(|mut health| health.should_reload(Instant::now(), SystemTime::now(), active))
+                .unwrap_or(false);
+            if recover
+                && !state.quitting.load(Ordering::SeqCst)
+                && let Some(window) = window
+                && window.is_visible().unwrap_or(false)
+                && window.is_focused().unwrap_or(false)
+            {
+                // A native reload still works after WebKit's content process dies.
+                // Never restart Postgres, server or collectors to recover this view.
+                if let Err(error) = window.reload() {
+                    eprintln!("无法恢复 Monica Rust 设置界面：{error}");
+                }
+            }
+        }
+    });
+}
+
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
@@ -378,6 +416,13 @@ pub fn run() {
             quit_app
         ])
         .on_window_event(|window, event| {
+            if matches!(event, WindowEvent::Focused(_))
+                && window.label() == "settings"
+                && let Some(state) = window.try_state::<AppState>()
+                && let Ok(mut health) = state.ui_health.lock()
+            {
+                health.focus_changed(Instant::now());
+            }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
@@ -431,11 +476,13 @@ pub fn run() {
                 native: crate::native_control::NativeControl::new(data)
                     .map_err(std::io::Error::other)?,
                 snapshot: Mutex::new(snapshot),
+                ui_health: Mutex::new(UiHealth::new(Instant::now(), SystemTime::now())),
                 busy: AtomicBool::new(false),
                 quitting: AtomicBool::new(false),
                 allow_exit: AtomicBool::new(false),
             });
             install_tray(app.handle())?;
+            monitor_ui(app.handle().clone());
             for provider in crate::native_control::PROVIDERS {
                 let handle = app.handle().clone();
                 thread::spawn(move || {
