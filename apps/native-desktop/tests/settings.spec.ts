@@ -1,18 +1,35 @@
 import {test,expect} from '@playwright/test';
-async function fixture(page:import('@playwright/test').Page, failure=false){
- await page.addInitScript(({failure})=>{
-  let status={phase:'running',url:'http://127.0.0.1:17494',paused:false,draining:false,active_jobs:0,error:null,data_directory:'/tmp/synthetic-monica-rust',adapters_enabled:false,ai_enabled:false};
+async function fixture(page:import('@playwright/test').Page, failure=false, failedStop=false){
+ await page.addInitScript(({failure,failedStop})=>{
+  let status={phase:failedStop?'failed':'running',server_pid:failedStop?123:null,postgres_pid:failedStop?456:null,url:'http://127.0.0.1:17494' as string|null,paused:false,draining:false,active_jobs:0,error:failedStop?'服务仍在安全退出，请稍候再试；没有强制终止数据库':null,data_directory:'/tmp/synthetic-monica-rust',adapters_enabled:false,ai_enabled:false};
   (window as unknown as {__TAURI_INTERNALS__:unknown}).__TAURI_INTERNALS__={invoke:async(command:string,args:{action?:string})=>{
    if(command==='runtime_status')return status;
    if(command==='collector_status')return {instagram:{authenticated:false,login_running:false,enabled:false,state:'needs_login',error:null},linkedin:{authenticated:false,login_running:false,enabled:false,state:'needs_login',error:null}};
    if(command==='native_status')return {apple_contacts:{enabled:false,busy:false,error:null,delivered:0},apple_messages:{enabled:false,busy:false,error:null,delivered:0}};
    if(command==='autostart_enabled')return false;
-   if(command==='runtime_action'){if(failure)throw '后台控制未完成（HTTP 503）';status={...status,paused:args.action==='pause'};return status;}
+   if(command==='runtime_action'){
+    if(failure)throw '后台控制未完成（HTTP 503）';
+    if(args.action==='stop')status={...status,phase:'stopped',server_pid:null,postgres_pid:null,url:null,error:null};
+    else if(args.action==='start'){if(status.server_pid||status.postgres_pid)throw '服务仍在退出，请先完成停止';status={...status,phase:'running',url:'http://127.0.0.1:17494'};}
+    else status={...status,paused:args.action==='pause'};
+    return status;
+   }
    if(command==='create_account')throw 'Account already initialized';
    return null;
   }};
- },{failure});await page.goto('/');
+ },{failure,failedStop});await page.goto('/');
 }
+test('failed shutdown can retry cleanup before restarting',async({page},info)=>{
+ await page.setViewportSize({width:760,height:820});await fixture(page,false,true);
+ const retry=page.getByRole('button',{name:'重试安全停止',exact:true});await expect(retry).toBeEnabled();
+ await expect(page.getByRole('alert')).toContainText('没有强制终止数据库');
+ await page.screenshot({path:info.outputPath('shutdown-retry-desktop.png'),fullPage:true});
+ await page.setViewportSize({width:390,height:844});await expect(retry).toBeInViewport();
+ await page.screenshot({path:info.outputPath('shutdown-retry-mobile.png'),fullPage:true});
+ await retry.focus();await page.keyboard.press('Enter');await expect(page.getByRole('heading',{name:'已停止',exact:true})).toBeVisible();
+ await expect(page.getByRole('alert')).toHaveCount(0);await page.getByRole('button',{name:'重新启动',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'运行中',exact:true})).toBeVisible();
+});
 test('settings follows successful native state and retains explicit adapter limits',async({page})=>{
  await fixture(page);await expect(page.getByRole('heading',{name:'运行中',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'暂停后台任务',exact:true}).click();await expect(page.getByRole('heading',{name:'后台任务已暂停'})).toBeVisible();

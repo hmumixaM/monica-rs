@@ -28,6 +28,14 @@ struct AppState {
     quitting: AtomicBool,
     allow_exit: AtomicBool,
 }
+impl AppState {
+    fn worker_lifecycle(&self) -> (bool, bool) {
+        (
+            self.quitting.load(Ordering::SeqCst),
+            self.allow_exit.load(Ordering::SeqCst),
+        )
+    }
+}
 fn show_settings(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.show();
@@ -281,15 +289,19 @@ fn begin_quit(app: &AppHandle) {
     }
     let app = app.clone();
     thread::spawn(move || {
-        if let Ok(mut collectors) = app.state::<AppState>().collectors.lock() {
-            let _ = collectors.stop();
-        }
-        let result = app
-            .state::<AppState>()
-            .runtime
-            .lock()
-            .map_err(|_| "运行状态已锁定".to_string())
-            .and_then(|mut runtime| runtime.stop());
+        let state = app.state::<AppState>();
+        let result = (|| {
+            state
+                .collectors
+                .lock()
+                .map_err(|_| "采集状态已锁定".to_string())?
+                .stop()?;
+            state
+                .runtime
+                .lock()
+                .map_err(|_| "运行状态已锁定".to_string())?
+                .stop()
+        })();
         match result {
             Ok(status) => {
                 publish(&app, status);
@@ -299,9 +311,14 @@ fn begin_quit(app: &AppHandle) {
                 app.exit(0);
             }
             Err(error) => {
-                app.state::<AppState>()
-                    .quitting
-                    .store(false, Ordering::SeqCst);
+                // A failed quit leaves the application alive. Publish its real
+                // state so the form does not remain disabled as "stopping".
+                if let Ok(runtime) = state.runtime.lock() {
+                    publish(&app, runtime.status());
+                } else if let Ok(mut snapshot) = state.snapshot.lock() {
+                    snapshot.phase = "failed".into();
+                }
+                state.quitting.store(false, Ordering::SeqCst);
                 publish_error(&app, error);
             }
         }
@@ -540,24 +557,24 @@ pub fn run() {
             for provider in crate::native_control::PROVIDERS {
                 let handle = app.handle().clone();
                 thread::spawn(move || {
-                    loop {
-                        thread::sleep(Duration::from_secs(15));
-                        let state = handle.state::<AppState>();
-                        if state.quitting.load(Ordering::SeqCst) {
-                            break;
-                        }
-                        if !state.native.enabled(provider) {
-                            continue;
-                        }
-                        let transport = state
-                            .runtime
-                            .try_lock()
-                            .ok()
-                            .and_then(|r| r.native_transport().ok());
-                        if let Some(transport) = transport {
-                            let _ = state.native.sync(&transport, provider, false);
-                        }
-                    }
+                    crate::background::run(
+                        Duration::from_secs(15),
+                        || handle.state::<AppState>().worker_lifecycle(),
+                        || {
+                            let state = handle.state::<AppState>();
+                            if !state.native.enabled(provider) {
+                                return;
+                            }
+                            let transport = state
+                                .runtime
+                                .try_lock()
+                                .ok()
+                                .and_then(|r| r.native_transport().ok());
+                            if let Some(transport) = transport {
+                                let _ = state.native.sync(&transport, provider, false);
+                            }
+                        },
+                    );
                 });
             }
 
@@ -590,17 +607,17 @@ pub fn run() {
                     }
                     state.busy.store(false, Ordering::SeqCst);
                 }
-                loop {
-                    thread::sleep(Duration::from_secs(2));
-                    let state = handle.state::<AppState>();
-                    if state.quitting.load(Ordering::SeqCst) {
-                        break;
-                    }
-                    if let Ok(mut runtime) = state.runtime.try_lock() {
-                        runtime.tick();
-                        publish(&handle, runtime.status());
-                    }
-                }
+                crate::background::run(
+                    Duration::from_secs(2),
+                    || handle.state::<AppState>().worker_lifecycle(),
+                    || {
+                        let state = handle.state::<AppState>();
+                        if let Ok(mut runtime) = state.runtime.try_lock() {
+                            runtime.tick();
+                            publish(&handle, runtime.status());
+                        }
+                    },
+                );
             });
             Ok(())
         })

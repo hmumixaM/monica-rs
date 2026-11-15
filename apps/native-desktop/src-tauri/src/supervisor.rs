@@ -766,6 +766,14 @@ impl Supervisor {
     }
     pub fn stop(&mut self) -> Result<RuntimeStatus> {
         self.status.phase = "stopping".into();
+        let result = self.stop_inner();
+        if let Err(error) = &result {
+            self.status.phase = "failed".into();
+            self.status.error = Some(error.clone());
+        }
+        result
+    }
+    fn stop_inner(&mut self) -> Result<RuntimeStatus> {
         stop_child(&mut self.server, libc::SIGTERM, Duration::from_secs(120))?;
         self.status.server_pid = None;
         self.chatlog.stop()?;
@@ -775,6 +783,7 @@ impl Supervisor {
         self.status.phase = "stopped".into();
         self.status.draining = false;
         self.status.active_jobs = 0;
+        self.status.error = None;
         Ok(self.status())
     }
     /// Called after wake and periodically. Unexpected owned-child exit triggers bounded recovery.
@@ -957,6 +966,33 @@ mod tests {
         assert!(supervisor.status().server_pid.is_none());
         assert!(supervisor.pause().is_err());
         assert!(!supervisor.status().paused);
+    }
+    #[test]
+    fn stop_failure_preserves_owned_handles_and_exposes_a_retryable_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut supervisor = Supervisor::new(paths(temp.path())).unwrap();
+        let child = Command::new("/usr/bin/true").spawn().unwrap();
+        let pid = child.id();
+        // Reap only this synthetic child outside its handle, producing ECHILD
+        // immediately rather than waiting for a production shutdown deadline.
+        assert_eq!(
+            unsafe { libc::waitpid(pid as i32, std::ptr::null_mut(), 0) },
+            pid as i32
+        );
+        supervisor.server = Some(child);
+        supervisor.status.server_pid = Some(pid);
+        assert!(supervisor.stop().is_err());
+        assert_eq!(supervisor.status().phase, "failed");
+        assert!(supervisor.status().error.is_some());
+        assert!(supervisor.server.is_some(), "failed stops retain ownership");
+        assert_eq!(supervisor.status().server_pid, Some(pid));
+        // The fixture has already reaped this child. A later successful cleanup
+        // must clear the old error and finish the same supervisor's stop.
+        supervisor.server = None;
+        assert!(supervisor.stop().is_ok());
+        assert_eq!(supervisor.status().phase, "stopped");
+        assert!(supervisor.status().server_pid.is_none());
+        assert!(supervisor.status().error.is_none());
     }
     #[test]
     fn malformed_control_status_is_rejected() {
