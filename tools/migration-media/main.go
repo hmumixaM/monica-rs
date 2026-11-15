@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
-	"fmt"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -28,6 +27,39 @@ import (
 )
 
 const marker = "monica-rust-isolated-media-v1\n"
+
+// Release builds stamp this from the reviewed source archive. Never infer it
+// from the current runtime checkout, which may differ from the running codec.
+var buildCommit = "development"
+
+type codecFailure struct {
+	code  string
+	cause error
+}
+
+func (e *codecFailure) Error() string { return e.code }
+func (e *codecFailure) Unwrap() error { return e.cause }
+
+func conversionFailure(code string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &codecFailure{code: code, cause: err}
+}
+
+func writeFailure(output io.Writer, err error) error {
+	code := "media_decode_failed"
+	var failure *codecFailure
+	if errors.As(err, &failure) {
+		code = failure.code
+	}
+	// Causes can contain credentials, paths or decrypted content. The wire
+	// protocol deliberately contains only fixed codes and the build identifier.
+	return json.NewEncoder(output).Encode(struct {
+		Code   string `json:"error_code"`
+		Commit string `json:"codec_commit"`
+	}{code, buildCommit})
+}
 
 type request struct {
 	Path string `json:"path"`
@@ -91,7 +123,7 @@ func transform(data []byte, kind string) ([]byte, string, error) {
 	switch kind {
 	case "voice":
 		out, err := silk.Silk2MP3(data)
-		return out, "audio/mpeg", err
+		return out, "audio/mpeg", conversionFailure("voice_conversion_failed", err)
 	case "image":
 		typeName := http.DetectContentType(data)
 		if strings.HasPrefix(typeName, "image/") {
@@ -99,12 +131,12 @@ func transform(data []byte, kind string) ([]byte, string, error) {
 		}
 		out, ext, err := dat2img.Dat2Image(data)
 		if err != nil {
-			return nil, "", err
+			return nil, "", conversionFailure("image_conversion_failed", err)
 		}
 		if ext == "wxgf" {
 			out, ext, err = dat2img.Wxam2pic(out)
 			if err != nil {
-				return nil, "", err
+				return nil, "", conversionFailure("wxgf_conversion_failed", err)
 			}
 		}
 		if ext == "jpg" {
@@ -163,7 +195,7 @@ func decode(source, target string, r request) (result, error) {
 			if imageErr == nil {
 				width, height = config.Width, config.Height
 			} else if mime == "image/jpeg" || mime == "image/png" || mime == "image/gif" {
-				return empty, errors.New("decoded image failed validation")
+				return empty, conversionFailure("decoded_image_invalid", imageErr)
 			}
 		}
 	} else if r.Kind == "file" || r.Kind == "video" {
@@ -275,7 +307,7 @@ func run() error {
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "offline media decoding failed")
+		_ = writeFailure(os.Stderr, err)
 		os.Exit(1)
 	}
 }

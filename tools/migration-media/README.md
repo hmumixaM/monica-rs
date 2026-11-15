@@ -14,6 +14,27 @@ Image credentials, when needed, are process environment values only. Never put
 them in a command argument, a manifest or a log. The helper removes those
 variables before spawning any image-conversion subprocess.
 
+Returned errors exit nonzero and write one JSON record to stderr with `error_code`
+and `codec_commit`. The fixed codes distinguish image conversion, WXGF
+conversion, decoded image validation and voice conversion. Other failures use
+`media_decode_failed`. They identify the failed stage; they do not assert that
+a source file is corrupt or that a key is wrong. The JSON report never includes
+raw errors, keys, paths or decrypted content. Successful stdout remains the same asset
+record. Retry callers must retain the raw-file receipt and failure record and
+must not mark a failed conversion ready.
+
+Uncaught panics or native dependencies can produce other diagnostics. Callers
+must accept only validated JSON fields and must not save captured stdout or
+stderr verbatim as a diagnostic record.
+
+Stamp release builds from the reviewed clean source archive with
+`go build -trimpath -ldflags "-X main.buildCommit=FULL_REVIEWED_COMMIT" .`.
+An unstamped development build reports `development`; neither that label nor
+Go's inherited VCS metadata proves correspondence to a deployed binary. Keep
+the source archive, build inputs and final binary SHA-256 together. Do not
+replace the codec or worker in an active import; diagnose and retry a bounded
+set after the current worker exits, reusing its verified raw copies.
+
 The pinned Chatlog module matches desktop commit
 `53ab86b7fe3c`; exact module versions and checksums are in `go.mod` and `go.sum`.
 Wrapper license notices are under `licenses/`. The SILK C decoder includes its
