@@ -321,14 +321,22 @@
 .editorForm { display: grid; gap: var(--space-3); }
 
 /* ---- History ------------------------------------------------------------- */
-.history {
-  display: grid; margin: 0; padding: 0; list-style: none;
-  & li { display: grid; grid-template-columns: minmax(140px, 220px) minmax(0, 1fr); gap: var(--space-2) var(--space-4); padding-block: 10px;
-    border-block-end: 1px solid var(--color-rule); font-size: var(--text-sm);
-    @media (max-width: 720px) { grid-template-columns: minmax(0, 1fr); } }
-  & li > div:first-child { display: grid; gap: 1px; }
+.historyPanels { display: grid; gap: var(--space-5); min-inline-size: 0; }
+.historyToggle { display: flex; align-items: center; gap: 8px; font-size: var(--text-sm); color: var(--color-text-soft); }
+.historyEntry {
+  display: grid; grid-template-columns: minmax(140px, 220px) minmax(0, 1fr); gap: var(--space-2) var(--space-4); min-inline-size: 0;
+  padding-block: var(--space-3); border-block-end: 1px solid var(--color-rule); font-size: var(--text-sm); overflow-wrap: anywhere;
+  & > div:first-child { display: grid; gap: 2px; align-content: start; }
   & small { color: var(--color-text-faint); font-size: var(--text-xs); }
+  @media (max-width: 720px) { grid-template-columns: minmax(0, 1fr); }
 }
+.historyActions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: var(--space-3); min-inline-size: 0; }
+.historyValue { min-inline-size: 0; max-inline-size: 100%; flex: 1;
+  & summary { cursor: pointer; color: var(--color-text-soft); font-size: var(--text-xs); }
+  & pre { max-block-size: 360px; overflow: auto; padding: var(--space-3); background: var(--color-tint); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-xs); }
+}
+.historyFullValue { max-block-size: 360px; overflow: auto; padding: var(--space-3); background: var(--color-tint); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-sm); }
+.historySummary { white-space: pre-line; overflow-wrap: anywhere; }
 .diff {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; min-inline-size: 0;
   & span { max-inline-size: 100%; padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; white-space: pre-line; }

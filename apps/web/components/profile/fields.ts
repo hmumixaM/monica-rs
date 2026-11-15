@@ -51,7 +51,7 @@ const FIELD_LABELS: Record<string, string> = {
   "monica.nickname": "联系人备注", "monica.food_preferences": "饮食偏好", "monica.first_met_where": "初次见面地点",
   "monica.first_met_additional_info": "相识记录", "monica.job": "职位", "monica.company": "公司",
   "monica.residence": "常驻地", "monica.hometown": "家乡", "monica.school": "学校", "monica.email": "邮箱", "monica.phone": "电话",
-  "monica.interests": "兴趣", "monica.family": "家人",
+  "monica.interests": "兴趣", "monica.family": "家人", "monica.custom_fields": "自定义字段",
   "wechat.alias": "微信号", "wechat.remark": "微信备注", "wechat.nickname": "微信昵称", "wechat.signature": "微信个性签名",
   "wechat.add_source": "微信好友来源", "wechat.historical_nicknames": "微信历史昵称", "wechat.country": "微信国家", "wechat.province": "微信省份",
   "wechat.city": "微信城市", "wechat.group_id": "微信群 ID", "wechat.owner": "群主微信 ID", "wechat.member_count": "群成员总数",

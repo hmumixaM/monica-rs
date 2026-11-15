@@ -203,6 +203,17 @@ def check_pages(origin,dsn,control_token,native_root):
     # supply the complete browser contract without dispatching a model call.
     sql("UPDATE crm.ai_settings SET enabled=true; INSERT INTO crm.weekly_digests(week_start,output,input_hash) VALUES('2026-01-05','{\"summary\":\"Synthetic old digest\",\"facts\":{\"sources\":[]}}','synthetic-old-digest')")
     recap=request('/api/v1/digests/2026-01-05');assert isinstance(recap['facts']['totals']['messages'],int) and recap['facts']['top_contacts']==[]
+    # A dedicated profile keeps history paging/restores independent of the page
+    # projection fixtures above. No model or connector work is dispatched.
+    history_profile=request('/api/v1/profiles',{'display_name':'History seed'},status=201)['id']
+    for name in ['Earlier history name','History Current']:
+        request(f'/api/v1/profiles/{history_profile}/fields',{'field_key':'display_name','value':name},method='PATCH')
+    for value in [{'kept':'old-keep','removed':'old-extra'},{'kept':'new-current'}]:
+        request(f'/api/v1/profiles/{history_profile}/fields',{'field_key':'monica.custom_fields','value':value},method='PATCH')
+    sql(f"INSERT INTO crm.field_revisions(id,profile_id,field_key,value,content_hash,source_type,operation) SELECT gen_random_uuid(),'{history_profile}','biography',to_jsonb('History note '||n),'fixture','manual','manual_edit' FROM generate_series(1,125)n")
+    history_account=str(uuid.uuid4());history_content=str(uuid.uuid4());history_payload=json.dumps({'title':'Historical role'},sort_keys=True,separators=(',',':'));history_hash=hashlib.sha256(history_payload.encode()).hexdigest()
+    sql(f"INSERT INTO crm.content_objects(id,content_kind,sha256,byte_length,payload_json) VALUES('{history_content}','structured_fact','{history_hash}',{len(history_payload.encode())},'{history_payload}')")
+    sql(f"INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES('{history_account}','linkedin','history-pages','person','History source');INSERT INTO crm.source_account_links(account_id,profile_id) VALUES('{history_account}','{history_profile}');INSERT INTO crm.source_structured_revisions(id,source_account_id,fact_type,fact_key,content_object_id,content_hash,value,source_type,source_record_id,object_id,source_version,observed_at) SELECT gen_random_uuid(),'{history_account}',CASE WHEN n=46 THEN 'education' ELSE 'employment' END,'history-'||n,'{history_content}','{history_hash}','{history_payload}','linkedin','history',gen_random_uuid(),1,'2026-01-01T12:00:00.123456Z' FROM generate_series(1,46)n")
     print('PASS: 18 page routes, real data, directory dictionaries/ETag, exact rolling counts, calendar/corrections, ribbon, orbit/manual names, city resolution/maps, metrics/search; native evidence journal')
     return evidence_id
 
