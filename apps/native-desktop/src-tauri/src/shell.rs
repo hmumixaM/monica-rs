@@ -169,6 +169,9 @@ async fn runtime_action(app: AppHandle, action: String) -> Result<RuntimeStatus,
     let result = tauri::async_runtime::spawn_blocking(move || {
         let state = copy.state::<AppState>();
         let mut runtime = state.runtime.lock().map_err(|_| "运行状态已锁定")?;
+        if ["start", "stop"].contains(&action.as_str()) {
+            runtime.clear_quit_failure();
+        }
         let result = (|| {
             if ["pause", "stop"].contains(&action.as_str()) {
                 state
@@ -304,11 +307,12 @@ fn begin_quit(app: &AppHandle) {
                 .lock()
                 .map_err(|_| "采集状态已锁定".to_string())?
                 .stop()?;
-            state
+            let mut runtime = state
                 .runtime
                 .lock()
-                .map_err(|_| "运行状态已锁定".to_string())?
-                .stop()
+                .map_err(|_| "运行状态已锁定".to_string())?;
+            runtime.clear_quit_failure();
+            runtime.stop()
         })();
         match result {
             Ok(status) => {
@@ -321,7 +325,8 @@ fn begin_quit(app: &AppHandle) {
             Err(error) => {
                 // A failed quit leaves the application alive. Publish its real
                 // state so the form does not remain disabled as "stopping".
-                if let Ok(runtime) = state.runtime.lock() {
+                if let Ok(mut runtime) = state.runtime.lock() {
+                    runtime.record_quit_failure(error.clone());
                     publish(&app, runtime.status());
                 } else if let Ok(mut snapshot) = state.snapshot.lock() {
                     snapshot.phase = "failed".into();

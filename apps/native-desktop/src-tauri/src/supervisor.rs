@@ -73,6 +73,7 @@ pub struct Supervisor {
     web_port: u16,
     client: Client,
     status: RuntimeStatus,
+    quit_failure: Option<String>,
     desired_paused: bool,
     recovery_attempts: u8,
 }
@@ -252,6 +253,7 @@ impl Supervisor {
             web_port: preferences.web_port,
             client,
             status,
+            quit_failure: None,
             desired_paused: preferences.paused,
             recovery_attempts: 0,
         })
@@ -259,7 +261,20 @@ impl Supervisor {
     pub fn status(&self) -> RuntimeStatus {
         let mut status = self.status.clone();
         status.chatlog = self.chatlog.status();
+        if let Some(error) = &self.quit_failure {
+            status.error = Some(match status.error {
+                Some(runtime) if &runtime != error => format!("{error}；{runtime}"),
+                _ => error.clone(),
+            });
+        }
         status
+    }
+    /// Healthy runtime polls cannot acknowledge a failed, fire-and-forget quit.
+    pub fn record_quit_failure(&mut self, error: String) {
+        self.quit_failure = Some(error);
+    }
+    pub fn clear_quit_failure(&mut self) {
+        self.quit_failure = None;
     }
     pub fn logs(&self) -> &Path {
         &self.paths.logs
@@ -955,7 +970,8 @@ mod tests {
         let first = Supervisor::new(paths(temp.path())).unwrap();
         assert!(Supervisor::new(paths(temp.path())).is_err());
         drop(first);
-        assert!(Supervisor::new(paths(temp.path())).is_ok());
+        let reopened = Supervisor::new(paths(temp.path()));
+        assert!(reopened.is_ok(), "{:?}", reopened.err());
     }
     #[test]
     fn absent_components_fail_without_fake_running_status() {
@@ -992,6 +1008,37 @@ mod tests {
         assert!(supervisor.stop().is_ok());
         assert_eq!(supervisor.status().phase, "stopped");
         assert!(supervisor.status().server_pid.is_none());
+        assert!(supervisor.status().error.is_none());
+    }
+    #[test]
+    fn cancelled_quit_reason_survives_healthy_refresh_until_an_explicit_retry() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut supervisor = Supervisor::new(paths(temp.path())).unwrap();
+        supervisor.status.phase = "running".into();
+        supervisor.status.postgres_pid = Some(123); // Synthetic status, no child.
+        supervisor.record_quit_failure("Collector cleanup failed".into());
+        for _ in 0..3 {
+            supervisor
+                .apply_control_status(&json!({"paused":false,"draining":false,"active_jobs":0}))
+                .unwrap();
+            supervisor.status.error = None; // A healthy runtime response.
+            let published = supervisor.status();
+            assert_eq!(published.phase, "running");
+            assert_eq!(published.postgres_pid, Some(123));
+            assert_eq!(published.error.as_deref(), Some("Collector cleanup failed"));
+        }
+        supervisor.status.error = Some("Backend unavailable".into());
+        assert_eq!(
+            supervisor.status().error.as_deref(),
+            Some("Collector cleanup failed；Backend unavailable"),
+            "a new runtime failure remains visible alongside the quit reason"
+        );
+        supervisor.clear_quit_failure();
+        assert_eq!(
+            supervisor.status().error.as_deref(),
+            Some("Backend unavailable")
+        );
+        supervisor.status.error = None;
         assert!(supervisor.status().error.is_none());
     }
     #[test]
