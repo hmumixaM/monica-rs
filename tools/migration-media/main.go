@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
@@ -17,7 +18,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 
@@ -48,17 +48,12 @@ func conversionFailure(code string, err error) error {
 }
 
 func writeFailure(output io.Writer, err error) error {
-	code := "media_decode_failed"
-	var failure *codecFailure
-	if errors.As(err, &failure) {
-		code = failure.code
-	}
 	// Causes can contain credentials, paths or decrypted content. The wire
 	// protocol deliberately contains only fixed codes and the build identifier.
 	return json.NewEncoder(output).Encode(struct {
 		Code   string `json:"error_code"`
 		Commit string `json:"codec_commit"`
-	}{code, buildCommit})
+	}{failureCode(err), buildCommit})
 }
 
 type request struct {
@@ -275,25 +270,22 @@ func run() error {
 	zerolog.SetGlobalLevel(zerolog.Disabled)
 	source := flag.String("source-root", "", "independent frozen source directory")
 	target := flag.String("target-root", "", "marked isolated media destination")
+	batch := flag.Bool("batch", false, "decode at most 128 identified requests")
+	stdinCredentials := flag.Bool("credentials-stdin", false, "read a private credential frame before requests")
 	flag.Parse()
 	a, b, err := roots(*source, *target)
 	if err != nil {
 		return err
 	}
-	if key := os.Getenv("MONICA_MIGRATION_IMAGE_KEY"); key != "" {
-		dat2img.SetAesKey(key)
+	reader := bufio.NewReaderSize(os.Stdin, 8193)
+	if err := credentials(reader, *stdinCredentials); err != nil {
+		return err
 	}
-	os.Unsetenv("MONICA_MIGRATION_IMAGE_KEY")
-	if raw := os.Getenv("MONICA_MIGRATION_IMAGE_XOR"); raw != "" {
-		n, err := strconv.ParseUint(raw, 0, 8)
-		if err != nil {
-			return errors.New("invalid XOR setting")
-		}
-		dat2img.V4XorKey = byte(n)
+	if *batch {
+		return runBatch(reader, os.Stdout, a, b)
 	}
-	os.Unsetenv("MONICA_MIGRATION_IMAGE_XOR")
 	var r request
-	decoder := json.NewDecoder(io.LimitReader(os.Stdin, 8193))
+	decoder := json.NewDecoder(io.LimitReader(reader, 8193))
 	decoder.DisallowUnknownFields()
 	if err = decoder.Decode(&r); err != nil {
 		return errors.New("invalid codec request")

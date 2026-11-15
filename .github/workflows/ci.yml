@@ -97,6 +97,7 @@ jobs:
       - run: python3 scripts/test-collector-bridge.py && python3 scripts/test-collector-chatlog.py
       - run: python3 scripts/test-build-context.py
       - run: python3 scripts/test-collector-supervisor.py
+      - run: python3 scripts/test-retry-wechat-media.py
       - run: python3 -m pip install uv==0.9.17
       - name: Benchmark availability and latency reporting
         run: uv run --no-project --python 3.12 --with psutil==7.1.3 python scripts/test-benchmark-read-results.py
