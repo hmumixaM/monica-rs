@@ -471,7 +471,11 @@ mod tests {
             .await
             .unwrap();
         tx.commit().await.unwrap();
-        sqlx::query("INSERT INTO crm.source_structured_revisions(id,source_account_id,fact_type,fact_key,content_object_id,content_hash,value,source_type,source_record_id,object_id,source_version,observed_at) SELECT gen_random_uuid(),$1,CASE WHEN n=206 THEN 'education' ELSE 'employment' END,'job-'||n,$2,$3,$4,'linkedin','history',gen_random_uuid(),1,'2026-01-01T12:00:00.123456Z' FROM generate_series(1,206)n").bind(account).bind(content.id).bind(content.hash).bind(value).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.source_structured_revisions(id,source_account_id,fact_type,fact_key,content_object_id,content_hash,value,source_type,source_record_id,object_id,source_version,observed_at) SELECT gen_random_uuid(),$1,CASE WHEN n=206 THEN 'education' ELSE 'employment' END,'job-'||n,$2,$3,$4,'linkedin','history',gen_random_uuid(),1,'2026-01-01T12:00:00.123456Z' FROM generate_series(1,206)n").bind(account).bind(content.id).bind(&content.hash).bind(&value).execute(&pool).await.unwrap();
+        // Notebook ownership has precedence over an account link. Exercise a
+        // page boundary across streams, plus a record belonging to another person.
+        sqlx::query("INSERT INTO crm.source_structured_revisions(id,source_account_id,notebook_profile_id,fact_type,fact_key,content_object_id,content_hash,value,source_type,source_record_id,object_id,source_version,observed_at) SELECT gen_random_uuid(),CASE WHEN n=42 THEN $1::uuid END,CASE WHEN n=42 THEN $2::uuid ELSE $3::uuid END,'address','note-'||n,$4,$5,$6,'monica','notebook',gen_random_uuid(),1,'2026-01-01T12:00:00.123456Z' FROM generate_series(1,42)n").bind(account).bind(other).bind(id).bind(content.id).bind(&content.hash).bind(&value).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,source_account_id,field_key,value,content_hash,source_type,operation) SELECT gen_random_uuid(),$1,$2,'linkedin.headline',to_jsonb(n),'fixture','linkedin','source_import' FROM generate_series(1,2)n").bind(other).bind(account).execute(&pool).await.unwrap();
         let router = crate::auth::routes(s);
         let mut cursor = String::new();
         let mut fields = Vec::new();
@@ -492,13 +496,13 @@ mod tests {
             cursor = format!("&before={token}");
             fields.extend(rows.iter().map(|r| r["id"].as_str().unwrap().to_owned()));
         }
-        assert_eq!(fields.len(), 127);
+        assert_eq!(fields.len(), 129);
         assert_eq!(
             fields
                 .iter()
                 .collect::<std::collections::HashSet<_>>()
                 .len(),
-            127
+            129
         );
         let mut cursor = String::new();
         let mut facts = Vec::new();
@@ -519,7 +523,7 @@ mod tests {
             );
             facts.extend(rows.iter().map(|r| r["id"].as_str().unwrap().to_owned()));
         }
-        assert_eq!(facts.len(), 206);
+        assert_eq!(facts.len(), 247);
         assert!(facts.windows(2).all(|pair| pair[0] > pair[1]));
         assert_eq!(
             call(
@@ -541,7 +545,7 @@ mod tests {
             StatusCode::UNPROCESSABLE_ENTITY,
         )
         .await;
-        assert!(
+        assert_eq!(
             call(
                 &router,
                 "GET",
@@ -551,7 +555,8 @@ mod tests {
             .await
             .as_array()
             .unwrap()
-            .is_empty()
+            .len(),
+            1
         );
         call(
             &router,
@@ -585,7 +590,7 @@ mod tests {
             "Earlier name"
         );
         let counts:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM crm.field_revisions),(SELECT count(*) FROM crm.source_structured_revisions),(SELECT count(*) FROM crm.audit_events WHERE action='profile.field.edited')").fetch_one(&pool).await.unwrap();
-        assert_eq!(counts, (128, 206, 3));
+        assert_eq!(counts, (130, 248, 3));
         // Source history follows the current owner after an explicit relink.
         sqlx::query("UPDATE crm.source_account_links SET profile_id=$2 WHERE account_id=$1")
             .bind(account)
@@ -593,7 +598,7 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        assert!(
+        assert_eq!(
             call(
                 &router,
                 "GET",
@@ -603,7 +608,8 @@ mod tests {
             .await
             .as_array()
             .unwrap()
-            .is_empty()
+            .len(),
+            41
         );
         assert_eq!(
             call(
@@ -617,6 +623,31 @@ mod tests {
             .unwrap()
             .len(),
             200
+        );
+        assert!(
+            call(
+                &router,
+                "GET",
+                &format!("/api/v1/profiles/{id}/history?field_key=linkedin.headline"),
+                StatusCode::OK
+            )
+            .await
+            .as_array()
+            .unwrap()
+            .is_empty()
+        );
+        assert_eq!(
+            call(
+                &router,
+                "GET",
+                &format!("/api/v1/profiles/{other}/history?field_key=linkedin.headline"),
+                StatusCode::OK
+            )
+            .await
+            .as_array()
+            .unwrap()
+            .len(),
+            2
         );
     }
 

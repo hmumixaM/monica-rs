@@ -11,12 +11,19 @@ export function VirtualList({ items, anchor }: { items: { key: string; content: 
   const [ready, setReady] = useState(false);
   useLayoutEffect(() => {
     let parent = root.current!.parentElement;
-    while (parent && !['auto', 'scroll'].includes(getComputedStyle(parent).overflowY)) parent = parent.parentElement;
+    const ancestors: HTMLElement[] = [];
+    while (parent) {
+      ancestors.push(parent);
+      if (['auto', 'scroll'].includes(getComputedStyle(parent).overflowY)) break;
+      parent = parent.parentElement;
+    }
     setScroller(parent); setReady(true);
     const measure = () => setMargin(root.current!.getBoundingClientRect().top - (parent?.getBoundingClientRect().top ?? 0) + (parent?.scrollTop ?? window.scrollY));
     const observer = new ResizeObserver(measure);
     observer.observe(root.current!);
-    if (parent) observer.observe(parent);
+    // Earlier sections can move this list without resizing its own root. Watch
+    // the containing layout as well, so stacked lists keep the correct origin.
+    for (const ancestor of ancestors) observer.observe(ancestor);
     measure();
     return () => observer.disconnect();
   }, []);

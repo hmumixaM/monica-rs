@@ -18,7 +18,7 @@ const PAGE_SIZE = 40;
 const FACT_LABELS: Record<string, string> = { address: "地址", employment: "工作经历", education: "教育经历" };
 type StructuredRevision = {
   id: string; fact_type: string; fact_key: string; value: unknown; entity_name?: string | null;
-  source_type: string; source_account_id: string; observed_at: string; is_conflict: boolean;
+  source_type: string; source_account_id: string | null; observed_at: string; is_conflict: boolean;
 };
 
 function fullValue(value: unknown) {
@@ -102,7 +102,7 @@ function StructuredHistory({ profileId }: { profileId: string }) {
   return <Panel className={styles.tabPanel} label="结构化资料历史">
     <header className={styles.tabHeader}><h2>结构化资料历史</h2><small>已加载 {rows.length} 个版本</small></header>
     <Muted>这里保留来源记录的地址、工作和教育经历，可按类型查看历次版本。</Muted>
-    <Field label="经历类型"><Select value={factType} onChange={(event) => setFactType(event.target.value)}><option value="">全部类型</option>{Object.entries(FACT_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select></Field>
+    <Field label="经历类型"><Select aria-label="经历类型" value={factType} onChange={(event) => setFactType(event.target.value)}><option value="">全部类型</option>{Object.entries(FACT_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select></Field>
     {history.isPending && <Loading />}
     {history.isError && <Failure onRetry={() => void (history.isFetchNextPageError ? history.fetchNextPage() : history.refetch())}>结构化历史读取失败，已加载的记录仍可查看。</Failure>}
     {history.isSuccess && !rows.length && <Muted>还没有这类结构化资料历史。</Muted>}
