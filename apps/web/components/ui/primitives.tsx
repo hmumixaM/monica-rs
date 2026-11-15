@@ -1,7 +1,7 @@
 "use client";
 
 import { Instagram, Linkedin, MessageCircle, NotebookPen } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 
 import type { MonthCount } from "../../lib/api-types";
 import { localMediaUrl } from "../../lib/media";
@@ -36,12 +36,13 @@ export function Avatar({ name, mediaId, size = 40, ring, round, transitionName }
 }) {
   const initials = [...name.trim()].slice(0, name.match(/^[\p{Script=Han}]/u) ? 1 : 2).join("").toUpperCase();
   const src = localMediaUrl(mediaId);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const style = {
     "--avatar-size": `${size}px`, ...(ring ? { "--ring": ringGradient(ring) } : {}),
     ...(transitionName ? { viewTransitionName: transitionName } : {}),
   } as CSSProperties;
   return <span className={styles.avatar} data-avatar="" data-ring={ring ? "" : undefined} data-round={round ? "" : undefined} style={style}>
-    {src ? <img src={src} alt="" width={size} height={size} loading="lazy" decoding="async" /> : <span aria-hidden="true">{initials || "?"}</span>}
+    {src && failedSrc !== src ? <img src={src} alt="" width={size} height={size} loading="lazy" decoding="async" onError={() => setFailedSrc(src)} /> : <span aria-hidden="true">{initials || "?"}</span>}
   </span>;
 }
 

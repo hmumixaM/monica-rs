@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchJson } from '../../lib/queries';
 import { Section, Failure, Skeleton } from '../ui/primitives';
-import { Input } from '../ui/field';
+import { Checkbox, Field, Input } from '../ui/field';
 import { Button } from '../ui/button';
 import styles from './settings.module.css';
 
@@ -23,7 +23,7 @@ export function ModelSettings() {
     <p>配置兼容 OpenAI 的模型服务。默认关闭；保存后供这台部署的问答与后台任务共用。API Key 加密保存，已有密钥不会返回浏览器。</p>
     {data?.execution_enabled===false&&<p role="status">此部署已暂停新模型调用。已保存的摘要、OCR 和周报仍可查看。恢复调用需要由部署配置明确开启。</p>}
     {query.isError ? <Failure onRetry={() => void query.refetch()}>无法读取模型设置。</Failure> : !data ? <Skeleton height={120} /> :
-      <form key={query.dataUpdatedAt} onSubmit={async event => {
+      <form className={styles.modelForm} key={query.dataUpdatedAt} onSubmit={async event => {
         event.preventDefault(); const form = event.currentTarget; const values = new FormData(form);
         setBusy(true); setMessage('');
         const key = String(values.get('api_key') || '');
@@ -41,19 +41,26 @@ export function ModelSettings() {
         } catch (error) { setMessage(error instanceof Error ? error.message : '保存失败，请重试。'); }
         finally { setBusy(false); }
       }}>
-        <p><label><input type="checkbox" name="enabled" defaultChecked={data.enabled} disabled={data.execution_enabled===false} /> {data.execution_enabled===false ? '历史分析可见' : '启用模型服务'}</label></p>
-        <p><label>服务地址<Input name="base_url" type="url" required={data.execution_enabled!==false} defaultValue={data.base_url || ''} placeholder="https://你的模型服务/v1" /></label></p>
-        <p><label>模型名称<Input name="model" required maxLength={255} defaultValue={data.model} /></label></p>
-        <p>各任务共用上述连接和密钥。以下文字模型留空时沿用默认模型，问答留空时优先沿用写作模型。</p>
-        {Object.entries({batch:'批量处理与 Memory 分片',person:'人物 Memory 与近况',writer:'周报写作',qa:'问 Monica'}).map(([role,label])=><p key={role}><label>{label}<Input name={`model_${role}`} maxLength={255} defaultValue={data.model_routes?.[role]||''} placeholder={data.model}/></label></p>)}
-        <p><label>识图与 OCR 模型<Input name="vision_model" required maxLength={255} defaultValue={data.vision_model}/></label></p>
-        <p><label>API Key<Input name="api_key" type="password" autoComplete="new-password" maxLength={8192} placeholder={data.has_key ? '已保存；留空保留现有密钥' : '填写此部署的 API Key'} /></label></p>
-        {data.has_key && <p><label><input type="checkbox" name="clear_key" /> 删除已保存的密钥</label></p>}
-        <p><label><input type="checkbox" name="qa_enabled" defaultChecked={data.qa_enabled} disabled={data.execution_enabled===false} /> 启用浏览器问答</label></p>
-        <p><label><input type="checkbox" name="include_messages" defaultChecked={data.include_messages} /> 允许后台人物分析读取已保存的聊天正文</label></p>
-        <p><label><input type="checkbox" name="include_private_notes" defaultChecked={data.include_private_notes} /> 允许后台人物分析读取私人笔记</label></p>
-        <p><label>上下文窗口<Input name="context_window" type="number" min={8192} max={2097152} required defaultValue={data.context_window} /></label></p>
-        <p><label>回答输出上限<Input name="max_tokens" type="number" min={1} max={131072} required defaultValue={data.max_tokens} /></label></p>
+        <fieldset className={styles.formGroup}><legend>模型连接</legend>
+        <Checkbox name="enabled" defaultChecked={data.enabled} disabled={data.execution_enabled===false}>{data.execution_enabled===false ? '显示已有 AI 分析' : '启用模型服务'}</Checkbox>
+        <Field label="服务地址"><Input name="base_url" type="url" autoComplete="off" required={data.execution_enabled!==false} defaultValue={data.base_url || ''} placeholder="https://你的模型服务/v1…" /></Field>
+        <div className={styles.formGrid}><Field label="默认模型" hint="各项任务未单独指定时，使用此模型。"><Input name="model" required maxLength={255} defaultValue={data.model} autoComplete="off" /></Field>
+        <Field label="API Key" hint="密钥加密保存。留空会保留当前密钥。"><Input name="api_key" type="password" autoComplete="new-password" maxLength={8192} placeholder={data.has_key ? '已保存密钥…' : '填写此部署的 API Key…'} /></Field></div>
+        {data.has_key && <Checkbox name="clear_key">删除已保存的密钥</Checkbox>}
+        </fieldset>
+        <fieldset className={styles.formGroup}><legend>各功能使用的模型</legend>
+        <div className={styles.formGrid}>{Object.entries({batch:['批量整理','处理素材与 Memory 分片'],person:['人物分析','人物 Memory 与每周近况'],writer:['写作','生成每周回顾'],qa:['问 Monica','留空时优先沿用写作模型']}).map(([role,[label,hint]])=><Field key={role} label={label} hint={hint}><Input name={`model_${role}`} maxLength={255} defaultValue={data.model_routes?.[role]||''} placeholder={data.model+'…'} autoComplete="off"/></Field>)}
+        <Field label="识图与 OCR" hint="需要支持图片输入的模型。"><Input name="vision_model" required maxLength={255} defaultValue={data.vision_model} autoComplete="off"/></Field></div>
+        </fieldset>
+        <fieldset className={styles.formGroup}><legend>允许读取的内容</legend>
+        <Checkbox name="qa_enabled" defaultChecked={data.qa_enabled} disabled={data.execution_enabled===false}>启用浏览器问答</Checkbox>
+        <Checkbox name="include_messages" defaultChecked={data.include_messages}>后台人物分析可读取已保存的聊天正文</Checkbox>
+        <Checkbox name="include_private_notes" defaultChecked={data.include_private_notes}>后台人物分析可读取私人笔记</Checkbox>
+        </fieldset>
+        <details className={styles.advanced}><summary>高级：上下文与输出长度</summary><div className={styles.formGrid}>
+        <Field label="上下文窗口（tokens）" hint="模型每次可容纳的输入与输出容量。"><Input name="context_window" type="number" min={8192} max={2097152} required defaultValue={data.context_window} /></Field>
+        <Field label="回答输出上限（tokens）" hint="限制单次回答长度；不会截断保存的原始资料。"><Input name="max_tokens" type="number" min={1} max={131072} required defaultValue={data.max_tokens} /></Field>
+        </div></details>
         <Button type="submit" disabled={busy}>{busy ? '正在保存…' : '保存模型设置'}</Button>
       </form>}
     {message && <p role="status">{message}</p>}

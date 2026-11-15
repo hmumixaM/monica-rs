@@ -17,3 +17,10 @@
 @media (max-width: 720px) {
   .coverage button, .timeline button, .form > label:has(input[type="checkbox"]) { min-block-size: 44px; }
 }
+
+.linkContact { padding-block-start: var(--space-3); border-block-start: 1px solid var(--color-rule); }
+.linkContact summary { font-size: var(--text-sm); font-weight: 550; cursor: pointer; padding-block: var(--space-2); }
+.linkContact summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+.linkContact .form { border: 0; padding-block-start: var(--space-2); }
+.contactFields { display: grid; grid-template-columns: minmax(100px,1fr) minmax(0,2fr); gap: var(--space-3); }
+@media (max-width: 500px) { .contactFields { grid-template-columns: minmax(0,1fr); } }

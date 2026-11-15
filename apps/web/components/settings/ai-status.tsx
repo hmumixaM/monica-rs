@@ -17,7 +17,7 @@ const JOBS: Record<AiJobType, {label: string; when: string}> = {
   "ai.profiles": {label: "人物 Memory 与建议", when: "每周日 1:00"},
   "ai.post_media": {label: "动态与 Story 图片识别", when: "新 Story 异步处理；每小时 :20 补扫"},
 };
-const STATUS: Record<string, string> = {queued: "排队中", running: "运行中", complete: "已完成", failed: "失败"};
+const STATUS: Record<string, string> = {queued: "排队中", running: "运行中", complete: "本轮任务已安排", failed: "失败"};
 
 /** Whether the model features are on, the proxy answers, and when each recurring job last ran. */
 export function AiStatus() {
@@ -30,14 +30,16 @@ export function AiStatus() {
     onSuccess: () => toast.show({message: `已排队：${JOBS[job].label}`}),
     onError: () => toast.show({message: "没能排队，请重试"}),
   });
-  return <Section title="模型服务" className={styles.panel}>
+  return <Section title="AI 任务与图片识别" className={styles.panel}>
     {status.isError ? <Failure onRetry={() => void status.refetch()}>读不到模型服务状态。</Failure>
       : !data ? <Skeleton height={80} />
         : !data.enabled ? <div className={styles.row}>
           <span className={styles.icon}><Bot size={18} /></span>
           <div className={styles.text}><strong>未开启</strong><small>在上方模型设置中填写服务信息并启用后，可使用问答、人物 Memory、每周回顾和资料建议。</small></div>
         </div>
-          : <ul className={styles.list}>
+          : <>{data.execution_enabled===false&&<p className={styles.statusNote}>新模型调用已暂停。下方已安排的任务会继续等待；已有结果仍可查看。</p>}
+          <p>定时任务的“已安排”表示已加入处理队列。实际分析进度请查看导入中心。</p>
+          <ul className={styles.list}>
             <li className={styles.row}>
               <span className={styles.icon} data-on={data.configured ? "" : undefined}><Bot size={18} /></span>
               <div className={styles.text}>
@@ -52,7 +54,7 @@ export function AiStatus() {
                 <small>{data.image_ocr.model} · {data.image_ocr.include_chat ? "帖子、Story 和聊天图片，跳过头像" : "帖子与 Story 图片"}</small>
                 <label><input type="checkbox" checked={data.image_ocr.include_chat} disabled={ocr.isPending} onChange={event=>ocr.mutate({include_chat:event.target.checked})}/> 允许 OCR 读取聊天图片（不加入人物分析）</label>
                 <small>完成 {(data.image_ocr.counts.complete ?? 0).toLocaleString()} 张 · 待处理 {(data.image_ocr.counts.pending ?? 0).toLocaleString()} 张 · 失败 {data.image_ocr.counts.failed ?? 0} 张</small>
-                <small>今日已开始 {data.image_ocr.attempted_today.toLocaleString()} 张 · {data.image_ocr.unlimited ? "持续处理，未设置每日限额" : `每日限额 ${data.image_ocr.daily_limit.toLocaleString()} 张 · 按限额约剩 ${data.image_ocr.estimated_days_remaining} 天`}</small>
+                <small>今日已开始 {data.image_ocr.attempted_today.toLocaleString()} 张 · {data.image_ocr.unlimited ? "持续处理，未设置每日限额" : `每日限额 ${data.image_ocr.daily_limit.toLocaleString()} 张 · 按限额估算 ${data.image_ocr.estimated_days_remaining ?? "未知"} 天（不含暂停、失败重试）`}</small>
                 <form onSubmit={(event) => {
                   event.preventDefault();
                   const daily_limit = Number(new FormData(event.currentTarget).get("daily_limit"));
@@ -73,6 +75,6 @@ export function AiStatus() {
               </div>
               <Button size="sm" variant="ghost" onClick={() => start(job.job_type)} disabled={run.isPending || !data.configured || data.execution_enabled===false}><Play size={13} />运行</Button>
             </li>)}
-          </ul>}
+          </ul></>}
   </Section>;
 }
