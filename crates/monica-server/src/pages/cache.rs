@@ -25,6 +25,18 @@ fn aggregate(path: &str) -> bool {
 
 fn dependencies(path: &str) -> (&'static [&'static str], bool) {
     match path {
+        // Graph weights use recorded facts, not a moving time window.
+        "/api/v1/relationships/graph" => (
+            &[
+                "profile",
+                "identity",
+                "posts",
+                "interactions",
+                "community",
+                "graph",
+            ],
+            false,
+        ),
         "/api/v1/directory" => (
             &["profile", "organization", "tag", "messages", "media"],
             false,
@@ -100,7 +112,7 @@ fn dependencies(path: &str) -> (&'static [&'static str], bool) {
     }
 }
 
-pub(super) async fn version(s: &AppState, path: &str) -> Result<String> {
+pub(crate) async fn version(s: &AppState, path: &str) -> Result<String> {
     let (domains, timed) = dependencies(path);
     let profile = path
         .strip_prefix("/api/v1/profiles/")
