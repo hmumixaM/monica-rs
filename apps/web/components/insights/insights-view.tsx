@@ -10,7 +10,7 @@ import { useInsights } from "../../lib/queries";
 import { dateTitle } from "../profile/dates";
 import { SocialAnalytics } from "../social/social-analytics";
 import { Button } from "../ui/button";
-import { Avatar, exactCount, formatCount, formatNumber, Page, PageHeader, PulseStrip, relativeDays, Section, Skeleton, SourceMark } from "../ui/primitives";
+import { Avatar, exactCount, Failure, formatCount, formatNumber, Page, PageHeader, PulseStrip, relativeDays, Section, Skeleton, SourceMark } from "../ui/primitives";
 import { Segmented } from "../ui/segmented";
 import { ContactCalendar } from "./contact-calendar";
 import styles from "./insights.module.css";
@@ -42,7 +42,9 @@ export function InsightsView() {
   return <Page width="wide" label="洞察">
     <PageHeader title="洞察" />
     <Section title="联系日历" className={styles.panel}><ContactCalendar /></Section>
-    {!data ? <Skeleton height={480} /> : <>
+    {!data ? insights.isError
+      ? <Failure onRetry={() => void insights.refetch()}>暂时无法读取联系情况和重要日子。</Failure>
+      : <Skeleton height={480} /> : <>
       <div className={styles.columns}>
         <Section title="很久没联系" className={styles.panel} action={<Segmented size="sm" label="多久没联系" value={String(days)}
           onChange={(value) => { setExpanded(false); router.replace(`/insights?dormant=${value}`, { scroll: false }); }}

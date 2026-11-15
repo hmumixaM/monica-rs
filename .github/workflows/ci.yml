@@ -65,7 +65,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y postgresql-16
       - run: npm ci && npm run build && npx playwright install --with-deps chrome
         working-directory: apps/web
-      - run: npm test -- tests/router.spec.ts tests/ask-runtime.spec.ts tests/auth-errors.spec.ts
+      - run: npm test -- tests/router.spec.ts tests/ask-runtime.spec.ts tests/auth-errors.spec.ts tests/home-read-failures.spec.ts
         working-directory: apps/web
       - run: cargo build --locked -p monica-server
       - run: python3 scripts/frontend-smoke.py

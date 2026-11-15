@@ -93,7 +93,10 @@ impl DatabasePools {
                 .acquire_timeout(timeout)
                 .after_connect(move |connection, _| {
                     Box::pin(async move {
-                        sqlx::query("SELECT set_config('application_name',$1,false),set_config('statement_timeout',$2,false),set_config('lock_timeout','1000',false),set_config('idle_in_transaction_session_timeout','30000',false)")
+                        // Request and bounded worker queries must not spend
+                        // their deadline compiling LLVM plans. Explicit bulk
+                        // migrations use their separate connection policy.
+                        sqlx::query("SELECT set_config('application_name',$1,false),set_config('statement_timeout',$2,false),set_config('lock_timeout','1000',false),set_config('idle_in_transaction_session_timeout','30000',false),set_config('jit','off',false)")
                             .bind(role)
                             .bind(statement_ms.to_string())
                             .execute(connection)

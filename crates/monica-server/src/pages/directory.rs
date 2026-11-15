@@ -16,18 +16,51 @@ pub fn routes() -> Router<AppState> {
 }
 
 pub(super) async fn rows(tx: &mut Transaction<'_, Postgres>) -> Result<Vec<Value>> {
-    Ok(sqlx::query_scalar(r#"SELECT jsonb_build_object('id',p.id,'type',p.profile_type,'name',p.display_name,'summary',p.summary,
- 'avatar_media_id',coalesce(p.avatar_media_id,(SELECT l.media_id FROM crm.media_links l WHERE l.entity_type='profile' AND l.entity_id=p.id AND l.role IN('wechat_avatar','instagram_avatar','linkedin_avatar') ORDER BY l.created_at DESC,l.media_id LIMIT 1)),
- 'fields',coalesce((SELECT jsonb_object_agg(c.field_key,r.value) FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=p.id AND c.field_key IN('linkedin.headline','linkedin.location','monica.city','monica.residence','monica.nickname','monica.company','monica.job','wechat.city','wechat.province','monica.note','wechat.region','wechat.alias','wechat.remark','wechat.nickname','wechat.group_nicknames','wechat.group_names','instagram.username','instagram.full_name','monica.aliases','monica.custom_fields')),'{}'),
- 'facts',coalesce((SELECT jsonb_agg((CASE WHEN jsonb_typeof(f.value)='object' THEN f.value ELSE '{}'::jsonb END)||jsonb_build_object('type',f.fact_type,'company',coalesce(f.company_name,f.value->>'company_name',f.value->>'company'),'school',coalesce(f.school_name,f.value->>'school_name'),'company_id',f.company_id,'school_id',f.school_id) ORDER BY f.fact_type,f.fact_key) FROM crm.profile_structured_current f WHERE f.profile_id=p.id),'[]'),
- 'identities',coalesce((SELECT jsonb_agg(jsonb_build_array(i.display_name,i.username) ORDER BY i.id) FROM crm.identities i WHERE i.profile_id=p.id AND i.status NOT IN('invalid','merged')),'[]'),
- 'providers',coalesce((SELECT jsonb_agg(provider ORDER BY provider) FROM (SELECT a.provider FROM crm.source_account_links l JOIN crm.source_accounts a ON a.id=l.account_id WHERE l.profile_id=p.id UNION SELECT i.provider FROM crm.identities i WHERE i.profile_id=p.id AND i.status NOT IN('invalid','merged')) s),'[]'),
- 'tag_ids',coalesce((SELECT jsonb_agg(m.tag_id ORDER BY m.tag_id) FROM crm.presented_tag_memberships m WHERE m.profile_id=p.id),'[]'),
- 'birthday_md',(SELECT lpad(d.month::text,2,'0')||'-'||lpad(d.day::text,2,'0') FROM crm.profile_dates d WHERE d.profile_id=p.id AND d.kind='birthday'),
+    // Hydrate each source set once for the shared directory snapshot.
+    Ok(sqlx::query_scalar(r#"WITH visible AS MATERIALIZED (SELECT * FROM crm.directory_profiles),
+fields AS (
+ SELECT c.profile_id,jsonb_object_agg(c.field_key,r.value) value
+ FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id JOIN visible v ON v.id=c.profile_id
+ WHERE c.field_key IN('linkedin.headline','linkedin.location','monica.city','monica.residence','monica.nickname','monica.company','monica.job','wechat.city','wechat.province','monica.note','wechat.region','wechat.alias','wechat.remark','wechat.nickname','wechat.group_nicknames','wechat.group_names','instagram.username','instagram.full_name','monica.aliases','monica.custom_fields')
+ GROUP BY c.profile_id
+), facts AS (
+ SELECT f.profile_id,jsonb_agg((CASE WHEN jsonb_typeof(f.value)='object' THEN f.value ELSE '{}'::jsonb END)||jsonb_build_object('type',f.fact_type,'company',coalesce(f.company_name,f.value->>'company_name',f.value->>'company'),'school',coalesce(f.school_name,f.value->>'school_name'),'company_id',f.company_id,'school_id',f.school_id) ORDER BY f.fact_type,f.fact_key) value
+ FROM crm.profile_structured_current f JOIN visible v ON v.id=f.profile_id GROUP BY f.profile_id
+), identities AS (
+ SELECT i.profile_id,jsonb_agg(jsonb_build_array(i.display_name,i.username) ORDER BY i.id) value
+ FROM crm.identities i JOIN visible v ON v.id=i.profile_id WHERE i.status NOT IN('invalid','merged') GROUP BY i.profile_id
+), providers AS (
+ SELECT a.profile_id,jsonb_agg(a.provider ORDER BY a.provider) value FROM (
+  SELECT l.profile_id,a.provider FROM crm.source_account_links l JOIN crm.source_accounts a ON a.id=l.account_id
+  UNION SELECT i.profile_id,i.provider FROM crm.identities i WHERE i.status NOT IN('invalid','merged')
+ ) a JOIN visible v ON v.id=a.profile_id GROUP BY a.profile_id
+), tags AS (
+ SELECT m.profile_id,jsonb_agg(m.tag_id ORDER BY m.tag_id) value
+ FROM crm.presented_tag_memberships m JOIN visible v ON v.id=m.profile_id GROUP BY m.profile_id
+), members AS (
+ SELECT m.group_profile_id,count(DISTINCT m.person_profile_id) value FROM crm.current_group_memberships m
+ JOIN visible v ON v.id=m.person_profile_id AND v.profile_type='person' WHERE m.left_at IS NULL GROUP BY m.group_profile_id
+), avatars AS (
+ SELECT DISTINCT ON(l.entity_id) l.entity_id,l.media_id FROM crm.media_links l
+ JOIN visible v ON v.id=l.entity_id AND v.avatar_media_id IS NULL
+ WHERE l.entity_type='profile' AND l.role IN('wechat_avatar','instagram_avatar','linkedin_avatar')
+ ORDER BY l.entity_id,l.created_at DESC,l.media_id
+), conversations AS (
+ SELECT DISTINCT ON(c.profile_id) c.profile_id,c.id FROM crm.conversations c JOIN visible v ON v.id=c.profile_id
+ ORDER BY c.profile_id,c.conversation_type='direct' DESC,c.last_message_at DESC NULLS LAST,c.id
+)
+SELECT jsonb_build_object('id',p.id,'type',p.profile_type,'name',p.display_name,'summary',p.summary,
+ 'avatar_media_id',coalesce(p.avatar_media_id,a.media_id),'fields',coalesce(f.value,'{}'),
+ 'facts',coalesce(x.value,'[]'),'identities',coalesce(i.value,'[]'),'providers',coalesce(r.value,'[]'),
+ 'tag_ids',coalesce(t.value,'[]'),'birthday_md',(SELECT lpad(d.month::text,2,'0')||'-'||lpad(d.day::text,2,'0') FROM crm.profile_dates d WHERE d.profile_id=p.id AND d.kind='birthday'),
  'last_contact_at',s.last_contact_at,'direct_message_count',nullif(s.direct_message_count,0),
- 'member_count',CASE WHEN p.profile_type='group' THEN (SELECT count(DISTINCT m.person_profile_id) FROM crm.current_group_memberships m JOIN crm.directory_profiles member ON member.id=m.person_profile_id AND member.archived_at IS NULL AND member.profile_type='person' WHERE m.group_profile_id=p.id AND m.left_at IS NULL) END,
- 'conversation_id',(SELECT c.id FROM crm.conversations c WHERE c.profile_id=p.id ORDER BY c.conversation_type='direct' DESC,c.last_message_at DESC NULLS LAST,c.id LIMIT 1))
- FROM crm.directory_profiles p LEFT JOIN crm.page_contact_stats s ON s.profile_id=p.id WHERE p.archived_at IS NULL ORDER BY p.display_name,p.id"#).fetch_all(&mut **tx).await?)
+ 'member_count',CASE WHEN p.profile_type='group' THEN coalesce(m.value,0) END,'conversation_id',c.id)
+FROM visible p LEFT JOIN crm.page_contact_stats s ON s.profile_id=p.id
+LEFT JOIN fields f ON f.profile_id=p.id LEFT JOIN facts x ON x.profile_id=p.id
+LEFT JOIN identities i ON i.profile_id=p.id LEFT JOIN providers r ON r.profile_id=p.id
+LEFT JOIN tags t ON t.profile_id=p.id LEFT JOIN members m ON m.group_profile_id=p.id
+LEFT JOIN avatars a ON a.entity_id=p.id LEFT JOIN conversations c ON c.profile_id=p.id
+ORDER BY p.display_name,p.id"#).fetch_all(&mut **tx).await?)
 }
 
 async fn directory(State(s): State<AppState>, h: HeaderMap) -> Result<Response> {
