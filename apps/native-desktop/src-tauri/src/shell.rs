@@ -1,12 +1,14 @@
 use crate::supervisor::{Paths, RuntimeStatus, Supervisor};
+use crate::ui_health::{UiAction, UiHealth};
 use std::{
     path::PathBuf,
     sync::{
         Mutex,
         atomic::{AtomicBool, Ordering},
+        mpsc::{self, RecvTimeoutError},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant, SystemTime},
 };
 use tauri::{
     AppHandle, Manager, RunEvent, WindowEvent,
@@ -21,6 +23,7 @@ struct AppState {
     native: crate::native_control::NativeControl,
     collectors: Mutex<crate::collectors::Collectors>,
     snapshot: Mutex<RuntimeStatus>,
+    ui_health: Mutex<UiHealth>,
     busy: AtomicBool,
     quitting: AtomicBool,
     allow_exit: AtomicBool,
@@ -130,6 +133,9 @@ async fn native_action(app: AppHandle, provider: String, action: String) -> Resu
 }
 #[tauri::command]
 fn runtime_status(app: AppHandle) -> Result<RuntimeStatus, String> {
+    if let Ok(mut health) = app.state::<AppState>().ui_health.lock() {
+        health.heartbeat(Instant::now());
+    }
     app.state::<AppState>()
         .snapshot
         .lock()
@@ -348,6 +354,92 @@ fn install_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .build(app)?;
     Ok(())
 }
+// This function runs as one native main-thread task. Native getters execute
+// inline there, and a heartbeat/focus event accepted before the task is reflected
+// in its final health check; no background Reload decision is carried across IPC.
+fn check_ui(app: &AppHandle) -> UiAction {
+    let Some(state) = app.try_state::<AppState>() else {
+        return UiAction::Stop;
+    };
+    let quitting = state.quitting.load(Ordering::SeqCst);
+    let exit_allowed = state.allow_exit.load(Ordering::SeqCst);
+    let window = app.get_webview_window("settings");
+    let active = !quitting
+        && window.as_ref().is_some_and(|window| {
+            window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false)
+        });
+    // Release the health lock before making a native call. The final decision
+    // and reload still execute in the same event-loop turn.
+    let action = state
+        .ui_health
+        .lock()
+        .map(|mut health| {
+            health.check(
+                Instant::now(),
+                SystemTime::now(),
+                active,
+                quitting,
+                exit_allowed,
+            )
+        })
+        .unwrap_or(if exit_allowed {
+            UiAction::Stop
+        } else {
+            UiAction::Wait
+        });
+    if action == UiAction::Reload
+        && !state.quitting.load(Ordering::SeqCst)
+        && !state.allow_exit.load(Ordering::SeqCst)
+        && let Some(window) = window
+    {
+        // Native reload works even when WebKit's content process has died.
+        if let Err(error) = window.reload() {
+            eprintln!("无法恢复 Monica Rust 设置界面：{error}");
+        }
+    }
+    action
+}
+
+fn monitor_ui(app: AppHandle) {
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(2));
+            if app
+                .try_state::<AppState>()
+                .is_none_or(|state| state.allow_exit.load(Ordering::SeqCst))
+            {
+                return;
+            }
+            let task_app = app.clone();
+            let (done, result) = mpsc::channel();
+            if app
+                .run_on_main_thread(move || {
+                    let _ = done.send(check_ui(&task_app));
+                })
+                .is_err()
+            {
+                continue;
+            }
+            // Only one check may be queued. Wait for that same task if the native
+            // loop is busy instead of accumulating more tasks every two seconds.
+            loop {
+                match result.recv_timeout(Duration::from_secs(2)) {
+                    Ok(UiAction::Stop) => return,
+                    Ok(_) | Err(RecvTimeoutError::Disconnected) => break,
+                    Err(RecvTimeoutError::Timeout) => {
+                        if app
+                            .try_state::<AppState>()
+                            .is_none_or(|state| state.allow_exit.load(Ordering::SeqCst))
+                        {
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
@@ -378,6 +470,13 @@ pub fn run() {
             quit_app
         ])
         .on_window_event(|window, event| {
+            if matches!(event, WindowEvent::Focused(_))
+                && window.label() == "settings"
+                && let Some(state) = window.try_state::<AppState>()
+                && let Ok(mut health) = state.ui_health.lock()
+            {
+                health.focus_changed(Instant::now());
+            }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
@@ -431,11 +530,13 @@ pub fn run() {
                 native: crate::native_control::NativeControl::new(data)
                     .map_err(std::io::Error::other)?,
                 snapshot: Mutex::new(snapshot),
+                ui_health: Mutex::new(UiHealth::new(Instant::now(), SystemTime::now())),
                 busy: AtomicBool::new(false),
                 quitting: AtomicBool::new(false),
                 allow_exit: AtomicBool::new(false),
             });
             install_tray(app.handle())?;
+            monitor_ui(app.handle().clone());
             for provider in crate::native_control::PROVIDERS {
                 let handle = app.handle().clone();
                 thread::spawn(move || {
