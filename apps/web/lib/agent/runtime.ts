@@ -52,8 +52,8 @@ function tools(people: string[]): AgentTool[] {
       }
       const path = args.conversation_id ? `/api/v1/conversations/${encodeURIComponent(args.conversation_id)}/messages` : `/api/v1/profiles/${encodeURIComponent(id)}/messages`;
       const rows = await json(`${path}?${params}`, signal);
-      return { profile_id: id, records: rows.map((row: {id: string; conversation_id: string; evidence_id?: string; evidence_revision?: number}) => ({ ...row,
-        citation: row.evidence_id ? `/evidence/${row.evidence_id}?revision=${row.evidence_revision}` : `/messages?conversation=${row.conversation_id}&message=${row.id}` })),
+      return { profile_id: id, records: rows.map((row: {id: string; conversation_id: string; evidence_id?: string; evidence_revision?: number; citation?: string | null}) => ({ ...row,
+        citation: row.evidence_id ? `/evidence/${row.evidence_id}?revision=${row.evidence_revision}` : row.citation || `/messages?conversation=${row.conversation_id}&message=${row.id}` })),
         next: rows.length ? { before: rows.at(-1).occurred_at, before_id: rows.at(-1).id } : null };
     }));
   }
