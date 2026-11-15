@@ -14,14 +14,18 @@ Image credentials, when needed, are process environment values only. Never put
 them in a command argument, a manifest or a log. The helper removes those
 variables before spawning any image-conversion subprocess.
 
-Failures exit nonzero and write one JSON record to stderr with `error_code`
+Returned errors exit nonzero and write one JSON record to stderr with `error_code`
 and `codec_commit`. The fixed codes distinguish image conversion, WXGF
 conversion, decoded image validation and voice conversion. Other failures use
 `media_decode_failed`. They identify the failed stage; they do not assert that
-a source file is corrupt or that a key is wrong. Raw errors, keys, paths and
-decrypted content are never included. Successful stdout remains the same asset
+a source file is corrupt or that a key is wrong. The JSON report never includes
+raw errors, keys, paths or decrypted content. Successful stdout remains the same asset
 record. Retry callers must retain the raw-file receipt and failure record and
 must not mark a failed conversion ready.
+
+Uncaught panics or native dependencies can produce other diagnostics. Callers
+must accept only validated JSON fields and must not save captured stdout or
+stderr verbatim as a diagnostic record.
 
 Stamp release builds from the reviewed clean source archive with
 `go build -trimpath -ldflags "-X main.buildCommit=FULL_REVIEWED_COMMIT" .`.
