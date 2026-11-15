@@ -18,11 +18,13 @@ const roomKey=(room:SpeechRoom)=>room.conversation_id||room.chat||room.group_id|
 
 /** Reads imported group speech. Collection and decryption run separately. */
 export function GroupSpeechDialog({profileId,groups,onClose}:{profileId:string;groups:PersonRef[];onClose:()=>void}) {
+ const attempted=useRef<[string,string,number,Cursor|null,string]>(['','',0,null,'']);
  const request=useRef(0);const abort=useRef<AbortController|null>(null);
  const [query,setQuery]=useState('');const [groupId,setGroupId]=useState('');const [rooms,setRooms]=useState<SpeechRoom[]>([]);
  const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [nextOffset,setNextOffset]=useState<number|null>(null);
  const [active,setActive]=useState({query:'',group:''});
  async function load(search=query,group=groupId,offset=0,cursor:Cursor|null=null,conversation='') {
+  attempted.current=[search,group,offset,cursor,conversation];
   const current=++request.current;abort.current?.abort();const controller=new AbortController();abort.current=controller;
   setBusy(true);setError('');
   const params=new URLSearchParams({limit:'50',group_offset:String(offset),...(cursor||{})});
@@ -55,7 +57,7 @@ export function GroupSpeechDialog({profileId,groups,onClose}:{profileId:string;g
    <SearchInput aria-label="在发言里搜索" value={query} onChange={event=>setQuery(event.target.value)} placeholder="关键词…"/>
    <Button type="submit" variant="primary" disabled={busy}>{busy?'读取中…':'搜索发言'}</Button>
   </form>
-  {error&&<Failure onRetry={()=>void load(active.query,active.group)}>群聊记录读取失败，请重试。</Failure>}
+  {error&&<Failure onRetry={()=>void load(...attempted.current)}>群聊记录读取失败，请重试。</Failure>}
   {busy&&!rooms.length&&<Loading>正在读取已导入的群聊发言…</Loading>}
   {rooms.filter(room=>room.messages?.length).map(room=><section className={styles.room} key={roomKey(room)}>
    <h3>{room.provider&&<SourceMark provider={room.provider}/>} {room.group_id?<Link href={`/profiles/${room.group_id}`}>{room.name}</Link>:room.name}</h3>
