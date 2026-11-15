@@ -134,6 +134,45 @@ async fn relationship_cache_reuses_results_and_tracks_committed_facts(pool: sqlx
         changed["edges"][0]["relationship_types"],
         json!(["colleague"])
     );
+    // Native ownership can be the only legitimate second source for an
+    // otherwise official-only account. Unlink must hide it immediately.
+    let connection = Uuid::new_v4();
+    sqlx::query("UPDATE crm.identities SET external_id='gh_cache_author' WHERE profile_id=$1 AND provider='wechat'").bind(author).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.source_connections(id,provider,external_account,display_name,connection_method) VALUES($1,'linkedin','cache-native','Native','manual')").bind(connection).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.connection_people(connection_id,external_id,display_name,resolved_profile_id) VALUES($1,'cache-native','Native',$2)").bind(connection).bind(author).execute(&pool).await.unwrap();
+    let (_, native_visible) = graph(&app, path).await;
+    assert_eq!(native_visible["edges"].as_array().unwrap().len(), 1);
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/source-connections/{connection}/identity"))
+                .header("host", "localhost:17494")
+                .header(
+                    "cookie",
+                    "crm_session=graph-cache-session; crm_csrf=graph-csrf",
+                )
+                .header("x-csrf-token", "graph-csrf")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"external_id":"cache-native","action":"unlink"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let (_, unlinked) = graph(&app, path).await;
+    assert!(
+        unlinked["edges"].as_array().unwrap().is_empty(),
+        "unlink invalidates cached visibility before asynchronous projection"
+    );
+    sqlx::query("UPDATE crm.connection_people SET resolved_profile_id=$2 WHERE connection_id=$1 AND external_id='cache-native'").bind(connection).bind(author).execute(&pool).await.unwrap();
+    assert_eq!(
+        graph(&app, path).await.1["edges"].as_array().unwrap().len(),
+        1
+    );
     sqlx::query("UPDATE crm.profiles SET archived_at=now() WHERE id=$1")
         .bind(owner)
         .execute(&pool)
