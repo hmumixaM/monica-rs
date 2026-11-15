@@ -523,7 +523,7 @@ pub async fn finish(pool: &PgPool, lease: &Lease, output: Value) -> Result<bool>
     let output = if matches!(lease.kind.as_str(), "ai.person_week" | "ai.digest")
         && lease.input.get("window").is_some()
     {
-        let resolved = week_window::output_lease(pool, lease, &output).await?;
+        let resolved = week_window::output_lease(pool, lease).await?;
         let mut validated = validate_output(&resolved, output)?;
         let processed: i64 = sqlx::query_scalar(
             "SELECT coalesce(sum(source_count),0)::bigint FROM crm.ai_week_buckets WHERE job_id=$1",

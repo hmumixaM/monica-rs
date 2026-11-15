@@ -446,32 +446,21 @@ pub async fn prepare<P: Provider>(
 
 /// Citations resolve against the immutable captured window. Only short excerpts
 /// enter published result JSON; the complete source remains at its evidence URL.
-pub async fn output_lease(pool: &PgPool, lease: &Lease, output: &Value) -> Result<Lease> {
+pub async fn output_lease(pool: &PgPool, lease: &Lease) -> Result<Lease> {
     let ready: Value =
         sqlx::query_scalar("SELECT ready_summary FROM crm.ai_week_runs WHERE job_id=$1")
             .bind(lease.id)
             .fetch_one(pool)
             .await?;
-    let allowed: std::collections::BTreeSet<&str> = ready["evidence"]
+    // Digest suggestions cite people rather than individual post IDs. Keep the
+    // bounded, already validated context even when the final response has no
+    // sources field or life event. Output validators still reject invented IDs.
+    let ids: Vec<Uuid> = ready["evidence"]
         .as_array()
         .into_iter()
         .flatten()
         .filter_map(|e| e["id"].as_str())
-        .collect();
-    let ids: Vec<Uuid> = output["sources"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .chain(
-            output["life_events"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .map(|e| &e["post_id"]),
-        )
-        .filter_map(Value::as_str)
-        .filter(|id| allowed.contains(*id))
-        .filter_map(|s| s.parse().ok())
+        .filter_map(|id| id.parse().ok())
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .take(64)

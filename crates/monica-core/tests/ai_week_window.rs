@@ -596,3 +596,52 @@ async fn native_source_policy_contact_updates_and_chunk_failure_retry(pool: PgPo
         "source disabled after capture triggered another provider call"
     );
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn digest_keeps_supported_post_only_suggestions_without_final_source_array(pool: PgPool) {
+    let person = Uuid::new_v4();
+    let post = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name,created_at) VALUES($1,'person','Established post-only contact','2020-01-01')")
+        .bind(person).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE crm.ai_settings SET enabled=true,execution_enabled=true,provider='fake'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,profile_id,event_type,external_id,occurred_at,content,content_hash,version) VALUES($1,'linkedin',$1,$2,'post','ordinary','2026-11-10T12:00:00Z','{\"text\":\"Ordinary update\"}','fixture',1)")
+        .bind(post).bind(person).execute(&pool).await.unwrap();
+    while ai::week_window::refresh_observations(&pool).await.unwrap() > 0 {}
+    ai::enqueue(&pool, "ai.digest", "2026-11-09").await.unwrap();
+    let lease = ai::claim(&pool).await.unwrap().unwrap();
+    for key in [
+        "top_contacts",
+        "new_people",
+        "new_links",
+        "upcoming_dates",
+        "newly_dormant",
+    ] {
+        assert!(
+            lease.input["facts"][key].as_array().unwrap().is_empty(),
+            "fixture unexpectedly qualifies via weekly facts"
+        );
+    }
+    let provider = ai::provider::FakeProvider {
+        output: json!({"summary":"Retained ordinary update","sources":[post],"life_events":[],"suggestions":[]}),
+    };
+    while ai::week_window::prepare(&pool, &provider, &lease)
+        .await
+        .unwrap()
+        .is_none()
+    {}
+    // Compliant final digest contract deliberately omits a sources field.
+    assert!(ai::finish(&pool,&lease,json!({"summary":"Weekly summary","life_events":[],"suggestions":[{"profile_id":person,"reason":"Acknowledge their update"},{"profile_id":Uuid::new_v4(),"reason":"Unsupported stranger"}]})).await.unwrap());
+    let output: Value =
+        sqlx::query_scalar("SELECT output FROM crm.weekly_digests WHERE week_start='2026-11-09'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        output["suggestions"],
+        json!([{"profile_id":person,"reason":"Acknowledge their update"}])
+    );
+    assert_eq!(output["coverage"]["sources"], 1);
+}
