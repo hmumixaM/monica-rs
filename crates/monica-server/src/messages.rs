@@ -34,6 +34,7 @@ struct Params {
     before_id: Option<Uuid>,
     conversation_id: Option<Uuid>,
     conversation_type: Option<String>,
+    include_group_speech: Option<bool>,
     month: Option<String>,
     #[serde(alias = "tz")]
     timezone: Option<String>,
@@ -121,8 +122,64 @@ async fn read(s: &AppState, profile: Option<Uuid>, q: Params) -> Result<Json<Val
     {
         return Err(invalid());
     }
-    let mut rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',m.message_id,'occurred_at',m.occurred_at,'message_type',m.message_type,'sender_profile_id',coalesce(m.sender_profile_id,l.profile_id),'sender_name',coalesce(p.display_name,a.display_name,nullif(m.sender,'')),'conversation_id',c.id,'conversation_type',c.conversation_type,'text',m.body,'direction',m.direction) FROM crm.conversations c JOIN LATERAL(SELECT * FROM crm.message_search m WHERE m.conversation_id=c.id AND NOT m.tombstone AND ($3::timestamptz IS NULL OR (m.occurred_at,m.message_id)<($3::timestamptz,coalesce($4::uuid,'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid))) AND ($5::text IS NULL OR position(lower($5) in lower(m.body))>0) AND ($6::text IS NULL OR (m.occurred_at>=($6||'-01')::timestamp AT TIME ZONE $7 AND m.occurred_at<(($6||'-01')::timestamp+interval '1 month') AT TIME ZONE $7)) AND ($8::uuid IS NULL OR $3::text IS NOT NULL OR (m.occurred_at,m.message_id)<=(SELECT anchor.occurred_at,anchor.message_id FROM crm.message_search anchor WHERE anchor.message_id=$8 AND anchor.conversation_id=c.id)) ORDER BY m.occurred_at DESC,m.message_id DESC LIMIT $10) m ON true LEFT JOIN crm.source_account_links l ON l.account_id=m.sender_account_id LEFT JOIN crm.profiles p ON p.id=coalesce(m.sender_profile_id,l.profile_id) LEFT JOIN crm.source_accounts a ON a.id=m.sender_account_id WHERE ($1::uuid IS NULL OR c.profile_id=$1) AND ($2::uuid IS NULL OR c.id=$2) AND ($9::text IS NULL OR c.conversation_type=$9) ORDER BY m.occurred_at DESC,m.message_id DESC LIMIT $10")
- .bind(profile).bind(q.conversation_id).bind(q.before).bind(q.before_id).bind(q.q).bind(q.month).bind(timezone).bind(q.message).bind(q.conversation_type).bind(q.limit.unwrap_or(50).clamp(1,100)).fetch_all(&s.pool).await?;
+    // Restrict each candidate stream before its limit. A person's group search
+    // includes only that person's speech, even when a room has newer messages
+    // from other members. Candidate IDs stay small; bodies/media join afterward.
+    let filters = r#"NOT m.tombstone
+      AND ($3::timestamptz IS NULL OR (m.occurred_at,m.message_id)<($3::timestamptz,coalesce($4::uuid,'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)))
+      AND ($5::text IS NULL OR position(lower($5) in lower(m.body))>0)
+      AND ($6::text IS NULL OR (m.occurred_at>=($6||'-01')::timestamp AT TIME ZONE $7 AND m.occurred_at<(($6||'-01')::timestamp+interval '1 month') AT TIME ZONE $7))
+      AND ($8::uuid IS NULL OR $3::text IS NOT NULL OR (m.occurred_at,m.message_id)<=(SELECT anchor.occurred_at,anchor.message_id FROM crm.message_search anchor WHERE anchor.message_id=$8 AND anchor.conversation_id=c.id))"#;
+    let room = r#"($2::uuid IS NULL OR c.id=$2) AND ($9::text IS NULL OR c.conversation_type=$9)"#;
+    let query = format!(
+        r#"WITH owned_accounts AS MATERIALIZED (
+      SELECT account_id FROM crm.source_account_links WHERE profile_id=$1
+    ), candidates AS (
+      (SELECT m.message_id,m.occurred_at FROM crm.conversations c
+       JOIN LATERAL(SELECT m.message_id,m.occurred_at FROM crm.message_search m
+        WHERE m.conversation_id=c.id AND {filters}
+        ORDER BY m.occurred_at DESC,m.message_id DESC LIMIT $10) m ON true
+       WHERE ($1::uuid IS NULL OR c.profile_id=$1) AND {room}
+       ORDER BY m.occurred_at DESC,m.message_id DESC LIMIT $10)
+      UNION ALL
+      (SELECT m.message_id,m.occurred_at FROM crm.message_search m JOIN crm.conversations c ON c.id=m.conversation_id
+       WHERE $11 AND $1::uuid IS NOT NULL AND m.sender_profile_id=$1
+        AND c.conversation_type='group' AND c.profile_id IS DISTINCT FROM $1 AND {room} AND {filters}
+       ORDER BY m.occurred_at DESC,m.message_id DESC LIMIT $10)
+      UNION ALL
+      (SELECT m.message_id,m.occurred_at FROM crm.message_search m JOIN owned_accounts own ON own.account_id=m.sender_account_id
+       JOIN crm.conversations c ON c.id=m.conversation_id
+       WHERE $11 AND $1::uuid IS NOT NULL AND m.sender_profile_id IS NULL
+        AND c.conversation_type='group' AND c.profile_id IS DISTINCT FROM $1 AND {room} AND {filters}
+       ORDER BY m.occurred_at DESC,m.message_id DESC LIMIT $10)
+    ), page AS MATERIALIZED (
+      SELECT * FROM candidates ORDER BY occurred_at DESC,message_id DESC LIMIT $10
+    ) SELECT jsonb_build_object('id',m.message_id,'occurred_at',m.occurred_at,'message_type',m.message_type,
+      'sender_profile_id',coalesce(m.sender_profile_id,l.profile_id),'sender_name',coalesce(p.display_name,a.display_name,nullif(m.sender,'')),
+      'conversation_id',c.id,'conversation_type',c.conversation_type,'text',m.body,'direction',m.direction,
+      'evidence_id',e.id,'evidence_revision',e.revision,
+      'citation',CASE WHEN e.id IS NOT NULL THEN '/evidence/'||e.id::text||'?revision='||e.revision::text END)
+      FROM page JOIN crm.message_search m ON m.message_id=page.message_id JOIN crm.conversations c ON c.id=m.conversation_id
+      LEFT JOIN crm.source_account_links l ON l.account_id=m.sender_account_id
+      LEFT JOIN crm.profiles p ON p.id=coalesce(m.sender_profile_id,l.profile_id)
+      LEFT JOIN crm.source_accounts a ON a.id=m.sender_account_id
+      LEFT JOIN crm.connection_evidence e ON e.id=m.message_id AND e.message_id=m.message_id
+      ORDER BY page.occurred_at DESC,page.message_id DESC"#
+    );
+    let mut rows: Vec<Value> = sqlx::query_scalar(&query)
+        .bind(profile)
+        .bind(q.conversation_id)
+        .bind(q.before)
+        .bind(q.before_id)
+        .bind(q.q)
+        .bind(q.month)
+        .bind(timezone)
+        .bind(q.message)
+        .bind(q.conversation_type)
+        .bind(q.limit.unwrap_or(50).clamp(1, 100))
+        .bind(q.include_group_speech.unwrap_or(false))
+        .fetch_all(&s.pool)
+        .await?;
     // Resolve attachments only after the global message page is bounded.
     let ids: Vec<Uuid> = rows
         .iter()
@@ -141,7 +198,9 @@ async fn read(s: &AppState, profile: Option<Uuid>, q: Params) -> Result<Json<Val
     for row in &mut rows {
         let id: Uuid = row["id"].as_str().unwrap().parse().unwrap();
         row["media"] = media.get(&id).cloned().unwrap_or(json!([]));
-        if let Some(revision) = originals.get(&id) {
+        if row["evidence_id"].is_null()
+            && let Some(revision) = originals.get(&id)
+        {
             row["citation"] = json!(format!("/evidence/{id}?revision={revision}"));
         }
     }
@@ -375,5 +434,146 @@ mod tests {
         assert_eq!(detail["revisions"].as_array().unwrap().len(), 1);
         let metrics = request(router, &format!("/api/v1/metrics/social?profile_id={p}")).await;
         assert_eq!(metrics["providers"]["wechat"]["posts"], 2);
+    }
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn person_group_speech_and_native_versioned_citations(pool: PgPool) {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::new(
+            pool.clone(),
+            "synthetic-session-secret-32-characters",
+            "http://localhost:17494".into(),
+            dir.path().into(),
+        )
+        .await
+        .unwrap();
+        let router = crate::auth::routes(state);
+        let actor = Uuid::new_v4();
+        let person = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let group = Uuid::new_v4();
+        let account = Uuid::new_v4();
+        let conversation = Uuid::new_v4();
+        sqlx::query("INSERT INTO crm.app_users(id,email,password_hash) VALUES($1,'speech@example.test','not-used')").bind(actor).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 hour')").bind(Uuid::new_v4()).bind(actor).bind(format!("{:x}",Sha256::digest(b"fixture-session"))).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Speech owner'),($2,'person','Other author'),($3,'group','Synthetic room')")
+            .bind(person).bind(other).bind(group).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'wechat','speech-owner','person','Speech owner')").bind(account).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.source_account_links(account_id,profile_id) VALUES($1,$2)")
+            .bind(account)
+            .bind(person)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO crm.conversations(id,provider,account,external_id,conversation_type,profile_id) VALUES($1,'wechat','self','room@chatroom','group',$2)").bind(conversation).bind(group).execute(&pool).await.unwrap();
+        // More than a page of newer messages must not hide the wanted author's
+        // older speech. Explicit native author wins over a linked legacy account.
+        sqlx::query("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,sender_profile_id,occurred_at,body) SELECT gen_random_uuid(),$1,'wechat','self',n::text,'other',$2,'2026-01-02T12:00:00Z','Other group member' FROM generate_series(1,205) n")
+            .bind(conversation).bind(other).execute(&pool).await.unwrap();
+        let explicit = Uuid::new_v4();
+        let legacy = Uuid::new_v4();
+        let conflict = Uuid::new_v4();
+        sqlx::query("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,sender_profile_id,sender_account_id,occurred_at,body) VALUES($1,$4,'wechat','self','explicit','native',$5,NULL,'2026-01-01T12:00:00Z','My native speech'),($2,$4,'wechat','self','legacy','legacy',NULL,$6,'2026-01-01T12:00:00Z','My legacy needle'),($3,$4,'wechat','self','conflict','other',$7,$6,'2026-01-01T12:00:00Z','Other explicit owner')")
+            .bind(explicit).bind(legacy).bind(conflict).bind(conversation).bind(person).bind(account).bind(other).execute(&pool).await.unwrap();
+        assert!(
+            request(
+                router.clone(),
+                &format!("/api/v1/profiles/{person}/messages")
+            )
+            .await
+            .as_array()
+            .unwrap()
+            .is_empty()
+        );
+        let mut seen = Vec::new();
+        let mut cursor = String::new();
+        for _ in 0..2 {
+            let rows = request(
+                router.clone(),
+                &format!(
+                    "/api/v1/profiles/{person}/messages?include_group_speech=true&limit=1{cursor}"
+                ),
+            )
+            .await;
+            let row = &rows[0];
+            seen.push(row["id"].as_str().unwrap().parse::<Uuid>().unwrap());
+            assert_eq!(row["sender_profile_id"], person.to_string());
+            cursor = format!(
+                "&before={}&before_id={}",
+                row["occurred_at"].as_str().unwrap().replace('+', "%2B"),
+                row["id"].as_str().unwrap()
+            );
+        }
+        seen.sort();
+        let mut expected = vec![explicit, legacy];
+        expected.sort();
+        assert_eq!(seen, expected);
+        let filtered=request(router.clone(),&format!("/api/v1/profiles/{person}/messages?include_group_speech=true&q=needle&month=2026-01&timezone=UTC&conversation_type=group")).await;
+        assert_eq!(filtered.as_array().unwrap().len(), 1);
+        assert_eq!(filtered[0]["id"], legacy.to_string());
+        let empty=request(router.clone(),&format!("/api/v1/profiles/{person}/messages?include_group_speech=true&month=2025-12&timezone=UTC")).await;
+        assert!(empty.as_array().unwrap().is_empty());
+        let scoped=request(router.clone(),&format!("/api/v1/profiles/{person}/messages?include_group_speech=true&conversation_id={conversation}")).await;
+        assert_eq!(scoped.as_array().unwrap().len(), 2);
+        let whole_room = request(
+            router.clone(),
+            &format!("/api/v1/conversations/{conversation}/messages?limit=1"),
+        )
+        .await;
+        assert_eq!(whole_room[0]["text"], "Other group member");
+        sqlx::query("UPDATE crm.message_search SET tombstone=true WHERE message_id=$1")
+            .bind(legacy)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let remaining = request(
+            router.clone(),
+            &format!("/api/v1/profiles/{person}/messages?include_group_speech=true"),
+        )
+        .await;
+        assert_eq!(remaining.as_array().unwrap().len(), 1);
+
+        use monica_core::{Provider, connections};
+        let cid = connections::connection_id(Provider::AppleMessages, "versioned-fixture");
+        sqlx::query("INSERT INTO crm.source_connections(id,provider,external_account,display_name,connection_method,enabled) VALUES($1,'apple_messages','versioned-fixture','Synthetic','local',true)").bind(cid).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.person_identifiers(profile_id,kind,value,confirmed) VALUES($1,'email','speech@example.test',true)").bind(person).execute(&pool).await.unwrap();
+        let mut original = String::new();
+        for (revision, body) in [(1, "First native body"), (2, "Revised native body")] {
+            let value = json!({"external_id":"versioned-message","kind":"message","thread_id":"native-friend","occurred_at":"2026-01-03T12:00:00Z","body":body,"participants":[{"id":"sender","role":"sender","emails":["speech@example.test"]},{"id":"self","role":"recipient","is_self":true}]});
+            let mut tx = pool.begin().await.unwrap();
+            connections::commit_page(
+                &mut tx,
+                Provider::AppleMessages,
+                cid,
+                "messages",
+                &[value],
+                &json!({"revision":revision}),
+            )
+            .await
+            .unwrap();
+            tx.commit().await.unwrap();
+            connections::deliver(&pool, Provider::AppleMessages, cid, 100)
+                .await
+                .unwrap();
+            let rows = request(
+                router.clone(),
+                &format!("/api/v1/profiles/{person}/messages?include_group_speech=true&limit=1"),
+            )
+            .await;
+            let eid = connections::evidence_id(cid, "versioned-message");
+            assert_eq!(rows[0]["text"], body);
+            assert_eq!(rows[0]["evidence_id"], eid.to_string());
+            assert_eq!(rows[0]["evidence_revision"], revision);
+            assert_eq!(
+                rows[0]["citation"],
+                format!("/evidence/{eid}?revision={revision}")
+            );
+            if revision == 1 {
+                original = format!("/api/v1/evidence/{eid}?revision=1");
+            }
+        }
+        assert_eq!(
+            request(router, &original).await["body"],
+            "First native body"
+        );
     }
 }
