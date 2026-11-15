@@ -36,16 +36,16 @@ def require(value, code):
         raise Failure(code)
 
 
-def canonical(path, directory=False):
+def canonical(path, directory=False, independent=True):
     require(path.is_absolute() and path.resolve(strict=True) == path, 'path_alias_or_missing')
     info = path.stat()
     require(stat.S_ISDIR(info.st_mode) if directory else
-            stat.S_ISREG(info.st_mode) and info.st_nlink == 1, 'unexpected_file_identity')
+            stat.S_ISREG(info.st_mode) and (not independent or info.st_nlink == 1), 'unexpected_file_identity')
     return info
 
 
-def checksum(path):
-    canonical(path)
+def checksum(path, independent=True):
+    canonical(path, independent=independent)
     with os.fdopen(os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW), 'rb') as source:
         before = os.fstat(source.fileno())
         h = hashlib.sha256()
@@ -249,6 +249,53 @@ def sync_directory(path):
         os.close(fd)
 
 
+def recover_published_temporaries(media):
+    """Remove only fully accounted codec aliases; keep every underlying byte."""
+    groups = {}
+    for path in media.iterdir():
+        if re.fullmatch(r'\.migration-media-[0-9]{1,20}', path.name):
+            info = canonical(path, independent=False)
+            if info.st_nlink > 1:
+                groups.setdefault((info.st_dev, info.st_ino), []).append(path)
+    require(sum(map(len, groups.values())) <= 256, 'temporary_recovery_requires_inspection')
+    recovered = 0
+    for identity, aliases in groups.items():
+        info = aliases[0].stat()
+        require(info.st_nlink == len(aliases) + 1 and 0 < info.st_size <= 512 * 1024 * 1024,
+                'unaccounted_media_hardlinks')
+        key = checksum(aliases[0], independent=False)
+        target = media / 'sha256' / key[:2] / key[2:4] / key
+        current = canonical(target, independent=False)
+        require((current.st_dev, current.st_ino) == identity and current.st_nlink == info.st_nlink,
+                'unaccounted_media_hardlinks')
+        # Make the canonical name durable before removing any redundant alias.
+        with target.open('rb') as source:
+            os.fsync(source.fileno())
+        for parent in list(target.parents)[:4]:
+            sync_directory(parent)
+        for offset, alias in enumerate(aliases):
+            now, other = alias.lstat(), target.lstat()
+            require((now.st_dev, now.st_ino) == (other.st_dev, other.st_ino) == identity
+                    and other.st_nlink == len(aliases) - offset + 1, 'temporary_recovery_changed')
+            alias.unlink()
+            recovered += 1
+        sync_directory(media)
+        canonical(target)  # Unrelated hardlinks still fail the independence check.
+        with target.open('rb') as source:
+            os.fsync(source.fileno())
+    return recovered
+
+
+def finalize(db, database, state, summary):
+    require(db.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()[0] == 0,
+            'retry_checkpoint_pending')
+    with database.open('rb') as data:
+        os.fsync(data.fileno())
+    sync_directory(state)
+    atomic_json(state / 'codec-retry-status.json', summary)
+    return summary
+
+
 @contextmanager
 def copy_guard(path):
     canonical(path)
@@ -358,8 +405,11 @@ def retry(args, executor, credentials=None):
             summary = {'selected': len(rows), 'remaining_decode_failed': counts.get('decode_failed', 0),
                        'ready': counts.get('ready', 0), 'source_missing': counts.get('source_missing', 0),
                        'indexed_records': total, 'runtime_id': executor.runtime_id, 'recovered': 0, 'codes': {}}
-            if args.action == 'inspect' or not rows:
+            if args.action == 'inspect':
                 return summary
+            summary['recovered_temporary_links'] = recover_published_temporaries(args.media)
+            if not rows:
+                return finalize(db, database, args.state, summary)
             require(isinstance(credentials, dict) and set(credentials) <= {'image_key', 'image_xor'}
                     and all(isinstance(v, str) for v in credentials.values()), 'invalid_credential_frame')
             output = executor.convert(requests, credentials)
@@ -396,15 +446,9 @@ def retry(args, executor, credentials=None):
                     db.execute('INSERT INTO codec_retry_attempts VALUES(?,?,?,?,?,?,?,?)',
                                (str(uuid.uuid4()), row[0], row[4], executor.runtime_id,
                                 args.codec_commit, code, json.dumps(asset, sort_keys=True) if asset else None, time.time()))
-            require(db.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()[0] == 0,
-                    'retry_checkpoint_pending')
-            with database.open('rb') as data:
-                os.fsync(data.fileno())
-            sync_directory(args.state)
             summary['ready'] += summary['recovered']
             summary['remaining_decode_failed'] -= summary['recovered']
-            atomic_json(args.state / 'codec-retry-status.json', summary)
-            return summary
+            return finalize(db, database, args.state, summary)
 
 
 def main():

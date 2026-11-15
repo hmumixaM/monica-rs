@@ -53,6 +53,16 @@ an explicit diagnosis or changed circumstances; successful rows are still
 skipped. A crash after CAS creation but before publication is safe to repeat.
 Completed batches do not require another scan/copy of all successful media.
 
+The inherited codec can leave a temporary hardlink when interrupted immediately
+after CAS linking. Recovery handles only `.migration-media-<digits>` aliases in
+the marked media root, after original and previous retry workers are stopped.
+It verifies the full content hash and canonical CAS inode, accounts for **every**
+link, flushes the canonical name, then removes only redundant temporary names.
+The bytes remain in CAS and the raw archive is unchanged. Any unaccounted link
+still refuses recovery; it is never treated as independent data. Even a retry
+that selects no new rows must finish the WAL checkpoint/fsync/status publication
+left by a previously committed batch. A busy checkpoint remains a failure.
+
 The private `codec-retry-container.json` records a creation intent before Docker
 is called, then the exact owned container ID. After an interrupted attach,
 recovery validates its labels, image, mounts, and network before stopping only

@@ -160,6 +160,42 @@ class Recovery(unittest.TestCase):
         self.assertEqual(self.rows(), before)
         self.assertNotIn('PRIVATE_KEY_OR_BODY', (self.args.state / 'wechat-file-assets.sqlite').read_bytes().decode('latin1'))
 
+    def test_empty_resume_still_finalizes_committed_wal_for_standalone_reader(self):
+        path = self.args.state / 'wechat-file-assets.sqlite'
+        with closing(sqlite3.connect(path)) as holder, closing(sqlite3.connect(path)) as reader:
+            self.assertEqual(holder.execute('PRAGMA journal_mode=WAL').fetchone()[0], 'wal')
+            reader.execute('BEGIN')
+            self.assertEqual(reader.execute("SELECT status FROM assets WHERE source_key='failed'").fetchone()[0], 'decode_failed')
+            for _ in range(2):
+                with self.assertRaisesRegex(worker.Failure, 'retry_checkpoint_pending'):
+                    worker.retry(self.args, self.codec, {})
+            self.assertEqual(self.codec.calls, 1, 'resume must retain the committed conversion')
+            reader.rollback()
+            result = worker.retry(self.args, self.codec, {})
+            self.assertEqual((result['selected'], result['remaining_decode_failed']), (0, 0))
+            with closing(sqlite3.connect(path.as_uri() + '?mode=ro&immutable=1', uri=True)) as standalone:
+                self.assertEqual(standalone.execute("SELECT status FROM assets WHERE source_key='failed'").fetchone()[0], 'ready')
+
+    def test_only_fully_accounted_published_temporary_links_are_recovered(self):
+        key = hashlib.sha256(PNG).hexdigest()
+        cas = self.args.media / 'sha256' / key[:2] / key[2:4] / key
+        cas.parent.mkdir(parents=True)
+        cas.write_bytes(PNG)
+        temporary = self.args.media / '.migration-media-123456'
+        os.link(cas, temporary)
+        outside = self.args.state / 'unrelated-link'
+        os.link(cas, outside)
+        with self.assertRaisesRegex(worker.Failure, 'unaccounted_media_hardlinks'):
+            worker.retry(self.args, self.codec, {})
+        self.assertTrue(temporary.exists())
+        self.assertEqual(outside.read_bytes(), PNG)
+        outside.unlink()
+        result = worker.retry(self.args, self.codec, {})
+        self.assertEqual(result['recovered_temporary_links'], 1)
+        self.assertEqual(result['recovered'], 1)
+        self.assertFalse(temporary.exists())
+        self.assertEqual((cas.stat().st_nlink, cas.read_bytes()), (1, PNG))
+
     def test_capture_drains_output_while_writing_and_bounds_diagnostics(self):
         code, output, errors = worker.capture([sys.executable, '-c',
             'import sys;sys.stdout.buffer.write(b"y"*100000);sys.stdout.flush();assert len(sys.stdin.buffer.read())==100000'],
