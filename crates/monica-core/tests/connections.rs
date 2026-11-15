@@ -25,6 +25,145 @@ async fn page(pool: &PgPool, provider: Provider, cid: Uuid, records: &[Value]) -
 fn message() -> Value {
     json!({"external_id":"message-1","kind":"message","thread_id":"thread-1","occurred_at":"2026-01-02T03:00:00Z","body":"hello","participants":[{"id":"me","role":"sender","is_self":1},{"id":"friend","role":"recipient","emails":["friend@example.test"]}]})
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn import_owner_presence_preserves_explicit_annotations_and_group_authors(pool: PgPool) {
+    use monica_core::imports;
+    use std::collections::BTreeMap;
+    async fn import(pool: &PgPool, cid: Uuid, tag: &str, records: Vec<Value>) -> Uuid {
+        let input = json!({"source":"linkedin","connection_id":cid,"stream":"messages","batch_id":tag,"idempotency_key":tag,"observed_at":"2026-01-01T00:00:00Z","records":records});
+        let hash = monica_core::identity::observation_hash(&input);
+        let batch: imports::Batch = serde_json::from_value(input).unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let receipt = imports::receive(&mut tx, &batch, &hash).await.unwrap();
+        tx.commit().await.unwrap();
+        imports::resume(pool, receipt).await.unwrap();
+        deliver(pool, Provider::Linkedin, cid, 100).await.unwrap();
+        while relink_pending(pool, 100).await.unwrap() > 0 {}
+        receipt
+    }
+    async fn attribution(
+        pool: &PgPool,
+        cid: Uuid,
+        external: &str,
+    ) -> (Option<Uuid>, Option<Uuid>, String, String) {
+        sqlx::query_as("SELECT c.profile_id,m.sender_profile_id,c.conversation_type,m.direction FROM crm.message_search m JOIN crm.conversations c ON c.id=m.conversation_id WHERE c.connection_id=$1 AND m.external_id=$2").bind(cid).bind(external).fetch_one(pool).await.unwrap()
+    }
+    let cid = connection(&pool, Provider::Linkedin, "owner-presence").await;
+    let known = Uuid::new_v4();
+    let explicit = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Resolved contact'),($2,'person','Explicit owner')").bind(known).bind(explicit).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.connection_identity_links(connection_id,external_id,profile_id,confirmed,blocked) VALUES($1,'peer',$2,true,false),($1,'blocked',NULL,true,true)").bind(cid).bind(known).execute(&pool).await.unwrap();
+    let cases = [
+        ("missing", json!({}), Some(known), Some(known)),
+        (
+            "explicit",
+            json!({"profile_id":explicit,"sender_profile_id":explicit}),
+            Some(explicit),
+            Some(explicit),
+        ),
+        (
+            "unassigned",
+            json!({"profile_id":null,"sender_profile_id":null}),
+            None,
+            None,
+        ),
+        (
+            "owner-only",
+            json!({"profile_id":explicit}),
+            Some(explicit),
+            Some(known),
+        ),
+        (
+            "author-only",
+            json!({"sender_profile_id":explicit}),
+            Some(known),
+            Some(explicit),
+        ),
+        (
+            "unassigned-owner",
+            json!({"profile_id":null}),
+            None,
+            Some(known),
+        ),
+        (
+            "unassigned-author",
+            json!({"sender_profile_id":null}),
+            Some(known),
+            None,
+        ),
+        ("group", json!({}), None, Some(known)),
+        ("blocked", json!({}), None, None),
+    ];
+    let expected: BTreeMap<_, _> = cases
+        .iter()
+        .map(|(name, _, owner, author)| (*name, (*owner, *author)))
+        .collect();
+    let mut records:Vec<Value>=cases.iter().map(|(name,extra,_,_)|{
+        let mut record=json!({"external_id":name,"entity_type":"message","conversation_external_id":format!("thread-{name}"),"conversation_type":if *name=="group"{"group"}else{"direct"},"occurred_at":"2026-01-01T00:00:00Z","content":{"body":format!("Original {name}"),"direction":"received","participants":[{"id":if *name=="blocked"{"blocked"}else{"peer"},"role":"sender"},{"id":"self","role":"participant","is_self":true}]}});
+        record.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        if *name=="missing" { record["content"].as_object_mut().unwrap().remove("direction"); }
+        record
+    }).collect();
+    // The first batch uses the bounded set projection, revised messages use the
+    // ordered path. Both must apply the same independent owner/author policy.
+    for revision in 1..=2 {
+        if revision == 2 {
+            for record in &mut records {
+                record["content"]["body"] = json!(format!("Revised {}", record["external_id"]));
+            }
+        }
+        import(&pool, cid, &format!("presence-{revision}"), records.clone()).await;
+        for (name, (owner, author)) in &expected {
+            let row = attribution(&pool, cid, name).await;
+            assert_eq!(
+                (row.0, row.1),
+                (*owner, *author),
+                "{name} revision{revision}"
+            );
+            assert_eq!(row.2, if *name == "group" { "group" } else { "direct" });
+            assert_eq!(
+                row.3, "received",
+                "source direction wins; omitted direction follows resolved attribution"
+            );
+        }
+    }
+    let mut unassign = records[0].clone();
+    unassign["profile_id"] = Value::Null;
+    unassign["sender_profile_id"] = Value::Null;
+    import(&pool, cid, "explicit-unassign", vec![unassign]).await;
+    let row = attribution(&pool, cid, "missing").await;
+    assert_eq!((row.0, row.1), (None, None));
+    import(&pool, cid, "same-version-omitted", vec![records[0].clone()]).await;
+    let row = attribution(&pool, cid, "missing").await;
+    assert_eq!(
+        (row.0, row.1),
+        (None, None),
+        "absence cannot erase an explicit unassignment on the same source revision"
+    );
+    let mut next = records[0].clone();
+    next["content"]["body"] = json!("A new source revision");
+    let receipt = import(&pool, cid, "new-revision", vec![next.clone()]).await;
+    assert_eq!(
+        import(&pool, cid, "new-revision", vec![next]).await,
+        receipt
+    );
+    let row = attribution(&pool, cid, "missing").await;
+    assert_eq!((row.0, row.1), (Some(known), Some(known)));
+    let old:(Option<Uuid>,Option<Uuid>,bool,bool)=sqlx::query_as("SELECT profile_id,sender_profile_id,infer_profile,infer_sender FROM crm.connection_import_bindings WHERE connection_id=$1 AND external_id='missing' AND revision=2").bind(cid).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        old,
+        (None, None, false, false),
+        "old revision annotation remains intact"
+    );
+    let counts:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM crm.connection_evidence),(SELECT count(*) FROM linkedin.connection_revision_refs),(SELECT count(*) FROM crm.profiles)").fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        counts,
+        (9, 19, 2),
+        "replay keeps stable records and never creates duplicate people"
+    );
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 async fn journal_replay_correction_retraction_cursor_and_isolation(pool: PgPool) {
     let p = Provider::AppleMessages;

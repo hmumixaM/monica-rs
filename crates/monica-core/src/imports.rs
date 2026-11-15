@@ -698,7 +698,7 @@ async fn commit_connection_chunk(
                     })
                     .transpose()
             };
-            bindings.push(json!({"record_index":records.len(),"external_id":record.external_id,"profile_id":profile("profile_id")?,"sender_profile_id":profile("sender_profile_id")?,"conversation_type":kind}));
+            bindings.push(json!({"record_index":records.len(),"external_id":record.external_id,"profile_id":profile("profile_id")?,"sender_profile_id":profile("sender_profile_id")?,"conversation_type":kind,"infer_profile":!record.extra.contains_key("profile_id"),"infer_sender":!record.extra.contains_key("sender_profile_id")}));
         }
         records.push(value);
     }
@@ -754,7 +754,9 @@ async fn commit_connection_chunk(
     .await? as i64;
     if !bindings.is_empty() {
         let bindings = json!(bindings);
-        sqlx::query("INSERT INTO crm.connection_import_bindings(connection_id,external_id,revision,profile_id,sender_profile_id,conversation_type) SELECT $2,b.external_id,b.revision,b.profile_id,b.sender_profile_id,b.conversation_type FROM (SELECT DISTINCT ON(value->>'external_id',value->>'revision') value->>'external_id' external_id,(value->>'revision')::bigint revision,(value->>'profile_id')::uuid profile_id,(value->>'sender_profile_id')::uuid sender_profile_id,value->>'conversation_type' conversation_type FROM jsonb_array_elements($1) WITH ORDINALITY x(value,position) ORDER BY value->>'external_id',value->>'revision',position DESC) b ON CONFLICT(connection_id,external_id,revision) DO UPDATE SET profile_id=excluded.profile_id,sender_profile_id=excluded.sender_profile_id,conversation_type=excluded.conversation_type").bind(&bindings).bind(cid).execute(&mut **tx).await?;
+        // Replaying an unchanged source revision without annotations must not
+        // erase an explicit UUID or explicit NULL previously supplied for it.
+        sqlx::query("INSERT INTO crm.connection_import_bindings(connection_id,external_id,revision,profile_id,sender_profile_id,conversation_type,infer_profile,infer_sender) SELECT $2,b.external_id,b.revision,b.profile_id,b.sender_profile_id,b.conversation_type,b.infer_profile,b.infer_sender FROM (SELECT DISTINCT ON(value->>'external_id',value->>'revision') value->>'external_id' external_id,(value->>'revision')::bigint revision,(value->>'profile_id')::uuid profile_id,(value->>'sender_profile_id')::uuid sender_profile_id,value->>'conversation_type' conversation_type,(value->>'infer_profile')::boolean infer_profile,(value->>'infer_sender')::boolean infer_sender FROM jsonb_array_elements($1) WITH ORDINALITY x(value,position) ORDER BY value->>'external_id',value->>'revision',position DESC) b ON CONFLICT(connection_id,external_id,revision) DO UPDATE SET profile_id=CASE WHEN excluded.infer_profile THEN crm.connection_import_bindings.profile_id ELSE excluded.profile_id END,sender_profile_id=CASE WHEN excluded.infer_sender THEN crm.connection_import_bindings.sender_profile_id ELSE excluded.sender_profile_id END,conversation_type=excluded.conversation_type,infer_profile=crm.connection_import_bindings.infer_profile AND excluded.infer_profile,infer_sender=crm.connection_import_bindings.infer_sender AND excluded.infer_sender").bind(&bindings).bind(cid).execute(&mut **tx).await?;
         sqlx::query("INSERT INTO crm.connection_relink(evidence_id) SELECT DISTINCT e.id FROM crm.connection_evidence e JOIN jsonb_to_recordset($1) b(external_id text) ON e.connection_id=$2 AND e.external_id=b.external_id ON CONFLICT(evidence_id) DO UPDATE SET requested_at=now()").bind(bindings).bind(cid).execute(&mut **tx).await?;
     }
     Ok([inserted, changed - inserted, (end - start) as i64 - changed])
