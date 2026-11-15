@@ -19,8 +19,8 @@ pub(super) async fn rows(tx: &mut Transaction<'_, Postgres>) -> Result<Vec<Value
     // Hydrate each source set once for the shared directory snapshot.
     Ok(sqlx::query_scalar(r#"WITH visible AS MATERIALIZED (SELECT * FROM crm.directory_profiles),
 fields AS (
- SELECT c.profile_id,jsonb_object_agg(c.field_key,r.value) value
- FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id JOIN visible v ON v.id=c.profile_id
+ SELECT c.profile_id,jsonb_object_agg(c.field_key,(SELECT r.value FROM crm.field_revisions r WHERE r.id=c.revision_id)) value
+ FROM crm.field_current c JOIN visible v ON v.id=c.profile_id
  WHERE c.field_key IN('linkedin.headline','linkedin.location','monica.city','monica.residence','monica.nickname','monica.company','monica.job','wechat.city','wechat.province','monica.note','wechat.region','wechat.alias','wechat.remark','wechat.nickname','wechat.group_nicknames','wechat.group_names','instagram.username','instagram.full_name','monica.aliases','monica.custom_fields')
  GROUP BY c.profile_id
 ), facts AS (
