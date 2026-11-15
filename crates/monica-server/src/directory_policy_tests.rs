@@ -184,6 +184,10 @@ async fn retained_contacts_backfill_directory_search_graph_and_preserve_history(
     assert!(ids_returned.contains(&extra));
     let directory = get(&app, "/api/v1/directory").await;
     assert_eq!(directory["profiles"].as_array().unwrap().len(), 5);
+    let insights = get(&app, "/api/v1/insights?dormant_days=90").await;
+    assert_eq!(insights["dormant_days"], 90);
+    get(&app, "/api/v1/insights/calendar/day?day=2026-01-01").await;
+    get(&app, "/api/v1/insights/orbit").await;
     let search = get(&app, "/api/v1/search?q=Synthetic%20official").await;
     assert!(search.as_array().unwrap().is_empty());
     let graph = get(&app, "/api/v1/relationships/graph").await;

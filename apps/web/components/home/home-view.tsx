@@ -10,7 +10,7 @@ import { DigestCard } from "../digest/digest-card";
 import { SocialFeed } from "../feed/social-feed";
 import { dateTitle } from "../profile/dates";
 import { PersonLink } from "../ui/person-link";
-import { Avatar, Faint, formatCount, formatNumber, Page, PulseStrip, relativeDays, Skeleton } from "../ui/primitives";
+import { Avatar, Faint, Failure, formatCount, formatNumber, Page, PulseStrip, relativeDays, Skeleton } from "../ui/primitives";
 import styles from "./home.module.css";
 import { ReconnectSuggestions } from "./reconnect-suggestions";
 import { WeeklyHighlights } from "./weekly-highlights";
@@ -61,8 +61,12 @@ function Remember() {
   const insights = useInsights(90);
   const suggestions = useReconnect();
   const data = insights.data;
-  if (insights.isError) return null;
-  if (!data || suggestions.isPending) return <div className={styles.rememberGrid}><Skeleton height={220} /><Skeleton height={220} /></div>;
+  if (!data) return <section className={styles.remember} aria-labelledby="remember-title">
+    <h2 id="remember-title">今天要记得</h2>
+    {insights.isError
+      ? <Failure onRetry={() => void insights.refetch()}>暂时无法读取重要日子和联系提醒。</Failure>
+      : <div className={styles.rememberGrid}><Skeleton height={220} /><Skeleton height={220} /></div>}
+  </section>;
   const dates = (data.upcoming_dates ?? []).filter((item) => (item.days_until ?? 0) <= SOON_DAYS).slice(0, 3);
   // With the model on, its suggestions (which can be acted on) replace the plain dormant list.
   const suggested = suggestions.data?.enabled ? suggestions.data.people : null;
