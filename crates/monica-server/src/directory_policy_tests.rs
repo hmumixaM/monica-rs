@@ -52,6 +52,13 @@ async fn retained_contacts_backfill_directory_search_graph_and_preserve_history(
             .unwrap();
         }
     }
+    // Migrated notebook contacts carry a Monica provenance account in addition
+    // to their real source identity. It must not count as a second platform
+    // that turns an official WeChat account back into a person.
+    sqlx::query("INSERT INTO crm.identities(id,profile_id,provider,external_id,status) VALUES($1,$2,'monica','contact:synthetic-official','active')")
+        .bind(Uuid::new_v4()).bind(ids[0]).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.identities(id,profile_id,provider,external_id,status) VALUES($1,$2,'monica','contact:synthetic-native','active')")
+        .bind(Uuid::new_v4()).bind(ids[7]).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO crm.identities(id,profile_id,provider,external_id,status) VALUES($1,$2,'wechat',$3,'active')").bind(Uuid::new_v4()).bind(ids[6]).bind(externals[6]).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO crm.identities(id,profile_id,provider,external_id,status) VALUES($1,$2,'linkedin','synthetic-real-person','active')").bind(Uuid::new_v4()).bind(ids[4]).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO crm.audit_events(action,entity_type,entity_id) VALUES('profile.created','profile',$1)").bind(ids[5]).execute(&pool).await.unwrap();
@@ -80,10 +87,9 @@ async fn retained_contacts_backfill_directory_search_graph_and_preserve_history(
     }
     let edge = Uuid::new_v4();
     sqlx::query("INSERT INTO crm.relationship_edges(id,from_profile_id,to_profile_id,relationship_type) VALUES($1,$2,$3,'synthetic')").bind(edge).bind(ids[0]).bind(ids[2]).execute(&pool).await.unwrap();
-    sqlx::raw_sql(&migrations.iter().find(|m| m.version == 78).unwrap().sql)
-        .execute(&pool)
-        .await
-        .unwrap();
+    for migration in migrations.iter().filter(|m| m.version >= 78) {
+        sqlx::raw_sql(&migration.sql).execute(&pool).await.unwrap();
+    }
     let kinds:Vec<Option<String>>=sqlx::query_scalar("SELECT crm.wechat_contact_kind(external,payload) FROM (VALUES ('wxid_x','{\"verify_flag\":8}'::jsonb),('wxid_x','{\"verify_flag\":56}'),('wxid_x','{\"verify_flag\":5}'),('service@openim','{\"verify_flag\":24}'),('wxid_x','{\"verify_flag\":\"bad\"}'),('wxid_x','{\"verify_flag\":9999999999999999999999999999}'),('wxid_x','{}'))x(external,payload)").fetch_all(&pool).await.unwrap();
     assert_eq!(
         kinds,
