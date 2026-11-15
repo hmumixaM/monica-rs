@@ -110,7 +110,22 @@ CREATE TRIGGER classify_contact AFTER INSERT ON crm.legacy_chatlog_history
 
 -- Existing migration snapshots retain every raw contact row, including contacts
 -- excluded by the old prefix-only reader. Rebuild from those local receipts.
-DO $$DECLARE r record; BEGIN
+DO $$DECLARE r record; participant jsonb; BEGIN
+ -- Already-projected native receipts may be the only retained copy of a
+ -- contact's verification flag. Unchanged replays do not run the new trigger.
+ FOR r IN SELECT e.metadata,e.connection_id,e.external_id,e.revision,
+   coalesce(v.observed_at,c.created_at) observed_at
+  FROM crm.connection_evidence e JOIN crm.source_connections c ON c.id=e.connection_id
+  LEFT JOIN wechat.connection_revision_refs v ON v.connection_id=e.connection_id AND v.external_id=e.external_id AND v.revision=e.revision
+  WHERE c.provider='wechat' AND e.kind='contact'
+ LOOP
+  FOR participant IN SELECT value FROM jsonb_array_elements(CASE WHEN jsonb_typeof(r.metadata->'participants')='array' THEN r.metadata->'participants' ELSE '[]'::jsonb END) LOOP
+   IF nullif(participant->>'id','') IS NOT NULL THEN
+    PERFORM crm.observe_wechat_contact(participant->>'id',r.metadata,r.observed_at,
+     'connection:'||r.connection_id||':'||r.external_id||':'||lpad(r.revision::text,20,'0'));
+   END IF;
+  END LOOP;
+ END LOOP;
  FOR r IN SELECT a.external_id,f.value,f.observed_at,f.object_id,f.source_version
   FROM crm.source_fields f JOIN crm.source_accounts a ON a.id=f.account_id
   WHERE a.provider='wechat' AND f.field_key IN('wechat.verify_flag','verify_flag')

@@ -7,7 +7,8 @@ reported public account has `verify_flag=24`; the requested enterprise contact
 uses `@openim`, `local_type=5`, and `verify_flag=0`.
 
 Migration 78 builds a derived classification head from the already archived
-Chatlog contact rows and saved verification fields. It does not archive/delete
+Chatlog contact rows, saved verification fields and projected native contact
+journal/evidence. It does not archive/delete
 profiles, rewrite their fields, reimport Next, or change original source rows.
 The head retains observation time and a key back to the existing immutable
 source evidence. Future contact journal projection and archived contact inserts
@@ -32,10 +33,12 @@ Focused verification uses generated data and disposable local PostgreSQL
 databases only:
 
 - One upgrade/HTTP regression starts with migrations 1–77, eight existing
-  profiles and archived contact evidence, then applies 78. It verifies official,
+  profiles and archived/native-only contact evidence, then applies 78. It verifies official,
   enterprise, ordinary, archived, mixed, manual, identity-only and native-owner
   cases; malformed flags; profile/list/directory/search/graph/home/metrics reads;
   retained raw rows; correction, stale replay and cached directory invalidation.
+  It also exercises the real matching loader/queue to distinguish an archived
+  linked account from a genuinely unlinked same-name discovery candidate.
 - The 12 connection integration tests pass with `--test-threads=1`, including
   the new real journal-to-projection check for ordinary/`gh_` official accounts,
   enterprise contacts, raw metadata, replay and prevention of automatic people.
@@ -44,6 +47,14 @@ databases only:
 - Initial concurrent connection tests exhausted the local PostgreSQL lock table
   while applying migration 30. Serial execution passed without any database
   configuration change. This was not a production/NAS test.
+
+Independent review `bb-20261114-908ba597` found two medium issues: a NULL
+directory join admitted archived accounts to matching, and upgrade omitted
+native-only retained classification evidence. Both have scoped repairs and
+regressions. The repaired upgrade/HTTP test passes in 1.03s. Core lib/connection
+and server all-target Clippy passed before repair; full-workspace Clippy hits
+pre-existing unchanged AI test warnings. The final repaired diff requires a new
+independent review before merge; the first review does not certify the repair.
 
 The NAS still runs its pinned old version and schema while the detached copy
 chain is active. This change must be reviewed, merged and packaged before a

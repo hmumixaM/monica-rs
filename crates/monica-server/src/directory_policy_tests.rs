@@ -57,10 +57,23 @@ async fn retained_contacts_backfill_directory_search_graph_and_preserve_history(
     sqlx::query("INSERT INTO crm.audit_events(action,entity_type,entity_id) VALUES('profile.created','profile',$1)").bind(ids[5]).execute(&pool).await.unwrap();
     let cid:Uuid=sqlx::query_scalar("SELECT id FROM crm.source_connections WHERE provider='wechat' AND external_account='legacy-default'").fetch_one(&pool).await.unwrap();
     sqlx::query("INSERT INTO crm.connection_people(connection_id,external_id,display_name,resolved_profile_id) VALUES($1,$2,'Synthetic native',$3)").bind(cid).bind(externals[7]).bind(ids[7]).execute(&pool).await.unwrap();
+    let native = json!({"kind":"contact","raw_contact":{"verify_flag":24},"participants":[{"id":externals[7],"role":"contact"}]});
+    let hash = monica_core::identity::observation_hash(&native);
+    sqlx::query("INSERT INTO wechat.connection_payloads(content_hash,payload) VALUES($1,$2)")
+        .bind(&hash)
+        .bind(&native)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO wechat.connection_revision_refs(connection_id,external_id,revision,content_hash,observed_at) VALUES($1,'native-contact',1,$2,'2026-01-01')").bind(cid).bind(&hash).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO wechat.connection_record_heads(connection_id,external_id,revision,content_hash) VALUES($1,'native-contact',1,$2)").bind(cid).bind(&hash).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.connection_evidence(id,connection_id,external_id,revision,content_hash,kind,included,metadata) VALUES($1,$2,'native-contact',1,$3,'contact',true,$4)").bind(Uuid::new_v4()).bind(cid).bind(&hash).bind(&native).execute(&pool).await.unwrap();
     let snapshot = Uuid::new_v4();
     sqlx::query("INSERT INTO crm.legacy_chatlog_snapshots(id,manifest,own_id,created_at) VALUES($1,'{}','synthetic-own','2026-01-01')").bind(snapshot).execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO crm.legacy_chatlog_tables(snapshot_id,file_name,table_name,mode,expected,reason) VALUES($1,'contact/contact.db','contact','history',8,'synthetic')").bind(snapshot).execute(&pool).await.unwrap();
-    for (i, external) in externals.iter().enumerate() {
+    sqlx::query("INSERT INTO crm.legacy_chatlog_tables(snapshot_id,file_name,table_name,mode,expected,reason) VALUES($1,'contact/contact.db','contact','history',7,'synthetic')").bind(snapshot).execute(&pool).await.unwrap();
+    // The native contact has no Chatlog/source-field fallback: migration must
+    // actually read its already-projected native receipt.
+    for (i, external) in externals.iter().take(7).enumerate() {
         let flag = if [0, 4, 5, 7].contains(&i) { 24 } else { 0 };
         sqlx::query("INSERT INTO crm.legacy_chatlog_history VALUES($1,'contact/contact.db','contact',$2,$3)")
             .bind(snapshot).bind(i as i64).bind(json!({"username":external,"verify_flag":flag,"local_type":if i==1 {5}else{1}})).execute(&pool).await.unwrap();
@@ -96,7 +109,38 @@ async fn retained_contacts_backfill_directory_search_graph_and_preserve_history(
         "official-only profiles are hidden, enterprise/mixed/manual contacts survive, archived decisions stay archived"
     );
     let (raw_profiles,raw_contacts,raw_edges):(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM crm.profiles),(SELECT count(*) FROM crm.legacy_chatlog_history),(SELECT count(*) FROM crm.relationship_edges)").fetch_one(&pool).await.unwrap();
-    assert_eq!((raw_profiles, raw_contacts, raw_edges), (8, 8, 1));
+    assert_eq!((raw_profiles, raw_contacts, raw_edges), (8, 7, 1));
+    let retained_native:Value=sqlx::query_scalar("SELECT payload FROM wechat.connection_records WHERE connection_id=$1 AND external_id='native-contact'").bind(cid).fetch_one(&pool).await.unwrap();
+    assert_eq!(retained_native, native);
+    // Matching must distinguish a genuinely unlinked account from a link to a
+    // profile omitted by the directory view. Both have the same candidate name.
+    sqlx::query(
+        "UPDATE crm.source_accounts SET display_name='Synthetic person' WHERE external_id=ANY($1)",
+    )
+    .bind(vec![externals[2], externals[3]])
+    .execute(&pool)
+    .await
+    .unwrap();
+    let unlinked = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'instagram','synthetic-unlinked','person','Synthetic person')").bind(unlinked).execute(&pool).await.unwrap();
+    let matching = monica_core::link_matching::load(&pool).await.unwrap();
+    assert!(
+        !matching
+            .accounts
+            .iter()
+            .any(|a| a.profile_id.as_deref() == Some(&ids[3].to_string()))
+    );
+    assert!(
+        matching
+            .accounts
+            .iter()
+            .any(|a| a.account_id == unlinked.to_string() && a.profile_id.is_none())
+    );
+    assert!(
+        !json!(monica_core::link_matching::queue(&matching))
+            .to_string()
+            .contains(&ids[3].to_string())
+    );
 
     let (s, actor, extra, _root) = super::tests::fixture(&pool).await;
     sqlx::query("INSERT INTO crm.sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 hour')").bind(Uuid::new_v4()).bind(actor).bind(monica_core::identity::bytes_hash(b"directory-policy-session")).execute(&pool).await.unwrap();
