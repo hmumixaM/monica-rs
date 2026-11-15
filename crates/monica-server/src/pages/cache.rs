@@ -119,17 +119,18 @@ pub(crate) async fn version(s: &AppState, path: &str) -> Result<String> {
         .and_then(|tail| tail.split('/').next())
         .and_then(|id| Uuid::parse_str(id).ok())
         .or_else(|| (path == "/api/v1/metrics/snapshots").then(Uuid::nil));
-    let scopes: Vec<_> = domains.iter().map(|value| (*value).to_owned()).collect();
+    let mut scopes: Vec<_> = domains.iter().map(|value| (*value).to_owned()).collect();
+    scopes.push("directory".to_owned());
     let value:String=sqlx::query_scalar(r#"WITH RECURSIVE owners(id,depth) AS (
  SELECT $2::uuid,0 WHERE $2::uuid IS NOT NULL UNION ALL SELECT r.new_profile_id,o.depth+1 FROM crm.profile_redirects r JOIN owners o ON o.id=r.old_profile_id WHERE o.depth<32),
  subjects AS(SELECT id FROM owners UNION SELECT CASE WHEN e.from_profile_id=o.id THEN e.to_profile_id ELSE e.from_profile_id END FROM owners o JOIN crm.relationship_edges e ON o.id IN(e.from_profile_id,e.to_profile_id)
  UNION SELECT m.group_profile_id FROM owners o JOIN crm.current_group_memberships m ON m.person_profile_id=o.id WHERE m.left_at IS NULL),
  tokens AS(
  SELECT v.domain,'subject:'||v.subject::text subject,v.version FROM crm.cache_versions v
- WHERE $2::uuid IS NOT NULL AND v.domain=ANY($1) AND v.domain NOT IN('organization','tag','community') AND v.subject IN(SELECT id FROM subjects)
+ WHERE $2::uuid IS NOT NULL AND v.domain=ANY($1) AND v.domain NOT IN('organization','tag','community','directory') AND v.subject IN(SELECT id FROM subjects)
  UNION ALL SELECT v.domain,'shard:'||v.shard::text,v.version FROM crm.cache_domain_versions v
- WHERE v.domain=ANY($1) AND($2::uuid IS NULL OR v.domain IN('organization','tag','community')))
- SELECT md5(coalesce(string_agg(domain||':'||subject||':'||version::text,',' ORDER BY domain,subject) FILTER(WHERE domain IN('profile','identity','organization','tag','community','media','media-assets')),''))||':'||md5(coalesce(string_agg(domain||':'||subject||':'||version::text,',' ORDER BY domain,subject),''))||CASE WHEN $3 THEN ':'||floor(extract(epoch FROM now())/$4::integer)::bigint::text ELSE '' END FROM tokens"#)
+ WHERE v.domain=ANY($1) AND($2::uuid IS NULL OR v.domain IN('organization','tag','community','directory')))
+ SELECT md5(coalesce(string_agg(domain||':'||subject||':'||version::text,',' ORDER BY domain,subject) FILTER(WHERE domain IN('profile','identity','organization','tag','community','media','media-assets','directory')),''))||':'||md5(coalesce(string_agg(domain||':'||subject||':'||version::text,',' ORDER BY domain,subject),''))||CASE WHEN $3 THEN ':'||floor(extract(epoch FROM now())/$4::integer)::bigint::text ELSE '' END FROM tokens"#)
         .bind(scopes).bind(profile).bind(timed).bind(if aggregate(path) { 15i32 } else { 60i32 }).fetch_one(&s.pool).await?;
     Ok(value)
 }
