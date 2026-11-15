@@ -89,15 +89,13 @@ fn truth(value: Option<&Value>, default: bool) -> bool {
         Some(Value::Object(o)) => !o.is_empty(),
     }
 }
-fn message_direction(value: &Value, binding: Option<&MessageBinding>) -> &'static str {
+fn message_direction(value: &Value, profile: Option<Uuid>, sender: Option<Uuid>) -> &'static str {
     match value.get("direction").and_then(Value::as_str) {
         Some("received") => "received",
         Some("sent") => "sent",
         Some("unknown") => "unknown",
         _ => {
-            if binding
-                .is_some_and(|b| b.profile_id.is_some() && b.sender_profile_id == b.profile_id)
-            {
+            if profile.is_some() && sender == profile {
                 "received"
             } else {
                 "sent"
@@ -120,6 +118,10 @@ pub struct MessageBinding {
     pub profile_id: Option<Uuid>,
     pub sender_profile_id: Option<Uuid>,
     pub conversation_type: String,
+    #[serde(default)]
+    pub infer_profile: bool,
+    #[serde(default)]
+    pub infer_sender: bool,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Revision {
@@ -784,32 +786,40 @@ async fn project_revision_reserved(
             .filter(|(_, _, own)| !*own)
             .map(|(p, _, _)| *p)
             .collect();
-        let profile = row.binding.as_ref().map_or_else(
-            || {
-                if direct && counterparts.len() == 1 {
-                    counterparts.first().copied()
-                } else {
-                    None
-                }
-            },
-            |b| b.profile_id,
-        );
+        let profile = row
+            .binding
+            .as_ref()
+            .filter(|b| !b.infer_profile)
+            .map_or_else(
+                || {
+                    if direct && counterparts.len() == 1 {
+                        counterparts.first().copied()
+                    } else {
+                        None
+                    }
+                },
+                |b| b.profile_id,
+            );
         sqlx::query("INSERT INTO crm.conversations(id,provider,account,external_id,profile_id,conversation_type,connection_id,source_external_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET profile_id=excluded.profile_id").bind(conversation).bind(provider.schema()).bind(cid.to_string()).bind(key).bind(profile).bind(typ).bind(cid).bind(thread).execute(&mut **tx).await?;
         let sender = participants
             .iter()
             .find(|p| string(p, "role", "") == "sender")
             .map_or("", |p| string(p, "id", ""));
-        let sender_profile = row.binding.as_ref().map_or_else(
-            || {
-                people
-                    .iter()
-                    .find(|(_, role, _)| *role == "sender")
-                    .map(|(p, _, _)| *p)
-            },
-            |b| b.sender_profile_id,
-        );
+        let sender_profile = row
+            .binding
+            .as_ref()
+            .filter(|b| !b.infer_sender)
+            .map_or_else(
+                || {
+                    people
+                        .iter()
+                        .find(|(_, role, _)| *role == "sender")
+                        .map(|(p, _, _)| *p)
+                },
+                |b| b.sender_profile_id,
+            );
         sqlx::query("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,sender_profile_id,occurred_at,body,message_type,direction) VALUES($1,$2,$3,$4,$5,$6,$7,$8::text::timestamptz,$9,$10,$11) ON CONFLICT(message_id) DO UPDATE SET conversation_id=excluded.conversation_id,sender=excluded.sender,sender_profile_id=excluded.sender_profile_id,occurred_at=excluded.occurred_at,body=excluded.body,message_type=excluded.message_type,direction=excluded.direction,tombstone=false")
- .bind(eid).bind(conversation).bind(provider.schema()).bind(cid.to_string()).bind(&row.external_id).bind(sender).bind(sender_profile).bind(at).bind(message_text(&value)).bind(string(&value,"message_type","text")).bind(message_direction(&value,row.binding.as_ref())).execute(&mut **tx).await?;
+ .bind(eid).bind(conversation).bind(provider.schema()).bind(cid.to_string()).bind(&row.external_id).bind(sender).bind(sender_profile).bind(at).bind(message_text(&value)).bind(string(&value,"message_type","text")).bind(message_direction(&value,profile,sender_profile)).execute(&mut **tx).await?;
         sqlx::query("UPDATE crm.conversations SET source_display_name=crm.conversation_source_name(conversation_type,$2),source_display_at=$3::text::timestamptz WHERE id=$1 AND (source_display_at IS NULL OR source_display_at<=$3::text::timestamptz) AND crm.conversation_source_name(conversation_type,$2) IS NOT NULL").bind(conversation).bind(&metadata).bind(at).execute(&mut **tx).await?;
         sqlx::query(
             "UPDATE crm.connection_evidence SET message_id=$2,conversation_id=$3 WHERE id=$1",

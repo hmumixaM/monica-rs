@@ -214,6 +214,13 @@ table='Msg_'+hashlib.md5(b'wxid_synthetic_peer').hexdigest();db=sqlite3.connect(
     .await
     .unwrap();
     assert_eq!(directions, vec!["received", "sent"]);
+    let contact = Uuid::new_v5(&cid, b"contact:wxid_synthetic_peer");
+    let attributed:Vec<(Option<Uuid>,Option<Uuid>)>=sqlx::query_as("SELECT c.profile_id,m.sender_profile_id FROM crm.message_search m JOIN crm.conversations c ON c.id=m.conversation_id WHERE c.connection_id=$1 ORDER BY m.occurred_at").bind(cid).fetch_all(&pool).await.unwrap();
+    assert_eq!(
+        attributed,
+        vec![(Some(contact), Some(contact)), (Some(contact), None)],
+        "source rows without CRM annotations must use the already-resolved contact"
+    );
     let people:i64=sqlx::query_scalar("SELECT count(*) FROM crm.connection_people WHERE connection_id=$1 AND external_id='wxid_synthetic_peer' AND display_name='wxid_synthetic_peer'").bind(cid).fetch_one(&pool).await.unwrap();
     assert_eq!(people, 1);
     // A disabled connection preserves unacknowledged local source work.

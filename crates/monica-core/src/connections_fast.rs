@@ -154,30 +154,38 @@ pub(super) async fn project_new_messages(
             .filter(|(_, _, own)| !*own)
             .map(|(p, _, _)| *p)
             .collect();
-        let profile = row.binding.as_ref().map_or_else(
-            || {
-                if direct && counterparts.len() == 1 {
-                    counterparts.first().copied()
-                } else {
-                    None
-                }
-            },
-            |b| b.profile_id,
-        );
+        let profile = row
+            .binding
+            .as_ref()
+            .filter(|b| !b.infer_profile)
+            .map_or_else(
+                || {
+                    if direct && counterparts.len() == 1 {
+                        counterparts.first().copied()
+                    } else {
+                        None
+                    }
+                },
+                |b| b.profile_id,
+            );
         conversations.insert(conversation,json!({"id":conversation,"external_id":format!("{typ}:{thread}"),"source_external_id":thread,"profile_id":profile,"conversation_type":typ}));
         let sender = ps
             .iter()
             .find(|p| string(p, "role", "") == "sender")
             .map_or("", |p| string(p, "id", ""));
-        let sender_profile = row.binding.as_ref().map_or_else(
-            || {
-                resolved
-                    .iter()
-                    .find(|(_, role, _)| *role == "sender")
-                    .map(|(p, _, _)| *p)
-            },
-            |b| b.sender_profile_id,
-        );
+        let sender_profile = row
+            .binding
+            .as_ref()
+            .filter(|b| !b.infer_sender)
+            .map_or_else(
+                || {
+                    resolved
+                        .iter()
+                        .find(|(_, role, _)| *role == "sender")
+                        .map(|(p, _, _)| *p)
+                },
+                |b| b.sender_profile_id,
+            );
         if let Some(binding) = &row.binding {
             for (profile, role) in [
                 (binding.profile_id, "participant"),
@@ -190,7 +198,7 @@ pub(super) async fn project_new_messages(
                 }
             }
         }
-        messages.push(json!({"message_id":eid,"conversation_id":conversation,"external_id":row.external_id,"sender":sender,"sender_profile_id":sender_profile,"occurred_at":value["occurred_at"],"body":message_text(value),"message_type":string(value,"message_type","text"),"direction":message_direction(value,row.binding.as_ref())}));
+        messages.push(json!({"message_id":eid,"conversation_id":conversation,"external_id":row.external_id,"sender":sender,"sender_profile_id":sender_profile,"occurred_at":value["occurred_at"],"body":message_text(value),"message_type":string(value,"message_type","text"),"direction":message_direction(value,profile,sender_profile)}));
         let mut metadata = value.clone();
         for key in ["body", "raw_body", "raw_message", "raw_revoke"] {
             metadata
