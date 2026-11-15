@@ -31,6 +31,8 @@ struct Params {
     cursor: Option<String>,
     limit: Option<i64>,
     before: Option<String>,
+    since: Option<String>,
+    until: Option<String>,
     before_id: Option<Uuid>,
     conversation_id: Option<Uuid>,
     conversation_type: Option<String>,
@@ -96,8 +98,8 @@ async fn profile(
     read(&s, Some(id), q).await
 }
 async fn read(s: &AppState, profile: Option<Uuid>, q: Params) -> Result<Json<Value>> {
-    if let Some(before) = &q.before {
-        chrono::DateTime::parse_from_rfc3339(before).map_err(|_| invalid())?;
+    for stamp in [&q.before, &q.since, &q.until].into_iter().flatten() {
+        chrono::DateTime::parse_from_rfc3339(stamp).map_err(|_| invalid())?;
     }
     if q.conversation_type
         .as_deref()
@@ -126,6 +128,8 @@ async fn read(s: &AppState, profile: Option<Uuid>, q: Params) -> Result<Json<Val
     // includes only that person's speech, even when a room has newer messages
     // from other members. Candidate IDs stay small; bodies/media join afterward.
     let filters = r#"NOT m.tombstone
+      AND ($12::timestamptz IS NULL OR m.occurred_at>=$12::timestamptz)
+      AND ($13::timestamptz IS NULL OR m.occurred_at<$13::timestamptz)
       AND ($3::timestamptz IS NULL OR (m.occurred_at,m.message_id)<($3::timestamptz,coalesce($4::uuid,'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)))
       AND ($5::text IS NULL OR position(lower($5) in lower(m.body))>0)
       AND ($6::text IS NULL OR (m.occurred_at>=($6||'-01')::timestamp AT TIME ZONE $7 AND m.occurred_at<(($6||'-01')::timestamp+interval '1 month') AT TIME ZONE $7))
@@ -178,6 +182,8 @@ async fn read(s: &AppState, profile: Option<Uuid>, q: Params) -> Result<Json<Val
         .bind(q.conversation_type)
         .bind(q.limit.unwrap_or(50).clamp(1, 100))
         .bind(q.include_group_speech.unwrap_or(false))
+        .bind(q.since)
+        .bind(q.until)
         .fetch_all(&s.pool)
         .await?;
     // Resolve attachments only after the global message page is bounded.
@@ -206,6 +212,38 @@ async fn read(s: &AppState, profile: Option<Uuid>, q: Params) -> Result<Json<Val
     }
     Ok(Json(json!(rows)))
 }
+pub(super) struct LocalSpeechPage {
+    pub profile_id: Uuid,
+    pub conversation_id: Uuid,
+    pub query: Option<String>,
+    pub before: Option<String>,
+    pub before_id: Option<Uuid>,
+    pub since: Option<String>,
+    pub until: Option<String>,
+    pub limit: i64,
+}
+/// The group dialog shares the same indexed author scope, pagination, media and
+/// immutable citation service as person messages and Agent/MCP reads.
+pub(super) async fn local_group_speech(s: &AppState, page: LocalSpeechPage) -> Result<Json<Value>> {
+    read(
+        s,
+        Some(page.profile_id),
+        Params {
+            conversation_id: Some(page.conversation_id),
+            conversation_type: Some("group".into()),
+            include_group_speech: Some(true),
+            q: page.query,
+            before: page.before,
+            before_id: page.before_id,
+            since: page.since,
+            until: page.until,
+            limit: Some(page.limit),
+            ..Default::default()
+        },
+    )
+    .await
+}
+
 async fn months(
     State(s): State<AppState>,
     h: HeaderMap,
@@ -514,6 +552,60 @@ mod tests {
         assert!(empty.as_array().unwrap().is_empty());
         let scoped=request(router.clone(),&format!("/api/v1/profiles/{person}/messages?include_group_speech=true&conversation_id={conversation}")).await;
         assert_eq!(scoped.as_array().unwrap().len(), 2);
+        // The person dialog must work from imported records without a Chatlog
+        // URL or a linked WeChat account. Cursor pages preserve equal-time IDs.
+        let local = request(
+            router.clone(),
+            &format!("/api/v1/profiles/{person}/group-speech?limit=1"),
+        )
+        .await;
+        assert_eq!(local["storage"], "local");
+        assert_eq!(local["scope"], "imported_records");
+        assert_eq!(
+            local["groups"][0]["conversation_id"],
+            conversation.to_string()
+        );
+        let next = &local["groups"][0]["next"];
+        let later=request(router.clone(),&format!("/api/v1/profiles/{person}/group-speech?conversation_id={conversation}&limit=1&before={}&before_id={}",next["before"].as_str().unwrap().replace('+',"%2B"),next["before_id"].as_str().unwrap())).await;
+        assert_ne!(
+            local["groups"][0]["messages"][0]["id"],
+            later["groups"][0]["messages"][0]["id"]
+        );
+        assert!(later["groups"][0]["next"].is_null());
+        let day = request(
+            router.clone(),
+            &format!(
+                "/api/v1/profiles/{person}/group-speech?q=needle&since=2026-01-01&until=2026-01-01"
+            ),
+        )
+        .await;
+        assert_eq!(day["groups"][0]["messages"].as_array().unwrap().len(), 1);
+        assert_eq!(day["groups"][0]["messages"][0]["id"], legacy.to_string());
+        assert!(
+            request(
+                router.clone(),
+                &format!(
+                    "/api/v1/profiles/{person}/group-speech?since=2026-01-02&until=2026-01-02"
+                )
+            )
+            .await["groups"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        let unlinked_room = Uuid::new_v4();
+        sqlx::query("INSERT INTO crm.conversations(id,provider,account,external_id,conversation_type) VALUES($1,'whatsapp','offline','unlinked-native-room','group')").bind(unlinked_room).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,sender_profile_id,occurred_at,body) SELECT gen_random_uuid(),$1,'whatsapp','offline',n::text,'other',$2,'2026-01-01T12:00:00Z','Identical text' FROM generate_series(1,2) n").bind(unlinked_room).bind(other).execute(&pool).await.unwrap();
+        let native_room = request(
+            router.clone(),
+            &format!(
+                "/api/v1/profiles/{other}/group-speech?conversation_id={unlinked_room}&limit=1"
+            ),
+        )
+        .await;
+        assert!(native_room["groups"][0]["group_id"].is_null());
+        assert_eq!(native_room["groups"][0]["provider"], "whatsapp");
+        assert!(native_room["groups"][0]["next"].is_object());
         let whole_room = request(
             router.clone(),
             &format!("/api/v1/conversations/{conversation}/messages?limit=1"),

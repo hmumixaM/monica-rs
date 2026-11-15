@@ -19,6 +19,9 @@ test('real Rust populated directory, calendar, orbit, map and profile overview',
  await expect(page.getByRole('heading',{name:/^Synthetic empty profile/})).toBeVisible();
  await expect(page.getByText('还没有关联的来源记录。',{exact:true})).toBeVisible();
  const emptyProfile=page.url();
+ await page.getByRole('button',{name:'群聊发言',exact:true}).click();
+ const speech=page.getByRole('dialog',{name:'群聊发言',exact:true});await expect(speech.getByText('已导入的记录中没有找到这个人的群聊发言。',{exact:true})).toBeVisible();
+ await page.keyboard.press('Escape');await expect(speech).toHaveCount(0);
  await coverage.getByText('关联邮箱或手机号',{exact:true}).click();
  for(const width of [1440,390]){await page.setViewportSize({width,height:1000});for(const theme of ['light','dark']){
   await page.evaluate(t=>{document.documentElement.dataset.theme=t;window.scrollTo(0,0);},theme);

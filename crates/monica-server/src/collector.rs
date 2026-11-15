@@ -9,7 +9,7 @@ use axum::{
 use monica_core::{adapter, collector};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{collections::BTreeSet, sync::Arc, time::Duration};
+use std::time::Duration;
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 type Result<T> = std::result::Result<T, ApiError>;
@@ -205,12 +205,14 @@ async fn cancel(
 #[derive(Deserialize)]
 struct SpeechQuery {
     group_id: Option<Uuid>,
+    conversation_id: Option<Uuid>,
     q: Option<String>,
     since: Option<String>,
     until: Option<String>,
     limit: Option<i64>,
     group_offset: Option<i64>,
-    window_index: Option<usize>,
+    before: Option<String>,
+    before_id: Option<Uuid>,
 }
 async fn speech(
     State(s): State<AppState>,
@@ -219,18 +221,61 @@ async fn speech(
     Query(q): Query<SpeechQuery>,
 ) -> Result<Json<Value>> {
     user(&s, &h).await?;
-    let base = std::env::var("MONICA_CHATLOG_ALPHA_URL")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .ok_or(ApiError(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Chatlog Alpha is not configured",
-        ))?;
-    let client = Arc::new(collector::Chatlog::new(&base).map_err(operation)?);
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    let limit = q.limit.unwrap_or(50).clamp(1, 200) as usize;
+    tokio::time::timeout(Duration::from_secs(5), local_speech(&s, id, q))
+        .await
+        .map_err(|_| {
+            ApiError(
+                StatusCode::GATEWAY_TIMEOUT,
+                "Local group speech query timed out; retry",
+            )
+        })?
+}
+// Old Chatlog filters accepted calendar days in the installation's Chicago
+// timezone. Retain that input while storing/returning timestamps in UTC.
+async fn speech_boundary(s: &AppState, value: Option<String>, end: bool) -> Result<Option<String>> {
+    let Some(value) = value.filter(|v| !v.trim().is_empty()) else {
+        return Ok(None);
+    };
+    let value = value.trim();
+    if let Ok(at) = chrono::DateTime::parse_from_rfc3339(value) {
+        return Ok(Some(at.to_rfc3339()));
+    }
+    let local = if let Ok(day) = value.parse::<chrono::NaiveDate>() {
+        let day = if end {
+            day.succ_opt()
+                .ok_or_else(|| invalid("Invalid speech date"))?
+        } else {
+            day
+        };
+        day.and_hms_opt(0, 0, 0).unwrap()
+    } else {
+        chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")
+            .map_err(|_| invalid("Invalid speech date"))?
+    };
+    let at: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT $1::timestamp AT TIME ZONE 'America/Chicago'")
+            .bind(local)
+            .fetch_one(&s.pool)
+            .await?;
+    Ok(Some(at.to_rfc3339()))
+}
+async fn local_speech(s: &AppState, id: Uuid, q: SpeechQuery) -> Result<Json<Value>> {
+    let exists:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.profiles WHERE id=$1 AND profile_type='person' AND archived_at IS NULL)")
+        .bind(id).fetch_one(&s.pool).await?;
+    if !exists {
+        return Err(missing("人物资料不可用"));
+    }
+    if q.before_id.is_some() != q.before.is_some() {
+        return Err(invalid("Speech cursor requires time and ID"));
+    }
+    if let Some(before) = &q.before {
+        chrono::DateTime::parse_from_rfc3339(before)
+            .map_err(|_| invalid("Invalid speech cursor"))?;
+    }
+    let since = speech_boundary(s, q.since, false).await?;
+    let until = speech_boundary(s, q.until, true).await?;
+    let limit = q.limit.unwrap_or(50).clamp(1, 99) as usize;
     let offset = q.group_offset.unwrap_or(0).max(0);
-    let window = q.window_index.unwrap_or(0).min(8);
     let _memory = s
         .resources
         .acquire(monica_core::resources::TaskResources {
@@ -239,174 +284,59 @@ async fn speech(
         })
         .await
         .map_err(operation)?;
-    let mut tx = s.pool.begin().await?;
-    sqlx::query("SET LOCAL statement_timeout='5000'")
-        .execute(&mut *tx)
-        .await?;
-    let senders:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('external_id',a.external_id,'username',coalesce(a.username,'')) FROM crm.source_account_links l JOIN crm.source_accounts a ON a.id=l.account_id WHERE l.profile_id=$1 AND a.provider='wechat' AND a.object_kind='person' AND a.external_id NOT LIKE '%@chatroom' AND a.external_id NOT LIKE 'gh_%' AND a.external_id NOT LIKE '%@openim' ORDER BY a.external_id").bind(id).fetch_all(&mut *tx).await?;
-    if senders.is_empty() {
-        return Err(missing("这个人没有微信号"));
-    }
-    let keys = Arc::new(
-        senders
-            .iter()
-            .flat_map(|s| [s["external_id"].as_str(), s["username"].as_str()])
-            .flatten()
-            .filter(|s| !s.trim().is_empty())
-            .map(|s| collector::casefold(s.trim()))
-            .collect::<BTreeSet<_>>(),
+    let filter = "NOT m.tombstone AND ($2::text IS NULL OR position(lower($2) in lower(m.body))>0) AND ($3::timestamptz IS NULL OR m.occurred_at>=$3::timestamptz) AND ($4::timestamptz IS NULL OR m.occurred_at<$4::timestamptz)";
+    let query = format!(
+        "WITH owned_rooms AS (SELECT DISTINCT m.conversation_id FROM crm.message_search m WHERE m.sender_profile_id=$1 AND {filter} UNION SELECT DISTINCT m.conversation_id FROM crm.message_search m JOIN crm.source_account_links l ON l.account_id=m.sender_account_id AND l.profile_id=$1 WHERE m.sender_profile_id IS NULL AND {filter}) SELECT jsonb_build_object('conversation_id',c.id,'group_id',c.profile_id,'provider',c.provider,'name',coalesce(p.display_name,c.source_display_name,a.display_name,c.external_id),'chat',c.external_id) FROM owned_rooms own JOIN crm.conversations c ON c.id=own.conversation_id LEFT JOIN crm.profiles p ON p.id=c.profile_id LEFT JOIN crm.source_accounts a ON a.id=c.source_account_id WHERE c.conversation_type='group' AND ($5::uuid IS NULL OR c.profile_id=$5) AND ($6::uuid IS NULL OR c.id=$6) ORDER BY coalesce(p.display_name,c.source_display_name,a.display_name,c.external_id),c.id OFFSET $7 LIMIT 11"
     );
-    let mut groups:Vec<Value>=sqlx::query_scalar("WITH rooms AS (SELECT DISTINCT gp.id AS group_id,g.display_name AS name,g.external_id AS chat FROM crm.source_account_links l JOIN crm.source_group_memberships m ON m.person_account_id=l.account_id JOIN crm.source_accounts g ON g.id=m.group_account_id LEFT JOIN crm.source_account_links gl ON gl.account_id=g.id LEFT JOIN crm.profiles gp ON gp.id=gl.profile_id AND gp.profile_type='group' WHERE l.profile_id=$1 AND m.left_at IS NULL AND g.object_kind='group' UNION SELECT DISTINCT c.profile_id,p.display_name,c.external_id FROM crm.message_search m JOIN crm.conversations c ON c.id=m.conversation_id LEFT JOIN crm.profiles p ON p.id=c.profile_id WHERE c.provider='wechat' AND c.conversation_type='group' AND NOT m.tombstone AND (m.sender_profile_id=$1 OR EXISTS(SELECT 1 FROM crm.source_account_links own WHERE own.account_id=m.sender_account_id AND own.profile_id=$1))) SELECT jsonb_build_object('group_id',group_id,'name',name,'chat',chat) FROM rooms WHERE ($2::uuid IS NULL OR group_id=$2) ORDER BY name NULLS LAST,chat OFFSET $3 LIMIT 11").bind(id).bind(q.group_id).bind(offset).fetch_all(&mut *tx).await?;
-    if q.group_id.is_some() && groups.is_empty() {
-        return Err(missing("这个人不在该群里"));
-    }
-    let next = if groups.len() > 10 {
-        groups.truncate(10);
+    let mut rooms: Vec<Value> = sqlx::query_scalar(&query)
+        .bind(id)
+        .bind(&q.q)
+        .bind(&since)
+        .bind(&until)
+        .bind(q.group_id)
+        .bind(q.conversation_id)
+        .bind(offset)
+        .fetch_all(&s.pool)
+        .await?;
+    let next = if rooms.len() > 10 {
+        rooms.truncate(10);
         Some(offset + 10)
     } else {
         None
     };
-    let query = q.q.unwrap_or_default();
-    let since = q.since.unwrap_or_default().trim().to_owned();
-    let until = q.until.unwrap_or_default().trim().to_owned();
-    let mut rooms = Vec::new();
-    let mut stored = Vec::new();
-    for group in &groups {
-        let remaining = deadline
-            .saturating_duration_since(tokio::time::Instant::now())
-            .as_millis()
-            .min(5000);
-        if remaining == 0 {
-            return Err(ApiError(
-                StatusCode::GATEWAY_TIMEOUT,
-                "Group speech query budget exhausted",
-            ));
-        }
-        sqlx::query("SELECT set_config('statement_timeout',$1,true)")
-            .bind(remaining.to_string())
-            .execute(&mut *tx)
-            .await?;
-        let chat = group["chat"].as_str().unwrap_or_default();
-        let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('time',to_char(m.occurred_at AT TIME ZONE 'America/Chicago','YYYY-MM-DD HH24:MI:SS'),'timestamp',extract(epoch from m.occurred_at),'sender',m.sender,'content',left(m.body,4000),'type',m.message_type) FROM crm.message_search m JOIN crm.conversations c ON c.id=m.conversation_id WHERE c.provider='wechat' AND c.external_id=$2 AND c.conversation_type='group' AND NOT m.tombstone AND (m.sender_profile_id=$1 OR EXISTS(SELECT 1 FROM crm.source_account_links own WHERE own.account_id=m.sender_account_id AND own.profile_id=$1)) ORDER BY m.occurred_at DESC,m.message_id DESC LIMIT 200").bind(id).bind(chat).fetch_all(&mut *tx).await?;
-        let saved = collector::imported_rows(&rows, &query, limit);
-        let mut room = group.clone();
-        room["name"] = group["name"]
-            .as_str()
-            .filter(|s| !s.is_empty())
-            .map_or(json!(chat), |s| json!(s));
-        room["messages"] = json!(saved);
-        room["partial"] = json!(true);
-        room["error"] = json!("读取尚未完成");
-        room["next_window"] = json!(window);
-        rooms.push(room);
-        stored.push(rows);
-    }
-    tx.commit().await?; // Release the DB connection before external reads.
-    let mut tasks = tokio::task::JoinSet::new();
-    let capacity = Arc::new(tokio::sync::Semaphore::new(2));
-    for (index, group) in groups.into_iter().enumerate() {
-        let client = client.clone();
-        let keys = keys.clone();
-        let query = query.clone();
-        let since = since.clone();
-        let until = until.clone();
-        let capacity = capacity.clone();
-        let resources = s.resources.clone();
-        let saved = stored[index].clone();
-        let mut room = rooms[index].clone();
-        tasks.spawn(async move {
-            let chat = group["chat"].as_str().unwrap_or_default();
-            if !chat.ends_with("@chatroom") {
-                room["partial"] = json!(false);
-                room["error"] = json!("这个群没有 Chatlog 房间号");
-                return (index, room);
-            }
-            let mut windows = vec![String::new()];
-            if since.is_empty() && until.is_empty() {
-                let days = saved
-                    .iter()
-                    .filter_map(|m| m["time"].as_str())
-                    .filter_map(|t| t.get(..10))
-                    .map(str::to_owned)
-                    .collect::<BTreeSet<_>>();
-                windows.extend(
-                    days.into_iter()
-                        .rev()
-                        .take(8)
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .rev(),
-                );
-            }
-            let mut collected = Vec::new();
-            for (position, when) in windows.iter().enumerate().skip(window) {
-                let _capacity = match capacity.acquire().await {
-                    Ok(p) => p,
-                    Err(_) => break,
-                };
-                let _network = match resources
-                    .acquire(monica_core::resources::TaskResources {
-                        network: 1,
-                        ..Default::default()
-                    })
-                    .await
-                {
-                    Ok(p) => p,
-                    Err(_) => break,
-                };
-                match client.history(chat, &since, &until, when).await {
-                    Ok(rows) => collected.extend(rows),
-                    Err(_) => {
-                        room["error"] = json!("Chatlog 读取失败；可继续读取");
-                        return (index, room);
-                    }
-                }
-                let mut messages = collector::imported_rows(&saved, &query, limit);
-                messages.extend(collector::filter_messages(&collected, &keys, &query, limit));
-                let mut seen = BTreeSet::new();
-                messages.retain(|m| {
-                    seen.insert((
-                        m["time"]
-                            .as_str()
-                            .unwrap_or_default()
-                            .chars()
-                            .take(10)
-                            .collect::<String>(),
-                        m["text"].as_str().unwrap_or_default().trim().to_owned(),
-                    ))
-                });
-                messages.sort_by(|a, b| a["time"].as_str().cmp(&b["time"].as_str()));
-                messages.truncate(limit);
-                room["messages"] = json!(messages);
-                room["next_window"] = if position + 1 < windows.len() {
-                    json!(position + 1)
-                } else {
-                    Value::Null
-                };
-            }
-            room["partial"] = json!(false);
-            room["error"] = Value::Null;
-            (index, room)
-        });
-    }
-    while !tasks.is_empty() {
-        match tokio::time::timeout_at(deadline, tasks.join_next()).await {
-            Ok(Some(Ok((index, room)))) => rooms[index] = room,
-            Ok(None) => break,
-            Ok(Some(Err(_))) => {}
-            Err(_) => {
-                tasks.abort_all();
-                break;
-            }
-        }
-    }
     for room in &mut rooms {
-        if room["partial"] == true && room["error"] == "读取尚未完成" {
-            room["error"] = json!("已达到读取时限；可选择这个群继续读取");
+        let cid = room["conversation_id"].as_str().unwrap().parse().unwrap();
+        let Json(rows) = crate::messages::local_group_speech(
+            s,
+            crate::messages::LocalSpeechPage {
+                profile_id: id,
+                conversation_id: cid,
+                query: q.q.clone(),
+                before: q.before.clone(),
+                before_id: q.before_id,
+                since: since.clone(),
+                until: until.clone(),
+                limit: (limit + 1) as i64,
+            },
+        )
+        .await?;
+        let mut rows = rows.as_array().cloned().unwrap_or_default();
+        let more = rows.len() > limit;
+        rows.truncate(limit);
+        room["next"] = if more {
+            let last = rows.last().unwrap();
+            json!({"before":last["occurred_at"],"before_id":last["id"]})
+        } else {
+            Value::Null
+        };
+        for row in &mut rows {
+            row["time"] = row["occurred_at"].clone();
+            row["sender"] = row["sender_name"].clone();
         }
+        room["messages"] = json!(rows);
+        room["partial"] = json!(more);
     }
-    let partial = rooms.iter().any(|r| r["partial"] == true);
     Ok(Json(
-        json!({"senders":keys.iter().collect::<Vec<_>>(),"groups":rooms,"partial":partial,"next_group_offset":next}),
+        json!({"groups":rooms,"next_group_offset":next,"storage":"local","scope":"imported_records","note":"显示已导入的群聊发言；导入完整性与媒体进度请查看导入中心。"}),
     ))
 }
