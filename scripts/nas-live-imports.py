@@ -120,7 +120,15 @@ def backup_with_progress(source,target,report,stall_seconds=120):
         if now-last_report>=5:
             report(status,remaining,total);last_report=now
         previous=remaining
-    source.backup(target,pages=128,sleep=0.05,progress=progress)
+    # Pin one read snapshot. Read-only WAL connections can otherwise restart
+    # each incremental backup step even when source business bytes are stable.
+    source.execute('PRAGMA query_only=ON')
+    source.execute('BEGIN')
+    try:
+        source.execute('PRAGMA schema_version').fetchone()
+        source.backup(target,pages=128,sleep=0.05,progress=progress)
+    finally:
+        source.rollback()
 
 
 class Consumer:
@@ -529,7 +537,7 @@ def main():
             failed = False
             while not STOP:
                 failed = False
-                for provider in ('linkedin','instagram','wechat'):
+                for provider in ('wechat','linkedin','instagram'):
                     if STOP:
                         break
                     try:
