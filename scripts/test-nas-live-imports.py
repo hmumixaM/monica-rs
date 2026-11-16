@@ -75,6 +75,10 @@ class LiveImportContract(unittest.TestCase):
         (folder/'assets/photo.png').write_bytes(image)
         url = 'https://example.invalid/avatar'
         document = dict(profiles=[dict(provider_user_id='synthetic-peer',profile=dict(name='Synthetic',avatar_url=url),captured_at=datetime.now(timezone.utc).isoformat(),posts=[])],local_assets=[dict(source_url=url,local_path='photo.png',content_hash=hashlib.sha256(image).hexdigest())])
+        self.args.linkedin_self = 'urn:li:member:synthetic-self'
+        self.args.linkedin_connection = uuid.uuid4()
+        self.db.execute("INSERT INTO crm.source_connections(id,provider,external_account,display_name,connection_method) VALUES(%s,'linkedin',%s,'Existing archive','archive')",(self.args.linkedin_connection,self.args.linkedin_self))
+        document['conversations'] = [dict(conversation_urn='urn:li:conversation:direct',participants=['urn:li:member:peer'],messages=[dict(message_urn='message-1',sender_urn=self.args.linkedin_self,incoming=False,body='Outbound',delivered_at=datetime.now(timezone.utc).isoformat())]),dict(conversation_urn='urn:li:conversation:group',participants=['urn:li:member:peer','urn:li:member:other'],messages=[dict(message_urn='message-2',sender_urn='urn:li:member:peer',incoming=True,body='Inbound',delivered_at=datetime.now(timezone.utc).isoformat())])]
         original = json.dumps(document,indent=3).encode()+b'\n'
         (folder/'linkedin_enrichment.incoming.json').write_bytes(original)
         sent = []
@@ -105,8 +109,13 @@ class LiveImportContract(unittest.TestCase):
                 self.consumer.social('linkedin')
         finally:
             os.umask(original_umask)
-        self.assertEqual(len(sent),1)
+        self.assertEqual(len(sent),3)
         self.assertEqual(sent[0]['records'][0]['external_id'],'synthetic-peer')
+        messages = [b for b in sent if b['stream']=='messages']
+        self.assertTrue(all(b['connection_id']==str(self.args.linkedin_connection) for b in messages))
+        self.assertEqual([b['records'][0]['conversation_type'] for b in messages],['direct','group'])
+        self.assertEqual([b['records'][0]['content']['direction'] for b in messages],['sent','received'])
+        self.assertTrue(all(p.get('id') and 'is_self' in p for b in messages for p in b['records'][0]['content']['participants']))
         self.assertEqual(self.db.execute('SELECT count(*) FROM crm.media_assets').fetchone()[0],1)
         copied = next((self.args.media/'sha256').rglob(hashlib.sha256(image).hexdigest()))
         self.assertEqual(copied.read_bytes(),image)
@@ -136,6 +145,19 @@ class LiveImportContract(unittest.TestCase):
                 self.consumer.materialize(manifest,'linkedin')
         self.assertTrue(target.is_file())
         self.assertEqual(self.db.execute('SELECT count(*) FROM crm.media_assets WHERE sha256=%s',(key,)).fetchone()[0],1)
+        identity = self.db.execute('SELECT id FROM crm.media_assets WHERE sha256=%s',(key,)).fetchone()[0]
+        self.db.execute("UPDATE crm.media_assets SET media_type='application/octet-stream' WHERE id=%s",(identity,))
+        synced = set()
+        original_open = live.os.open
+        def record_directory(path,flags,*args,**kwargs):
+            if flags & os.O_DIRECTORY:
+                synced.add(Path(path))
+            return original_open(path,flags,*args,**kwargs)
+        with patch.object(live.os,'open',record_directory):
+            self.consumer.materialize(manifest,'linkedin')
+        self.assertEqual(self.db.execute('SELECT id,media_type FROM crm.media_assets WHERE sha256=%s',(key,)).fetchone(),(identity,'image/png'))
+        self.assertTrue({target.parent,target.parent.parent,target.parent.parent.parent,self.args.media}.issubset(synced))
+
 
 
     def test_database_disconnect_exits_for_a_fresh_supervised_connection(self):
@@ -143,7 +165,9 @@ class LiveImportContract(unittest.TestCase):
         def disconnected(consumer,provider):
             self.admin.execute('SELECT pg_terminate_backend(%s)',(consumer.db.info.backend_pid,))
             consumer.db.execute('SELECT 1')
-        with patch.dict(os.environ,{'MONICA_DATABASE_URL':self.db.info.dsn}),patch.object(sys,'argv',argv),patch.object(live.signal,'signal'),patch.object(live.Consumer,'guard',lambda consumer:None):
+        with patch.object(sys,'argv',argv),patch.object(live.os,'geteuid',return_value=0),self.assertRaises(SystemExit):
+            live.main()
+        with patch.dict(os.environ,{'MONICA_DATABASE_URL':self.db.info.dsn}),patch.object(sys,'argv',argv),patch.object(live.signal,'signal'),patch.object(live.os,'geteuid',return_value=10001),patch.object(live.Consumer,'guard',lambda consumer:None):
             with patch.object(live.Consumer,'social',disconnected):
                 self.assertEqual(live.main(),1)
             self.assertEqual(live.main(),0)

@@ -179,12 +179,17 @@ class Consumer:
             if key not in self.checked_media:
                 if target.stat().st_size != path.stat().st_size or digest_file(target) != key:
                     raise ValueError('existing isolated CAS differs')
-                directory = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY)
+                self.checked_media.add(key)
+            current = target.parent
+            while True:
+                directory = os.open(current,os.O_RDONLY|os.O_DIRECTORY)
                 try:
                     os.fsync(directory)
                 finally:
                     os.close(directory)
-                self.checked_media.add(key)
+                if current==self.args.media:
+                    break
+                current=current.parent
             with target.open('rb') as source:
                 header = source.read(64)
             kind = ('image/jpeg' if header.startswith(b'\xff\xd8\xff') else
@@ -196,7 +201,7 @@ class Consumer:
                 raise ValueError('unsupported local collector media type')
             media = uuid.uuid5(NAMESPACE, 'live-media:' + key)
             with self.db.transaction():
-                self.db.execute("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,file_name,source_type,source_record_id,verified_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,now()) ON CONFLICT(sha256) DO NOTHING", (media,key,kind,target.stat().st_size,relative,path.name,provider,manifest.get('source_url') or key))
+                self.db.execute("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,file_name,source_type,source_record_id,verified_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,now()) ON CONFLICT(sha256) DO UPDATE SET media_type=excluded.media_type,file_name=coalesce(media_assets.file_name,excluded.file_name),verified_at=excluded.verified_at WHERE media_assets.media_type='application/octet-stream'", (media,key,kind,target.stat().st_size,relative,path.name,provider,manifest.get('source_url') or key))
                 saved = self.db.execute('SELECT id,object_path,byte_length FROM crm.media_assets WHERE sha256=%s', (key,)).fetchone()
                 if saved[1:] != (relative,target.stat().st_size):
                     raise ValueError('registered isolated media identity differs')
@@ -229,6 +234,35 @@ class Consumer:
         finally:
             connection.close()
 
+    def linkedin_message(self, item):
+        connection = getattr(self.args,'linkedin_connection',None)
+        own = getattr(self.args,'linkedin_self',None)
+        if not connection or not own:
+            raise ValueError('LinkedIn messages require verified owner and archive connection')
+        if not self.db.execute("SELECT 1 FROM crm.source_connections WHERE id=%s AND provider='linkedin' AND external_account=%s",(connection,own)).fetchone():
+            raise ValueError('LinkedIn archive connection owner differs')
+        content = dict(item['content'])
+        sender = content.get('sender')
+        if not isinstance(sender,str) or not sender:
+            raise ValueError('LinkedIn message sender required')
+        incoming = content.get('incoming')
+        if isinstance(incoming,bool) and incoming==(sender==own):
+            raise ValueError('LinkedIn sender contradicts captured direction')
+        parties = {}
+        for person in content.get('participants',[]):
+            if isinstance(person,str):
+                person = dict(id=person,name=person)
+            external = person.get('id') or person.get('urn') or person.get('member_urn')
+            if not isinstance(external,str) or not external:
+                raise ValueError('LinkedIn participant lacks stable identity')
+            parties[external] = dict(person,id=external,is_self=external==own,role='participant')
+        parties.setdefault(own,dict(id=own,name='本人',is_self=True,role='participant'))
+        parties.setdefault(sender,dict(id=sender,name=sender,is_self=sender==own))
+        parties[sender]['role'] = 'sender'
+        group = sum(not p['is_self'] for p in parties.values())>1
+        content.update(participants=list(parties.values()),direction='sent' if sender==own else 'received',is_group=group)
+        return dict(item,content=content,conversation_external_id=content['conversation'],conversation_type='group' if group else 'direct')
+
     def social(self, provider):
         self.guard()
         destinations = [('linkedin', self.args.source/'raw/linkedin')] if provider == 'linkedin' else [(k,self.args.source/'staging'/('instagram-'+k)) for k in ('current','stories','highlights')]
@@ -236,7 +270,7 @@ class Consumer:
             if not destination.is_dir():
                 continue
             snapshot = self.bridge.completed(destination) or destination
-            records = self.bridge.linkedin_records(snapshot) if provider == 'linkedin' else self.bridge.instagram_records(snapshot, kind)
+            records = self.bridge.linkedin_records(snapshot,getattr(self.args,'linkedin_self',None)) if provider == 'linkedin' else self.bridge.instagram_records(snapshot, kind)
             while True:
                 self.read_inputs = []
                 try:
@@ -249,6 +283,8 @@ class Consumer:
                 occurred = stamp(item.get('occurred_at'))
                 if captured < self.cutoff and (occurred is None or occurred < self.cutoff):
                     continue
+                if provider=='linkedin' and stream=='messages':
+                    item = self.linkedin_message(item)
                 signature_hash = hashlib.sha256(canonical(item)).hexdigest()
                 account = item.get('source_account_external_id') or ''
                 identity = (provider,stream,item['external_id'],account)
@@ -263,6 +299,8 @@ class Consumer:
                 batch = dict(source=provider,stream=stream,schema_version=1,batch_id='nas-live-'+key,
                              idempotency_key='nas-live:'+key,observed_at=observed,records=[record],
                              raw_objects=[dict(kind='existing_collector_archive',collector_kind=kind,relative_path=self.last_path.relative_to(self.args.source).as_posix())],media_manifest=manifests)
+                if provider=='linkedin' and stream=='messages':
+                    batch['connection_id'] = str(self.args.linkedin_connection)
                 receipt = self.accept(batch)
                 with self.journal:
                     self.journal.execute('INSERT OR REPLACE INTO delivered VALUES(?,?,?,?,?,?)',(*identity,signature_hash,receipt))
@@ -379,6 +417,8 @@ def main():
     parser.add_argument('--source',type=Path,required=True)
     parser.add_argument('--chatlog',type=Path)
     parser.add_argument('--wechat-self')
+    parser.add_argument('--linkedin-self')
+    parser.add_argument('--linkedin-connection',type=uuid.UUID)
     parser.add_argument('--state',type=Path,required=True)
     parser.add_argument('--media',type=Path,required=True)
     parser.add_argument('--url',default='http://monica-rs-server-1:17494')
@@ -386,6 +426,8 @@ def main():
     parser.add_argument('--once',action='store_true')
     parser.add_argument('--interval',type=int,default=300)
     args = parser.parse_args()
+    if os.geteuid()!=10001:
+        parser.error('NAS worker must run as the Rust server UID 10001')
     if args.interval < 30 or not args.since.endswith(('Z','+00:00')):
         parser.error('UTC cutoff and interval >=30 seconds required')
     for path in (args.source,args.state,args.media,*([args.chatlog] if args.chatlog else [])):

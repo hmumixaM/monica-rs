@@ -7,7 +7,7 @@ the Mac and uses the isolated Rust network and SSD only for its writable state.
 
 The worker is intentionally bound to the current isolated NAS database identity
 and schema 86. It must not target Monica Next or another restored database.
-Run the reviewed source from a read-only `/work` mount, with these mounts:
+Run the worker as UID/GID **10001:10001**, matching the Rust server. The CLI rejects other UIDs. New CAS shards therefore remain writable by the server as well as readable. Run the reviewed source from a read-only `/work` mount, with these mounts:
 
 - Existing Next `data` → `/source`, **read-only**.
 - Existing Chatlog `work/db_storage` → `/chatlog`, **read-only**.
@@ -28,9 +28,12 @@ Example command inside the isolated worker:
 ```sh
 python3 -u scripts/nas-live-imports.py --run \
   --source /source --chatlog /chatlog --wechat-self VERIFIED_EXISTING_SELF_ID \
+  --linkedin-self VERIFIED_LINKEDIN_OWNER_URN --linkedin-connection ARCHIVE_CONNECTION_UUID \
   --media /data/media --state /data/live-imports \
   --since 2026-11-13T00:00:00Z --interval 300
 ```
+
+LinkedIn messages use an existing disabled archive connection whose external account matches the explicitly verified self URN. Incoming/outgoing flags must agree with that identity. String participant URNs become native source identities; they are not matched to Monica people by name. Group/direct scope, source thread and sender direction are retained through the normal connection projection. The current enrichment document is supported; a separate mailbox pending/archive lane is not yet consumed.
 
 The cutoff is an explicit conservative backfill boundary, not a fabricated
 historical collection statistic. The first social pass includes records dated
