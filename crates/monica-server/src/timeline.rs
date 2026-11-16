@@ -351,7 +351,6 @@ fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
     let local = local.as_array().cloned().unwrap_or_default();
     let by_url = local
         .iter()
-        .filter(|media| media["ready"] != false)
         .flat_map(|media| {
             media["source_urls"]
                 .as_array()
@@ -624,7 +623,8 @@ mod tests {
         let mut missing = local.clone();
         missing[1]["ready"] = json!(false);
         let merged = merge_media(&remote, &missing);
-        assert!(!merged[0]["id"].is_string());
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0]["id"], "one");
         assert_eq!(merged[0]["ready"], false);
         assert_eq!(merged[1]["id"], "two");
     }
@@ -787,6 +787,11 @@ mod read_tests {
         sqlx::query("INSERT INTO crm.notebook_social_revisions(id,event_id,content_object_id,content_hash,observed_at,source_record_id) VALUES($1,$2,$3,$4,now(),'notebook-history')")
             .bind(Uuid::new_v4()).bind(event).bind(notebook.id).bind(&notebook.hash).execute(&mut *tx).await.unwrap();
         tx.commit().await.unwrap();
+        let file = dir
+            .path()
+            .join(monica_core::media::object_path(&"e".repeat(64)).unwrap());
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, b"x").unwrap();
         let media = Uuid::new_v4();
         sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,verified_at) VALUES($1,$2,'image/jpeg',1,'synthetic',now())")
             .bind(media).bind("e".repeat(64)).execute(&pool).await.unwrap();
@@ -871,6 +876,11 @@ mod read_tests {
             (2, elsewhere, "image/png"),
             (3, manual, "text/plain"),
         ] {
+            let file = dir
+                .path()
+                .join(monica_core::media::object_path(&format!("{index:064x}")).unwrap());
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, b"").unwrap();
             let media = Uuid::new_v4();
             sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path) VALUES($1,$2,$3,0,'synthetic')").bind(media).bind(format!("{index:064x}")).bind(kind).execute(&pool).await.unwrap();
             sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('post',$1,$2,'media')").bind(event).bind(media).execute(&pool).await.unwrap();
