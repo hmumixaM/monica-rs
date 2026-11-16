@@ -88,12 +88,14 @@ export interface HomePerson extends PersonRef {
 }
 
 export interface HomeSummary {
+  statistics_updated_at?: string;
   key_numbers: { contacts: number; groups: number; messages_30d: number; active_contacts_30d: number };
 }
 
 export interface OrganizationCount { id: string; name: string; people: number }
 
 export interface InsightsSummary {
+  statistics_updated_at?: string;
   dormant_days: 90 | 180 | 365;
   dormant_contacts?: HomePerson[];
   upcoming_dates?: (PersonRef & { kind: DateKind; label?: string; date: string; days_until?: number; years?: number })[];

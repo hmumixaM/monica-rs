@@ -11,6 +11,7 @@ pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
     let mut mode = shared.mode.subscribe();
     let mut housekeeping_at = Instant::now();
     let mut monitor_at = Instant::now() - Duration::from_secs(5);
+    let mut statistics_at = Instant::now() - Duration::from_secs(300);
     loop {
         let current = *mode.borrow_and_update();
         match current {
@@ -41,6 +42,10 @@ pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
             if monitor_at.elapsed() >= Duration::from_secs(5) {
                 crate::import_monitor::refresh(&shared.background).await?;
                 monitor_at = Instant::now();
+            }
+            if statistics_at.elapsed() >= Duration::from_secs(300) {
+                crate::pages::refresh_message_statistics(&shared.background).await?;
+                statistics_at = Instant::now();
             }
             let importing: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.import_batches WHERE status IN ('received','running') AND retry_after<=clock_timestamp())")
                 .fetch_one(&shared.background).await?;

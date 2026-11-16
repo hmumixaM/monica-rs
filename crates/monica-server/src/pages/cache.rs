@@ -61,7 +61,8 @@ fn dependencies(path: &str) -> (&'static [&'static str], bool) {
             &["profile", "posts", "activity", "tag", "organization"],
             false,
         ),
-        "/api/v1/home" => (&["profile", "calendar", "messages"], true),
+        "/api/v1/home" => (&["profile", "calendar", "weekly-statistics"], true),
+        "/api/v1/home/dates" => (&["profile", "calendar", "media"], true),
         "/api/v1/insights/orbit" => (
             &[
                 "profile",
@@ -79,8 +80,10 @@ fn dependencies(path: &str) -> (&'static [&'static str], bool) {
         "/api/v1/insights" => (
             &[
                 "profile",
+                "calendar",
                 "organization",
                 "messages",
+                "weekly-statistics",
                 "contacts",
                 "posts",
                 "media",
@@ -130,7 +133,7 @@ pub(crate) async fn version(s: &AppState, path: &str) -> Result<String> {
  WHERE $2::uuid IS NOT NULL AND v.domain=ANY($1) AND v.domain NOT IN('organization','tag','community','directory') AND v.subject IN(SELECT id FROM subjects)
  UNION ALL SELECT v.domain,'shard:'||v.shard::text,v.version FROM crm.cache_domain_versions v
  WHERE v.domain=ANY($1) AND($2::uuid IS NULL OR v.domain IN('organization','tag','community','directory')))
- SELECT md5(coalesce(string_agg(domain||':'||subject||':'||version::text,',' ORDER BY domain,subject) FILTER(WHERE domain IN('profile','identity','organization','tag','community','media','media-assets','directory')),''))||':'||md5(coalesce(string_agg(domain||':'||subject||':'||version::text,',' ORDER BY domain,subject),''))||CASE WHEN $3 THEN ':'||floor(extract(epoch FROM now())/$4::integer)::bigint::text ELSE '' END FROM tokens"#)
+ SELECT md5(coalesce(string_agg(domain||':'||subject||':'||version::text,',' ORDER BY domain,subject) FILTER(WHERE domain IN('profile','identity','organization','tag','community','media','media-assets','directory','calendar','weekly-statistics')),''))||':'||md5(coalesce(string_agg(domain||':'||subject||':'||version::text,',' ORDER BY domain,subject),''))||CASE WHEN $3 THEN ':'||floor(extract(epoch FROM now())/$4::integer)::bigint::text ELSE '' END FROM tokens"#)
         .bind(scopes).bind(profile).bind(timed).bind(if aggregate(path) { 15i32 } else { 60i32 }).fetch_one(&s.pool).await?;
     Ok(value)
 }
@@ -337,7 +340,7 @@ mod tests {
         serde_json::from_slice(&to_bytes(response.into_body(), 1 << 20).await.unwrap()).unwrap()
     }
     #[sqlx::test(migrations = "../../migrations")]
-    async fn aggregate_refresh_preserves_auth_and_immediate_identity_changes(pool: sqlx::PgPool) {
+    async fn weekly_statistics_preserve_auth_and_immediate_identity_changes(pool: sqlx::PgPool) {
         let dir = tempfile::tempdir().unwrap();
         let s = state(&pool, dir.path()).await;
         let actor = Uuid::new_v4();
@@ -360,22 +363,55 @@ mod tests {
         sqlx::query("INSERT INTO crm.conversations(id,provider,account,external_id,profile_id,conversation_type) VALUES($1,'wechat','self','peer',$2,'direct')").bind(conversation).bind(person).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,occurred_at,body,direction) SELECT gen_random_uuid(),$1,'wechat','self',n::text,'peer',now(),'Synthetic','received' FROM generate_series(1,12) n").bind(conversation).execute(&pool).await.unwrap();
         let old = home(&router, true).await;
-        assert_eq!(old.headers()["x-monica-aggregate-stale"], "true");
         assert_eq!(value(old).await["key_numbers"]["messages_30d"], 0);
         assert_eq!(
             home(&router, false).await.status(),
             StatusCode::UNAUTHORIZED
         );
-        tokio::time::timeout(Duration::from_secs(10), async {
-            loop {
-                if value(home(&router, true).await).await["key_numbers"]["messages_30d"] == 12 {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            }
-        })
-        .await
-        .expect("aggregate did not refresh in background");
+        assert!(
+            !monica_core::pages::refresh_message_statistics(&pool)
+                .await
+                .unwrap()
+        );
+        sqlx::query("UPDATE crm.weekly_message_statistics SET week_start=week_start-7")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            monica_core::pages::refresh_message_statistics(&pool)
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            value(home(&router, true).await).await["key_numbers"]["messages_30d"],
+            12
+        );
+        // A cold HTTP response must still read persisted statistics, even when
+        // message-history and live counter scans cannot proceed.
+        let mut locked = pool.begin().await.unwrap();
+        sqlx::query("LOCK crm.message_search,crm.message_stat_counts IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *locked)
+            .await
+            .unwrap();
+        for path in [
+            "/api/v1/home?cold=1",
+            "/api/v1/insights?dormant_days=90",
+            "/api/v1/home/dates",
+        ] {
+            let request = HttpRequest::builder()
+                .uri(path)
+                .header("host", "localhost:17494")
+                .header("cookie", "crm_session=aggregate-fixture")
+                .body(Body::empty())
+                .unwrap();
+            let response =
+                tokio::time::timeout(Duration::from_secs(5), router.clone().oneshot(request))
+                    .await
+                    .expect("page read tried to scan locked message history")
+                    .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+        }
+        locked.rollback().await.unwrap();
         sqlx::query("UPDATE crm.profiles SET archived_at=now() WHERE id=$1")
             .bind(person)
             .execute(&pool)

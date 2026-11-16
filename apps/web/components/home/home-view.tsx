@@ -5,7 +5,7 @@ import Link from "@/router/link";
 
 import { useReconnect } from "../../lib/ai";
 import type { DateKind, HomePerson, InsightsSummary } from "../../lib/api-types";
-import { useHome, useInsights } from "../../lib/queries";
+import { useHome, useHomeDates, useInsights } from "../../lib/queries";
 import { DigestCard } from "../digest/digest-card";
 import { SocialFeed } from "../feed/social-feed";
 import { dateTitle } from "../profile/dates";
@@ -59,26 +59,29 @@ export function ReconnectCard({ person, reason }: { person: HomePerson; reason?:
 
 function Remember() {
   const insights = useInsights(90);
+  const reminders = useHomeDates();
   const suggestions = useReconnect();
   const data = insights.data;
-  if (!data) return <section className={styles.remember} aria-labelledby="remember-title">
-    <h2 id="remember-title">今天要记得</h2>
-    {insights.isError
-      ? <Failure onRetry={() => void insights.refetch()}>暂时无法读取重要日子和联系提醒。</Failure>
-      : <div className={styles.rememberGrid}><Skeleton height={220} /><Skeleton height={220} /></div>}
-  </section>;
-  const dates = (data.upcoming_dates ?? []).filter((item) => (item.days_until ?? 0) <= SOON_DAYS).slice(0, 3);
+  const dates = (reminders.data?.upcoming_dates ?? []).filter((item) => (item.days_until ?? 0) <= SOON_DAYS).slice(0, 3);
   // With the model on, its suggestions (which can be acted on) replace the plain dormant list.
   const suggested = suggestions.data?.enabled ? suggestions.data.people : null;
-  const reconnect = suggested ? [] : (data.dormant_contacts ?? []).slice(0, RECONNECT);
-  if (!dates.length && !reconnect.length && !suggested?.length) return null;
+  const reconnect = suggested ? [] : (data?.dormant_contacts ?? []).slice(0, RECONNECT);
+  const reconnectPending = suggestions.isPending || (!suggestions.data?.enabled && insights.isPending);
+  if (!dates.length && !reconnect.length && !suggested?.length && !reminders.isPending
+    && !reconnectPending && !reminders.isError && !insights.isError) return null;
   return <section className={styles.remember} aria-labelledby="remember-title">
     <h2 id="remember-title">今天要记得</h2>
     <div className={styles.rememberGrid}>
-      {dates.length > 0 && <div className={styles.column}>
+      {(dates.length > 0 || reminders.isPending || reminders.isError) && <div className={styles.column}>
         <h3><CalendarDays size={14} aria-hidden="true" />两周内的日子</h3>
-        <div className={styles.cards}>{dates.map((item) =>
-          <DateCard key={`${item.profile_id}-${item.kind}-${item.label ?? ""}-${item.date}`} item={item} />)}</div>
+        {reminders.isPending ? <Skeleton height={220} />
+          : reminders.isError && !reminders.data ? <Failure onRetry={() => void reminders.refetch()}>暂时无法读取重要日子。</Failure>
+            : <div className={styles.cards}>{dates.map((item) =>
+              <DateCard key={`${item.profile_id}-${item.kind}-${item.label ?? ""}-${item.date}`} item={item} />)}</div>}
+      </div>}
+      {reconnectPending && <div className={styles.column}><h3>该联系了</h3><Skeleton height={220} /></div>}
+      {!reconnectPending && !suggested && insights.isError && !data && <div className={styles.column}>
+        <h3>该联系了</h3><Failure onRetry={() => void insights.refetch()}>暂时无法读取联系提醒。</Failure>
       </div>}
       {reconnect.length > 0 && <div className={styles.column}>
         <h3><MessageCircleHeart size={14} aria-hidden="true" />该联系了<Link href="/insights">全部</Link></h3>

@@ -382,6 +382,15 @@ pub fn presentation_experience(mut fact: Value) -> Value {
 }
 
 /// One coalesced, bounded worker tick; readers never trigger materialization.
+pub async fn refresh_message_statistics(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
+    Ok(
+        sqlx::query_scalar("SELECT crm.refresh_weekly_message_statistics()")
+            .fetch_one(pool)
+            .await?,
+    )
+}
+
+/// One coalesced, bounded worker tick; readers never trigger materialization.
 pub async fn refresh_metrics(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
     let mut tx = pool.begin().await?;
     sqlx::query("SET LOCAL statement_timeout='10s'")
