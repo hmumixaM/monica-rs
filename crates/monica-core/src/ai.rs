@@ -868,6 +868,11 @@ pub async fn run_configured(
     let Some(provider) = configured_provider(pool, cipher).await? else {
         return Ok(false);
     };
+    // Preparing another large snapshot can consume the whole scheduler turn.
+    // Drain durable ready work before preparing more inputs for the backlog.
+    if run_with_media(pool, &provider, Some(media_root), Some(resources)).await? {
+        return Ok(true);
+    }
     schedule_due(pool).await?;
     dispatch_one(pool).await?;
     mail::enqueue_pending(pool).await?;

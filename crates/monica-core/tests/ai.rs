@@ -437,8 +437,9 @@ async fn configured_roles_drive_memory_and_preserve_profile_field_evidence(pool:
         "saved-writer"
     );
 }
-#[tokio::test]
-async fn openai_transport_against_loopback_fake() {
+async fn loopback_model_response(
+    output: serde_json::Value,
+) -> (String, tokio::task::JoinHandle<()>) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -471,8 +472,7 @@ async fn openai_transport_against_loopback_fake() {
         assert!(request.starts_with("POST /v1/chat/completions"));
         assert!(request.contains("Bearer synthetic-only-key"));
         assert!(request.contains("json_object"));
-        let body = json!({"choices":[{"message":{"content":"{\"summary\":\"Loopback only\"}"}}]})
-            .to_string();
+        let body = json!({"choices":[{"message":{"content":output.to_string()}}]}).to_string();
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
             body.len(),
@@ -480,10 +480,59 @@ async fn openai_transport_against_loopback_fake() {
         );
         stream.write_all(response.as_bytes()).await.unwrap();
     });
-    let client =
-        OpenAiProvider::new(&format!("http://{address}/v1"), "synthetic-only-key".into()).unwrap();
+    (format!("http://{address}/v1"), service)
+}
+#[tokio::test]
+async fn openai_transport_against_loopback_fake() {
+    let (base, service) = loopback_model_response(json!({"summary":"Loopback only"})).await;
+    let client = OpenAiProvider::new(&base, "synthetic-only-key".into()).unwrap();
     let output = client.complete(&lease("ai.profile")).await.unwrap();
     assert_eq!(output["summary"], "Loopback only");
+    service.await.unwrap();
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn configured_ready_work_progresses_while_dispatch_is_blocked(pool: PgPool) {
+    let (base, service) =
+        loopback_model_response(json!({"label":"Synthetic community","reason":"Fixture"})).await;
+    let cipher = monica_core::credentials::CredentialCipher::new(
+        "synthetic-installation-secret-at-least-32",
+    )
+    .unwrap();
+    let encrypted = cipher
+        .encrypt(&json!({"api_key":"synthetic-only-key"}))
+        .unwrap();
+    sqlx::query("UPDATE crm.ai_settings SET enabled=true,execution_enabled=true,provider='openai',base_url=$1,credential_ciphertext=$2").bind(base).bind(encrypted).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.ai_community_inputs(community_id,input,version_hash)VALUES('fixture-community','{}','v1')").execute(&pool).await.unwrap();
+    let job = ai::enqueue(&pool, "ai.community", "fixture-community")
+        .await
+        .unwrap();
+    let mut planning = pool.begin().await.unwrap();
+    sqlx::query("LOCK TABLE crm.ai_dispatches IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *planning)
+        .await
+        .unwrap();
+    let media = tempfile::tempdir().unwrap();
+    let budget = monica_core::resources::ResourceBudget::new(Default::default()).unwrap();
+    let progressed = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        ai::run_configured(&pool, media.path(), &budget, Some(&cipher)),
+    )
+    .await;
+    planning.rollback().await.unwrap();
+    assert!(
+        progressed
+            .expect("ready model work must not wait for dispatch preparation")
+            .unwrap()
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT status FROM crm.ai_jobs WHERE id=$1")
+            .bind(job)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "complete"
+    );
     service.await.unwrap();
 }
 
