@@ -103,6 +103,7 @@ jobs:
       - run: python3 scripts/test-collector-bridge.py && python3 scripts/test-collector-chatlog.py
       - run: python3 scripts/test-build-context.py
       - run: python3 scripts/test-collector-supervisor.py
+      - run: python3 scripts/test-nas-chatlog-readiness.py
       - run: python3 scripts/test-legacy-wechat-emoji.py
       - run: python3 scripts/test-retry-wechat-media.py
       - run: python3 -m pip install uv==0.9.17

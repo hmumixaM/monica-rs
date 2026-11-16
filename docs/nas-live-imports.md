@@ -92,3 +92,14 @@ keys are never normalized; a NUL in a JSON key is an explicit retry error.
 Version 2 batches use a distinct `nas-live:v2:` receipt namespace and bind the
 original input hashes. Existing successful local delivery rows are reused.
 Replays still use normal content identities and preserve manual profile values.
+
+On NAS exports whose WAL/SHM coordination files need initialization after a
+plaintext refresh, run `scripts/nas-chatlog-readiness.py --watch` on the NAS host.
+It uses only SQLite `mode=ro` plus `query_only`, reads schema metadata and keeps a
+private status under the SSD state directory. SQLite can update its SHM reader
+coordination, while database/WAL business bytes remain unchanged. The importer
+continues to mount the complete source read-only. The helper is independent of
+the Mac, bounded by a two-second SQLite busy timeout and one probe per changed
+file per minute. Preserve its PID/start receipt and restart it after a NAS reboot.
+SQLite backup reports page counts and retries a file after 120 seconds without
+progress; partial exports are not published or acknowledged.
