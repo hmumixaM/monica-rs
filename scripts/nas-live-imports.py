@@ -109,6 +109,20 @@ def failure_code(error):
     return type(error).__name__
 
 
+def backup_with_progress(source,target,report,stall_seconds=120):
+    advanced=time.monotonic();last_report=0;previous=None
+    def progress(status,remaining,total):
+        nonlocal advanced,last_report,previous
+        now=time.monotonic()
+        if STOP:raise InterruptedError('Chatlog backup cancelled')
+        if status in(sqlite3.SQLITE_OK,sqlite3.SQLITE_DONE)and(previous is None or remaining<previous):advanced=now
+        if now-advanced>=stall_seconds:raise TimeoutError('Chatlog backup made no progress')
+        if now-last_report>=5:
+            report(status,remaining,total);last_report=now
+        previous=remaining
+    source.backup(target,pages=128,sleep=0.05,progress=progress)
+
+
 class Consumer:
     def __init__(self, args, db):
         self.args, self.db = args, db
@@ -395,7 +409,7 @@ class Consumer:
             try:
                 self.progress('chatlog_consistent_backup',file=rel)
                 with closing(sqlite3.connect('file:'+quote(str(path))+'?mode=ro',uri=True,timeout=2)) as source, closing(sqlite3.connect(name)) as backup:
-                    source.backup(backup,pages=128,sleep=0.05)
+                    backup_with_progress(source,backup,lambda status,remaining,total:self.progress('chatlog_consistent_backup',file=rel,sqlite_status=status,remaining_pages=remaining,total_pages=total))
                     backup.execute('PRAGMA journal_mode=DELETE')
                     if backup.execute('PRAGMA quick_check').fetchall() != [('ok',)]:
                         raise ValueError('Chatlog consistent backup failed integrity check')

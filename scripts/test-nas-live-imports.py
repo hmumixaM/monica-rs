@@ -200,6 +200,16 @@ class LiveImportContract(unittest.TestCase):
             self.assertEqual(json.dumps(content),original)
         self.assertEqual(live.postgres_content(dict(participants=[dict(id='peer-id',name='Display\0name')]))[0]['participants'][0],dict(id='peer-id',name='Display␀name'))
 
+    def test_busy_sqlite_backup_times_out_without_changing_source(self):
+        path=self.args.source/'busy.db'
+        with closing(sqlite3.connect(path))as writer:
+            writer.execute('CREATE TABLE messages(id)');writer.commit();writer.execute('BEGIN EXCLUSIVE')
+            with closing(sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=0.01))as source,closing(sqlite3.connect(self.args.state/'unfinished.db'))as target:
+                reports=[]
+                with self.assertRaises(TimeoutError):live.backup_with_progress(source,target,lambda *row:reports.append(row),stall_seconds=0.02)
+                self.assertTrue(reports)
+            writer.rollback();self.assertEqual(writer.execute('SELECT count(*) FROM messages').fetchone()[0],0)
+
     def test_database_disconnect_exits_for_a_fresh_supervised_connection(self):
         argv = ['nas-live-imports.py','--run','--once','--source',str(self.args.source),'--state',str(self.args.state),'--media',str(self.args.media),'--since',self.args.since]
         def disconnected(consumer,provider):
