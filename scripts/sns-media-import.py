@@ -88,7 +88,7 @@ def import_event(db, source, media, state, runtime, cache, event_id):
     if staged:
         manifest=stage/'manifest.json';atomic(manifest,dict(rows=[row for _,row in staged]))
         schema=db.execute('SELECT max(version)FROM _sqlx_migrations WHERE success').fetchone()[0]
-        if schema not in(86,87):raise ValueError('sns_schema_changed')
+        if schema not in(86,87,88):raise ValueError('sns_schema_changed')
         args=SimpleNamespace(stage=stage,media=media,state=receipt,validator=runtime/'validate',manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest(),expected_records=len(staged),expected_system_id='7707886811981668386',expected_schema=schema)
         # Lock contention or uncertain publication leaves decoded rows pending.
         # The caller does not ACK this source page until publication succeeds.

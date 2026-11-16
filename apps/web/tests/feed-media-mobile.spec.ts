@@ -132,3 +132,24 @@ test('photo details keep a usable viewport while the original loads and the mobi
     await expect(dialog).toHaveCount(0);
   } finally { release(); }
 });
+
+test('a shared video keeps its cover label and opens the original video link', async ({page}) => {
+  const shared = {url: 'https://www.xiaohongshu.com/explore/synthetic-video', title: 'Source video title', kind: 'video'};
+  const media = [{...event.media[0], source_media_type: 'video', source_kind: 'wechat_video_share'}];
+  const item = {...event, provider: 'wechat', shared_link: shared, media, event_metadata: {event_type: 'post', locations: [], mentions: []}};
+  await page.route('**/api/v1/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/v1/timeline') return route.fulfill({json: [item]});
+    if (path === '/api/v1/timeline/'+event.id) return route.fulfill({json: {...item, content: {shared_link: shared}}});
+    if (path.startsWith('/api/v1/media/')) return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="360" height="270"><rect width="360" height="270" fill="gray"/></svg>'});
+    return route.fulfill({json: {enabled:false,people:[],faces:[]}});
+  });
+  await page.goto('/timeline');
+  await expect(page.locator('article')).toContainText('视频分享 · 朋友圈');
+  await expect(page.locator('article')).toContainText('视频封面');
+  await page.locator('article header').click();
+  const dialog=page.getByRole('dialog',{name:'动态详情'});
+  await expect(dialog.getByRole('link',{name:/Source video title/})).toHaveAttribute('href',shared.url);
+  await expect(dialog).toContainText('视频封面');
+  await expect(dialog.locator('video')).toHaveCount(0);
+});

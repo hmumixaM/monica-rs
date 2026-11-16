@@ -4,7 +4,7 @@ export type FeedMedia = {
   source_kind?: string; author_name?: string; description?: string; duration_ms?: number; width?: number; height?: number; id?: string;
   thumbnail_id?: string; source_url?: string; thumbnail_url?: string; media_type?: string; source_media_type?: string; ready?: boolean;
 };
-export type SharedLink = { url: string; title?: string; description?: string; source_name?: string };
+export type SharedLink = { url: string; title?: string; description?: string; source_name?: string; kind?: "link" | "video" | "music" };
 export type EventPlace = { label: string; location_id?: string; address?: string; latitude?: number; longitude?: number; map_url?: string; coordinate_source?: string };
 export type EventMetadata = {
   post?: InstagramPost | null; extras?: { kind: string; label: string; text: string; url?: string }[]; event_type: string;
@@ -38,7 +38,11 @@ export const eventDate = (value?: string, provider?: string) => value ? new Intl
 
 export function eventKind(event: Pick<FeedEvent, "provider" | "media" | "event_metadata">) {
   if (event.event_metadata?.event_type === "story") return "Instagram Story";
-  if (event.provider === "wechat") return event.media?.some((media) => media.source_kind === "wechat_channels") ? "视频号 · 朋友圈" : "朋友圈";
+  if (event.provider === "wechat") {
+    if (event.media?.some((media) => media.source_kind === "wechat_channels")) return "视频号 · 朋友圈";
+    if (event.media?.some((media) => media.source_kind === "wechat_video_share")) return "视频分享 · 朋友圈";
+    return "朋友圈";
+  }
   return FEED_SOURCES[event.provider] || event.provider;
 }
 

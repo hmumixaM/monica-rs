@@ -175,6 +175,12 @@ async fn detail(
         activity["media"] = media;
         return Ok(Json(activity));
     }
+    let id: Uuid = sqlx::query_scalar(
+        "SELECT coalesce((SELECT event_id FROM crm.timeline_event_aliases WHERE alias_id=$1),$1)",
+    )
+    .bind(id)
+    .fetch_one(&s.pool)
+    .await?;
     let (mut row, source_object_id):(Value,Uuid)=sqlx::query_as("SELECT jsonb_build_object('id',e.id,'provider',e.provider,'external_id',e.external_id,'profile_id',e.profile_id,'occurred_at',e.occurred_at,'content_hash',e.content_hash,'profile_display_name',p.display_name,'content',e.content,'event_type',e.event_type)||CASE WHEN e.event_type='post' THEN jsonb_build_object('source_updated_at',e.source_updated_at,'last_seen_at',e.last_seen_at,'status',e.status) ELSE jsonb_build_object('expires_at',e.expires_at,'coverage_status',e.status) END, e.object_id FROM crm.timeline_events e LEFT JOIN crm.profiles p ON p.id=e.profile_id WHERE e.id=$1 AND ($2::text IS NULL OR e.provider=$2)").bind(id).bind(q.provider).fetch_optional(&s.pool).await?.ok_or(ApiError(StatusCode::NOT_FOUND,"timeline event not found"))?;
     row["event_metadata"] = metadata::normalize(
         row["provider"].as_str().unwrap(),
@@ -219,8 +225,8 @@ async fn detail(
         },
     )
     .await?;
-    row["legacy_version_count"]=json!(sqlx::query_scalar::<_,i64>("SELECT (SELECT count(*) FROM crm.legacy_social_versions WHERE event_id=$1)+(SELECT count(*) FROM crm.legacy_chatlog_versions WHERE entity_type='post' AND entity_id=$1)").bind(id).fetch_one(&s.pool).await?);
-    let mut revision_query = "SELECT content_hash,observed_at,source_record_id,revision_seq FROM crm.notebook_social_revisions WHERE event_id=$1 UNION ALL SELECT content_hash,observed_at,source_record_id,revision FROM crm.connection_social_revisions WHERE event_id=$1".to_string();
+    row["legacy_version_count"]=json!(sqlx::query_scalar::<_,i64>("SELECT (SELECT count(*) FROM crm.legacy_social_versions WHERE event_id IN(SELECT $1::uuid UNION SELECT alias_id FROM crm.timeline_event_aliases WHERE event_id=$1))+(SELECT count(*) FROM crm.legacy_chatlog_versions WHERE entity_type='post' AND entity_id IN(SELECT $1::uuid UNION SELECT alias_id FROM crm.timeline_event_aliases WHERE event_id=$1))").bind(id).fetch_one(&s.pool).await?);
+    let mut revision_query = "SELECT content_hash,observed_at,source_record_id,revision_seq FROM crm.notebook_social_revisions WHERE event_id IN(SELECT $1::uuid UNION SELECT alias_id FROM crm.timeline_event_aliases WHERE event_id=$1) UNION ALL SELECT content_hash,observed_at,source_record_id,revision FROM crm.connection_social_revisions WHERE event_id IN(SELECT $1::uuid UNION SELECT alias_id FROM crm.timeline_event_aliases WHERE event_id=$1)".to_string();
     if let Some(provider) = row["provider"]
         .as_str()
         .filter(|p| ["wechat", "instagram", "linkedin"].contains(p))
@@ -460,8 +466,12 @@ fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
                 resolved["source_url"] = item["source_url"].clone();
             }
         }
-        if item["media_type"].as_str().is_some_and(|s| !s.is_empty()) {
-            resolved["source_media_type"] = item["media_type"].clone();
+        if let Some(kind) = item["source_media_type"]
+            .as_str()
+            .or(item["media_type"].as_str())
+            .filter(|s| !s.is_empty())
+        {
+            resolved["source_media_type"] = json!(kind);
         }
         if let (Some(local), Some(poster)) = (local, poster)
             && local["id"] != poster["id"]
@@ -603,6 +613,16 @@ mod tests {
         assert_eq!(media[0]["ready"], false);
     }
 
+    #[test]
+    fn video_share_cover_retains_source_type_when_resolving_local_image() {
+        let remote = json!([{"source_url":"https://mmsns.qpic.cn/cover","media_type":"image","source_media_type":"video","source_kind":"wechat_video_share"}]);
+        let local = json!([{"id":"cover","source_url":"https://mmsns.qpic.cn/cover","media_type":"image/jpeg","ready":true}]);
+        let media = merge_media(&remote, &local);
+        assert_eq!(media[0]["source_media_type"], "video");
+        assert_eq!(media[0]["media_type"], "image/jpeg");
+        assert_eq!(media[0]["source_kind"], "wechat_video_share");
+        assert_eq!(media[0]["id"], "cover");
+    }
     #[test]
     fn restored_url_aliases_fill_original_slots_without_duplicate_placeholders() {
         let remote = json!([
@@ -802,10 +822,13 @@ mod read_tests {
         sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('social_post',$1,$2,'media-1')")
             .bind(event).bind(media).execute(&pool).await.unwrap();
         let router = crate::auth::routes(state);
+        let alias = Uuid::new_v4();
+        sqlx::query("INSERT INTO crm.timeline_event_aliases(alias_id,event_id,original_row) VALUES($1,$2,'{}')")
+            .bind(alias).bind(event).execute(&pool).await.unwrap();
         let response = router
             .oneshot(
                 Request::builder()
-                    .uri(format!("/api/v1/timeline/{event}"))
+                    .uri(format!("/api/v1/timeline/{alias}"))
                     .header("host", "localhost:17494")
                     .header("cookie", "crm_session=timeline-fixture")
                     .body(Body::empty())

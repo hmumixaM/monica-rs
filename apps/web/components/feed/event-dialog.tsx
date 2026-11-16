@@ -41,9 +41,10 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
   const allMedia = detail?.media || event.media || [];
   const media = allMedia;
   const link = (detail?.content as { shared_link?: SharedLink } | undefined)?.shared_link || event.shared_link;
+  const photoMedia = link ? media.slice(1) : media;
   const body = recordText(detail?.content) || recordText(detail?.summary || event.summary);
   const interactions = detail?.interactions?.filter((item) => item.interaction_type !== "mention") ?? [];
-  const hasPhotos = !link && media.length > 0;
+  const hasPhotos = photoMedia.length > 0;
   const ratio = media[0]?.width && media[0]?.height ? media[0].width / media[0].height
     : metadata?.event_type === "story" ? 9 / 16 : undefined;
 
@@ -59,7 +60,7 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
       <IconButton label="关闭动态详情" onClick={close}><X size={18} /></IconButton>
     </header>
     {hasPhotos && <div className={styles.detailPhotos}>
-      {media.map((item, index) => item.ready !== false && localMediaUrl(item.id)
+      {photoMedia.map((item, index) => item.ready !== false && localMediaUrl(item.id)
         ? <a href={localMediaUrl(item.id)} target="_blank" rel="noreferrer" aria-label={`查看原图 ${index + 1}`} key={item.id}>
           {item.media_type?.includes("video")
             ? <video controls preload="metadata" src={localMediaUrl(item.id)} poster={localMediaUrl(item.thumbnail_id)} data-zoom-target={index === 0 ? "" : undefined} />

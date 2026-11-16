@@ -42,7 +42,7 @@ def frame(source, external, slot, cache_root=None, source_tid=None):
         original = media.findtext('url') or media.findtext('thumb') or ''
         def cdn(value):
             host = urlsplit(value).hostname or ''
-            return host == 'mmsns.c2c.wechat.com' or host == 'qpic.cn' or host.endswith('.qpic.cn')
+            return host in ('mmsns.c2c.wechat.com', 'mmsns.hk.wechat.com', 'qpic.cn', 'qlogo.cn') or host.endswith(('.qpic.cn', '.qlogo.cn'))
         # Shared articles carry their webpage in <url> and the actual image in
         # <thumb>. Keep the source slot identity; fetch its real cover bytes.
         selected = url if url is not None and url.text and cdn(url.text) else thumb
@@ -51,7 +51,9 @@ def frame(source, external, slot, cache_root=None, source_tid=None):
                  if selected is url and url is not None else
                  selected.attrib if selected is not None else {})
         seed, token = attrs.get('key', ''), attrs.get('token', '')
-        enc = root.find('.//enc')
+        enc = media.find('.//enc')
+        if enc is None:
+            enc = root.find('.//enc')
         if (not seed or seed == '0') and enc is not None:
             seed = enc.get('key', '')
         if media.findtext('type') in ('6', '15'):
@@ -68,8 +70,19 @@ def frame(source, external, slot, cache_root=None, source_tid=None):
             raise ValueError('source is outside WeChat media CDN')
         # Existing cache identity is exactly the pinned Chatlog URL|seed rule.
         cache = Path(cache_root) if cache_root is not None else source.parent.parent.parent / '.chatlog_sns_cache'
-        candidate = cache / (hashlib.md5((fetch + '|' + seed).encode()).hexdigest() + '.bin')
-        if candidate.is_file() and not candidate.is_symlink():
+        # Monica Next also cached the tokenized original HTTP address. Keep
+        # that exact filename identity while network downloads use HTTPS.
+        next_url = (fetch_url or '').strip().replace('/150?', '/0?')
+        if next_url.endswith('/150'):
+            next_url = next_url[:-4] + '/0'
+        if token and 'token=' not in next_url:
+            next_url += ('&' if '?' in next_url else '?') + 'token=' + quote_plus(token) + '&idx=1'
+        cache_urls = dict.fromkeys([fetch, next_url, fetch_url or ''])
+        cache_seeds = ['', seed] if seed == '0' else [seed]
+        candidate = next((path for url in cache_urls for key in cache_seeds
+                          if (path := cache / (hashlib.md5((url + '|' + key).encode()).hexdigest() + '.bin')).is_file()
+                          and not path.is_symlink()), None)
+        if candidate is not None:
             if candidate.stat().st_size > 32 * 1024 * 1024:
                 raise ValueError('cached object too large')
             data = candidate.read_bytes()

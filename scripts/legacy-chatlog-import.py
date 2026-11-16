@@ -406,6 +406,9 @@ class Importer:
         external=obj.findtext('id') or str(value["source_tid"])
         aid,pid=self.account(author)
         found=self.db.execute("SELECT id,to_jsonb(t) FROM crm.timeline_events t WHERE source_account_id=%s AND event_type='post' AND external_id=%s",(aid,external)).fetchone()
+        if not found and not self.verifying:
+            self.db.execute("SELECT crm.adopt_legacy_timeline_identity('wechat','post',%s,%s,%s,%s)",(external,aid,pid,uuid.uuid5(aid,'post:'+external)))
+            found=self.db.execute("SELECT id,to_jsonb(t) FROM crm.timeline_events t WHERE source_account_id=%s AND event_type='post' AND external_id=%s",(aid,external)).fetchone()
         if found:self.interactions(found[0],value.get("interactions",[]))
         if found and found[1]["content"].get("raw_xml_sha256")==value.get("raw_xml_sha256"):return 0,1,0
         if self.verifying:raise ValueError("Chatlog Moments post is missing or differs")
