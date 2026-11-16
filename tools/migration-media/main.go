@@ -120,6 +120,10 @@ func transform(data []byte, kind string) ([]byte, string, error) {
 		out, err := silk.Silk2MP3(data)
 		return out, "audio/mpeg", conversionFailure("voice_conversion_failed", err)
 	case "image":
+		// The inherited no-FFmpeg fallback scans compressed WXGF bytes for
+		// signatures and can publish a random BM suffix as a BMP. This codec
+		// requires real WXGF conversion; unavailable FFmpeg must remain a failure.
+		dat2img.FFmpegMode = true
 		typeName := http.DetectContentType(data)
 		if strings.HasPrefix(typeName, "image/") {
 			return data, typeName, nil

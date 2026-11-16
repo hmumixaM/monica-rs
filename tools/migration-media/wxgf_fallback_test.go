@@ -6,7 +6,10 @@ import (
 	"errors"
 	"image"
 	"image/jpeg"
+	"path/filepath"
 	"testing"
+
+	"github.com/sjzar/chatlog/pkg/util/dat2img"
 )
 
 func TestWXGFStaticRecoveryIgnoresMetadataMarkers(t *testing.T) {
@@ -110,5 +113,30 @@ func TestV3BMPWithCollidingWXGFPrefixIsPreserved(t *testing.T) {
 	out, mime, err := transform(input, "image")
 	if err != nil || mime != "image/bmp" || !bytes.Equal(out, plain) {
 		t.Fatal("valid BMP with colliding prefix changed", err)
+	}
+}
+
+func TestWXGFWithoutFFmpegDoesNotPublishCompressedBMPFragment(t *testing.T) {
+	priorMode, priorPath := dat2img.FFmpegMode, dat2img.FFMpegPath
+	dat2img.FFmpegMode = false
+	dat2img.FFMpegPath = filepath.Join(t.TempDir(), "missing-ffmpeg")
+	defer func() { dat2img.FFmpegMode, dat2img.FFMpegPath = priorMode, priorPath }()
+	stream := []byte{}
+	for _, kind := range []byte{32, 33, 34, 19} {
+		stream = append(stream, 0, 0, 0, 1, kind<<1, 1, 0x80)
+	}
+	stream = append(stream, []byte("BM-compressed-payload-fragment")...)
+	plain := make([]byte, 23)
+	copy(plain, "wxgf")
+	plain[4] = 19
+	binary.BigEndian.PutUint16(plain[7:9], 3)
+	binary.BigEndian.PutUint16(plain[9:11], 2)
+	binary.BigEndian.PutUint32(plain[19:23], uint32(len(stream)))
+	plain = append(plain, stream...)
+	if _, ext, err := dat2img.Wxam2pic(plain); err != nil || ext != "bmp" {
+		t.Fatal("fixture did not reproduce unsafe embedded signature fallback", err)
+	}
+	if _, _, err := transform(plain, "image"); err == nil || failureCode(err) != "wxgf_conversion_failed" {
+		t.Fatal("compressed stream fragment was accepted as a BMP", err)
 	}
 }
