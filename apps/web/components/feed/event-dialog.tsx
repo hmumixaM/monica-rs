@@ -16,13 +16,14 @@ import { Avatar, SourceMark } from "../ui/primitives";
 import { ChannelsInfo, EventAnnotations, FeedImage, SharedLinkCard, Unavailable, VideoCover } from "./feed-parts";
 import styles from "./feed.module.css";
 import { InstagramPostDetails } from "./instagram-post";
-import { type EventDetail, eventDate, eventKind, type FeedEvent, isVideo, type MediaReading, type SharedLink } from "./types";
+import { type EventDetail, availableMedia, eventDate, eventKind, type FeedEvent, isVideo, type MediaReading, type SharedLink } from "./types";
 
 /** Post detail: photos on the left, text, places, tags and interactions on the right. Mounted only while open. */
 export function EventDialog({ event, origin, onClose }: { event: FeedEvent; origin: HTMLElement | null; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [detail, setDetail] = useState<EventDetail | null>(null);
   const [error, setError] = useState("");
+  const [failedMedia, setFailedMedia] = useState<string[]>([]);
   const close = useZoomFrom(dialog, origin);
 
   useEffect(() => { dialog.current?.showModal(); }, []);
@@ -30,6 +31,7 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
     const abort = new AbortController();
     setDetail(null);
     setError("");
+    setFailedMedia([]);
     fetch(`/api/v1/timeline/${event.id}`, { signal: abort.signal }).then(async (response) => {
       if (!response.ok) throw new Error(String(response.status));
       setDetail(await response.json());
@@ -38,7 +40,9 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
   }, [event.id]);
 
   const metadata = detail?.event_metadata || event.event_metadata;
-  const media = detail?.media || event.media || [];
+  const allMedia = detail?.media || event.media || [];
+  const media = availableMedia(allMedia).filter(item => !failedMedia.includes(item.id!));
+  const unavailableCount = allMedia.length - media.length;
   const link = (detail?.content as { shared_link?: SharedLink } | undefined)?.shared_link || event.shared_link;
   const body = recordText(detail?.content) || recordText(detail?.summary || event.summary);
   const interactions = detail?.interactions?.filter((item) => item.interaction_type !== "mention") ?? [];
@@ -62,11 +66,12 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
         ? <a href={localMediaUrl(item.id)} target="_blank" rel="noreferrer" aria-label={`查看原图 ${index + 1}`} key={item.id}>
           {item.media_type?.includes("video")
             ? <video controls preload="metadata" src={localMediaUrl(item.id)} poster={localMediaUrl(item.thumbnail_id)} data-zoom-target={index === 0 ? "" : undefined} />
-            : <FeedImage media={item} original alt={`动态照片 ${index + 1}`} zoomTarget={index === 0} />}
+            : <FeedImage media={item} original alt={`动态照片 ${index + 1}`} zoomTarget={index === 0} onUnavailable={() => setFailedMedia(old => old.includes(item.id!) ? old : [...old, item.id!])} />}
         </a>
         : <span key={index}>{isVideo(item) ? <VideoCover media={item} /> : <Unavailable />}</span>)}
     </div>}
     <div className={styles.detailText}>
+      {!link && unavailableCount > 0 && <p className={styles.status} role="status">{unavailableCount} 个附件未能读取，已从图片列表隐藏。原始引用保留在历史记录中。</p>}
       {link && <SharedLinkCard link={link} media={media[0]} />}
       {body && <p className={styles.body}>{body}</p>}
       <ChannelsInfo media={media[0]} />
@@ -86,7 +91,7 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
           {item.author_profile_id ? <Link href={`/profiles/${item.author_profile_id}`}>{item.author_name || "查看联系人"}</Link> : <strong>{item.author_name || "用户"}</strong>}
           {item.content?.text && <span>{item.content.text}</span>}
           {!!item.media?.length && <div className={styles.commentPhotos}>
-            {item.media.map((image, index) => localMediaUrl(image.id)
+            {availableMedia(item.media).map((image, index) => localMediaUrl(image.id)
               ? <a key={image.id} href={localMediaUrl(image.id)} target="_blank" rel="noreferrer" aria-label={`查看评论原图 ${index + 1}`}>
                 <FeedImage media={image} original alt={`评论图片 ${index + 1}`} />
               </a>
