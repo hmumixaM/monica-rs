@@ -28,7 +28,7 @@ class ReadOnlyCoordination(unittest.TestCase):
 
     def test_atomic_refresh_after_probe_is_checked_next_cycle(self):
         with tempfile.TemporaryDirectory()as directory:
-            root=Path(directory);source=root/'source';(source/'contact').mkdir(parents=True)
+            root=Path(directory).resolve();source=root/'source';(source/'contact').mkdir(parents=True)
             path=source/'contact/contact.db';replacement=root/'replacement.db'
             for target,tables in((path,1),(replacement,2)):
                 with closing(sqlite3.connect(target))as db:
