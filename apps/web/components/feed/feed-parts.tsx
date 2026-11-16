@@ -43,7 +43,7 @@ export function SharedLinkCard({ link, media }: { link: SharedLink; media?: Feed
   const url = URL.canParse(link.url) ? new URL(link.url) : null;
   if (!url || !["http:", "https:"].includes(url.protocol) || url.username || url.password) return null;
   return <a className={styles.sharedLink} href={url.href} target="_blank" rel="noopener noreferrer">
-    {media?.id ? <span className={styles.sharedCover}><FeedImage media={media} alt="" /></span> : <span className={styles.sharedIcon}><ArrowUpRight size={20} /></span>}
+    {media ? <span className={styles.sharedCover}><FeedImage media={media} alt={link.kind === "video" ? "视频封面" : "分享封面"} /></span> : <span className={styles.sharedIcon}><ArrowUpRight size={20} /></span>}
     <span><strong>{link.title || url.hostname}</strong>{link.description && <small>{link.description}</small>}<small>{link.kind === "video" ? "视频分享 · " : link.kind === "music" ? "音乐分享 · " : ""}{link.source_name || url.hostname}</small></span>
   </a>;
 }
