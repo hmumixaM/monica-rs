@@ -78,6 +78,33 @@ def stamp(value):
     return datetime.fromisoformat(str(value).replace('Z', '+00:00')).timestamp()
 
 
+def postgres_content(value, path=''):
+    """Render NUL visibly; the byte-exact source remains in raw-json."""
+    if isinstance(value,str):
+        return value.replace('\0','\u2400'),[path]if'\0'in value else[]
+    if isinstance(value,list):
+        result=[];changed=[]
+        for n,item in enumerate(value):
+            normalized,fields=postgres_content(item,path+'/'+str(n));result.append(normalized);changed.extend(fields)
+        return result,changed
+    if isinstance(value,dict):
+        result={};changed=[]
+        for key,item in value.items():
+            if '\0'in key:raise ValueError('source JSON key contains NUL')
+            normalized,fields=postgres_content(item,path+'/'+key.replace('~','~0').replace('/','~1'));result[key]=normalized;changed.extend(fields)
+        return result,changed
+    return value,[]
+
+
+def failure_code(error):
+    message=str(error)
+    if message.startswith('signed import rejected: HTTP '):return 'import_http_'+message.rsplit(' ',1)[-1]
+    if isinstance(error,FileNotFoundError):return 'source_file_missing'
+    if isinstance(error,TimeoutError):return 'source_timeout'
+    if isinstance(error,ValueError):return 'source_value_invalid'
+    return type(error).__name__
+
+
 class Consumer:
     def __init__(self, args, db):
         self.args, self.db = args, db
@@ -90,6 +117,10 @@ class Consumer:
         self.journal.execute('CREATE TABLE IF NOT EXISTS source_files(path TEXT PRIMARY KEY,signature TEXT)')
         self.last_path = None
         self.last_input_time = None
+        self.last_input = None
+        self.input_documents = self.input_bytes = 0
+        self.last_input_progress = 0
+        self.active_provider = None
         self.read_inputs = []
         self.bridge.load_json = self.load
         self.bridge.media = self.deferred_media
@@ -120,12 +151,26 @@ class Consumer:
             raise ValueError('source JSON changed while reading')
         self.last_path = path
         self.last_input_time = before[3]/1_000_000_000
-        self.read_inputs.append((path,self.last_input_time))
         key = hashlib.sha256(raw).hexdigest()
-        archive = self.state / 'raw-json' / (key + '.json')
-        if not archive.exists():
-            atomic(archive, raw)
+        self.last_input=(path,self.last_input_time,key,before)
+        self.read_inputs.append(self.last_input)
+        self.input_documents+=1;self.input_bytes+=len(raw)
+        if time.monotonic()-self.last_input_progress>=5:
+            self.progress('reading_source',provider=self.active_provider,input_documents=self.input_documents,input_bytes=self.input_bytes)
+            self.last_input_progress=time.monotonic()
         return json.loads(raw)
+
+    def archive_inputs(self, inputs, kind):
+        objects=[]
+        for path,at,key,before in inputs:
+            archive=self.state/'raw-json'/(key+'.json')
+            if not archive.exists():
+                raw=path.read_bytes()
+                if signature(path)!=before or hashlib.sha256(raw).hexdigest()!=key:
+                    raise ValueError('source JSON changed before archival')
+                atomic(archive,raw)
+            objects.append(dict(kind='existing_collector_archive',collector_kind=kind,relative_path=path.relative_to(self.args.source).as_posix(),sha256=key,archive_relative_path='raw-json/'+key+'.json'))
+        return objects
 
     def deferred_media(self, path, entity, external, role, expected=None):
         path = path.resolve(strict=True)
@@ -265,6 +310,7 @@ class Consumer:
 
     def social(self, provider):
         self.guard()
+        self.active_provider=provider
         destinations = [('linkedin', self.args.source/'raw/linkedin')] if provider == 'linkedin' else [(k,self.args.source/'staging'/('instagram-'+k)) for k in ('current','stories','highlights')]
         for kind, destination in destinations:
             if not destination.is_dir():
@@ -279,10 +325,12 @@ class Consumer:
                     break
                 if STOP:
                     return
-                captured = max((at for _,at in self.read_inputs),default=self.last_input_time)
+                inputs=self.read_inputs or [self.last_input]
+                captured = max(entry[1]for entry in inputs)
                 occurred = stamp(item.get('occurred_at'))
                 if captured < self.cutoff and (occurred is None or occurred < self.cutoff):
                     continue
+                raw_objects=self.archive_inputs(inputs,kind)
                 if provider=='linkedin' and stream=='messages':
                     item = self.linkedin_message(item)
                 signature_hash = hashlib.sha256(canonical(item)).hexdigest()
@@ -294,11 +342,13 @@ class Consumer:
                     continue
                 manifests = [self.materialize(m,provider) for m in item.get('_manifest',[])]
                 record = {k:v for k,v in item.items() if k != '_manifest'}
+                record['content'],normalized=postgres_content(record['content'])
+                if normalized:record['archive_normalization']=dict(nul='U+2400',fields=normalized)
                 observed = datetime.fromtimestamp(captured,timezone.utc).isoformat()
-                key = hashlib.sha256(canonical([identity,signature_hash,observed])).hexdigest()
-                batch = dict(source=provider,stream=stream,schema_version=1,batch_id='nas-live-'+key,
-                             idempotency_key='nas-live:'+key,observed_at=observed,records=[record],
-                             raw_objects=[dict(kind='existing_collector_archive',collector_kind=kind,relative_path=self.last_path.relative_to(self.args.source).as_posix())],media_manifest=manifests)
+                key = hashlib.sha256(canonical([identity,signature_hash,observed,raw_objects])).hexdigest()
+                batch = dict(source=provider,stream=stream,schema_version=1,batch_id='nas-live-v2-'+key,
+                             idempotency_key='nas-live:v2:'+key,observed_at=observed,records=[record],
+                             raw_objects=raw_objects,media_manifest=manifests)
                 if provider=='linkedin' and stream=='messages':
                     batch['connection_id'] = str(self.args.linkedin_connection)
                 receipt = self.accept(batch)
@@ -461,7 +511,7 @@ def main():
                     except Exception as error:
                         failed = True
                         # Private original inputs remain available; no payload/secret is logged.
-                        consumer.progress('retry_pending',provider=provider,error_type=type(error).__name__)
+                        consumer.progress('retry_pending',provider=provider,error_type=type(error).__name__,error_code=failure_code(error))
                         if db.closed or db.broken:
                             # The container supervisor restarts with a new connection.
                             return 1

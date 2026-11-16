@@ -74,7 +74,7 @@ class LiveImportContract(unittest.TestCase):
         image = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=')
         (folder/'assets/photo.png').write_bytes(image)
         url = 'https://example.invalid/avatar'
-        document = dict(profiles=[dict(provider_user_id='synthetic-peer',profile=dict(name='Synthetic',avatar_url=url),captured_at=datetime.now(timezone.utc).isoformat(),posts=[])],local_assets=[dict(source_url=url,local_path='photo.png',content_hash=hashlib.sha256(image).hexdigest())])
+        document = dict(profiles=[dict(provider_user_id='synthetic-peer',profile=dict(name='Synthetic',avatar_url=url,about='Original\0control and visible ␀'),captured_at=datetime.now(timezone.utc).isoformat(),posts=[])],local_assets=[dict(source_url=url,local_path='photo.png',content_hash=hashlib.sha256(image).hexdigest())])
         self.args.linkedin_self = 'urn:li:member:synthetic-self'
         self.args.linkedin_connection = uuid.uuid4()
         self.db.execute("INSERT INTO crm.source_connections(id,provider,external_account,display_name,connection_method) VALUES(%s,'linkedin',%s,'Existing archive','archive')",(self.args.linkedin_connection,self.args.linkedin_self))
@@ -111,6 +111,11 @@ class LiveImportContract(unittest.TestCase):
             os.umask(original_umask)
         self.assertEqual(len(sent),3)
         self.assertEqual(sent[0]['records'][0]['external_id'],'synthetic-peer')
+        self.assertEqual(sent[0]['records'][0]['content']['about'],'Original␀control and visible ␀')
+        self.assertEqual(sent[0]['records'][0]['archive_normalization']['fields'],['/about'])
+        self.assertEqual(self.db.execute('SELECT %s::jsonb',(json.dumps(sent[0]),)).fetchone()[0],sent[0])
+        self.assertEqual(sent[0]['raw_objects'][0]['sha256'],hashlib.sha256(original).hexdigest())
+        self.assertEqual((self.args.state/sent[0]['raw_objects'][0]['archive_relative_path']).read_bytes(),original)
         messages = [b for b in sent if b['stream']=='messages']
         self.assertTrue(all(b['connection_id']==str(self.args.linkedin_connection) for b in messages))
         self.assertEqual([b['records'][0]['conversation_type'] for b in messages],['direct','group'])
@@ -163,6 +168,24 @@ class LiveImportContract(unittest.TestCase):
             self.consumer.materialize(manifest,'linkedin')
 
 
+
+    def test_only_selected_archive_documents_are_written(self):
+        folder=self.args.source/'staging/instagram-current'
+        folder.mkdir(parents=True)
+        path=folder/'profile.json'
+        raw=json.dumps(dict(node=dict(__typename='GraphUser',id='synthetic-old',username='old'))).encode()
+        path.write_bytes(raw);os.utime(path,(1,1))
+        received=[]
+        with patch.object(self.consumer,'accept',side_effect=lambda batch:received.append(batch)or str(uuid.uuid4())):
+            self.consumer.social('instagram')
+            self.assertEqual(received,[])
+            self.assertFalse((self.args.state/'raw-json').exists())
+            # A capture on/after the explicit boundary becomes selected.
+            os.utime(path,(self.consumer.cutoff+1,self.consumer.cutoff+1))
+            self.consumer.social('instagram')
+        self.assertEqual(len(received),1)
+        self.assertEqual((self.args.state/received[0]['raw_objects'][0]['archive_relative_path']).read_bytes(),raw)
+        self.assertEqual(path.read_bytes(),raw)
 
     def test_database_disconnect_exits_for_a_fresh_supervised_connection(self):
         argv = ['nas-live-imports.py','--run','--once','--source',str(self.args.source),'--state',str(self.args.state),'--media',str(self.args.media),'--since',self.args.since]

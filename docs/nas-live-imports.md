@@ -80,3 +80,15 @@ python3 scripts/test-nas-live-imports.py
 The tests cover a lost HTTP response/retry and shared CAS reuse, plus a live WAL
 backup, stable message identity, correction, revocation, replay and import
 counter de-duplication. The production target guard is not relaxed for testing.
+
+Selected captures retain their original JSON bytes and SHA-256 before validation
+or publication. Old unselected Instagram documents are read for eligibility but
+are not copied again. The worker reports the number and bytes of input documents
+every five seconds while reading. PostgreSQL cannot store NUL in JSON strings;
+record content renders those characters as U+2400 and records the changed JSON
+pointer paths. The raw capture is unchanged and linked by its SHA-256. Identity
+keys are never normalized; a NUL in a JSON key is an explicit retry error.
+
+Version 2 batches use a distinct `nas-live:v2:` receipt namespace and bind the
+original input hashes. Existing successful local delivery rows are reused.
+Replays still use normal content identities and preserve manual profile values.
