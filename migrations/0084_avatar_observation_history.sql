@@ -31,13 +31,19 @@ CREATE TRIGGER avatar_observation_u AFTER UPDATE ON crm.media_slots FOR EACH ROW
 -- Exact field URL-to-asset matching plus account-owned media proves a historic
 -- observation. Ambiguous reused URLs cannot prove which image was observed.
 CREATE FUNCTION crm.backfill_avatar_observations() RETURNS void LANGUAGE sql AS $$
-WITH matches AS (
+WITH addresses AS (
+ SELECT id media_id,source_type provider,source_record_id url FROM crm.media_assets WHERE source_record_id IS NOT NULL
+ UNION
+ SELECT media_id,source,source_url FROM crm.media_provenance WHERE source_url IS NOT NULL
+ UNION
+ SELECT media_id,source,source_record_id FROM crm.media_provenance
+), matches AS (
  SELECT r.id,r.revision_seq,r.source_account_id account_id,r.observed_at,
  CASE WHEN r.field_key='linkedin.avatar_url' THEN 'linkedin_avatar' WHEN r.field_key LIKE 'instagram.%' THEN 'instagram_avatar' ELSE 'wechat_avatar' END AS role,
- min(a.id::text)::uuid media_id,count(DISTINCT a.id) n
- FROM crm.field_revisions r JOIN crm.media_assets a ON a.source_record_id=r.value#>>'{}' AND a.source_type=r.source_type
+ min(a.media_id::text)::uuid media_id,count(DISTINCT a.media_id) n
+ FROM crm.field_revisions r JOIN addresses a ON a.url=r.value#>>'{}' AND a.provider=r.source_type
  WHERE r.source_account_id IS NOT NULL AND r.field_key IN ('linkedin.avatar_url','instagram.profile_pic_url','instagram.avatar_url','wechat.avatar_url')
- AND EXISTS(SELECT 1 FROM crm.media_links m WHERE m.media_id=a.id AND ((m.entity_type='source_account' AND m.entity_id=r.source_account_id) OR m.source_account_id=r.source_account_id))
+ AND EXISTS(SELECT 1 FROM crm.media_links m WHERE m.media_id=a.media_id AND ((m.entity_type='source_account' AND m.entity_id=r.source_account_id) OR m.source_account_id=r.source_account_id))
  GROUP BY r.id,r.revision_seq,r.source_account_id,r.observed_at,r.field_key
 ), ordered AS (
  SELECT *,lag(media_id) OVER(PARTITION BY account_id,role ORDER BY observed_at,revision_seq) previous FROM matches WHERE n=1

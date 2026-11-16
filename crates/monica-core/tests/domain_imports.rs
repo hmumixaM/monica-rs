@@ -1436,10 +1436,23 @@ async fn proven_legacy_avatar_history_and_current_slot_override_aliases(pool: Pg
             "2026-10-20T12:00:00Z",
         ),
     ] {
-        sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,source_type,source_record_id,verified_at) VALUES($1,$2,'image/jpeg',1,'synthetic','wechat',$3,now())").bind(id).bind(key.to_string().repeat(64)).bind(url).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,source_type,source_record_id,verified_at) VALUES($1,$2,'image/jpeg',1,'synthetic','wechat',$3,now())").bind(id).bind(key.to_string().repeat(64)).bind(if id==new {"https://example.invalid/original-shared-content"} else {url}).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('source_account',$1,$2,'wechat_avatar')").bind(account).bind(id).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,source_account_id,field_key,value,content_hash,source_type,operation,observed_at) VALUES(gen_random_uuid(),$1,$2,'wechat.avatar_url',$3,'synthetic','wechat','import',$4::text::timestamptz)").bind(person).bind(account).bind(json!(url)).bind(at).execute(&pool).await.unwrap();
     }
+    // Deduplicated content may first belong to a different provider/URL.
+    sqlx::query("UPDATE crm.media_assets SET source_type='instagram' WHERE id=$1")
+        .bind(new)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO crm.media_provenance(media_id,source,source_record_id,source_url) VALUES($1,'wechat','new-avatar','https://example.invalid/new')").bind(new).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,source_account_id,field_key,value,content_hash,source_type,operation,observed_at) VALUES(gen_random_uuid(),$1,$2,'wechat.avatar_url',$3,'synthetic','wechat','import','2026-10-21')").bind(person).bind(account).bind(json!("https://example.invalid/old")).execute(&pool).await.unwrap();
+    // Both contents have the reused URL, one via provenance only. It proves neither.
+    for id in [old, new] {
+        sqlx::query("INSERT INTO crm.media_provenance(media_id,source,source_record_id,source_url) VALUES($1,'wechat','ambiguous-avatar','https://example.invalid/reused')").bind(id).execute(&pool).await.unwrap();
+    }
+    sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,source_account_id,field_key,value,content_hash,source_type,operation,observed_at) VALUES(gen_random_uuid(),$1,$2,'wechat.avatar_url',$3,'synthetic','wechat','import','2026-10-22')").bind(person).bind(account).bind(json!("https://example.invalid/reused")).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('profile',$1,$2,'wechat_avatar')").bind(person).bind(old).execute(&pool).await.unwrap();
     sqlx::query("UPDATE crm.profiles SET avatar_media_id=$2 WHERE id=$1")
         .bind(person)
@@ -1471,5 +1484,8 @@ async fn proven_legacy_avatar_history_and_current_slot_override_aliases(pool: Pg
         .await
         .unwrap();
     let changes:Vec<(Option<Uuid>,Uuid)>=sqlx::query_as("SELECT previous_media_id,media_id FROM crm.avatar_observations WHERE account_id=$1 AND revision_id IS NOT NULL ORDER BY observed_at").bind(account).fetch_all(&pool).await.unwrap();
-    assert_eq!(changes, vec![(None, old), (Some(old), new)]);
+    assert_eq!(
+        changes,
+        vec![(None, old), (Some(old), new), (Some(new), old)]
+    );
 }

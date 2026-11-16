@@ -6,7 +6,7 @@ CREATE TABLE crm.wechat_emoji_cache (
  CHECK((state='cached')=(media_id IS NOT NULL))
 );
 CREATE TABLE crm.wechat_emoji_messages (
- message_id uuid PRIMARY KEY REFERENCES crm.message_search(message_id),reference_fingerprint text NOT NULL,
+ message_id uuid PRIMARY KEY REFERENCES crm.message_search(message_id) ON DELETE CASCADE,reference_fingerprint text NOT NULL,
  md5 text REFERENCES crm.wechat_emoji_cache(md5),state text NOT NULL CHECK(state IN ('cached','not_in_local_archive','no_reference')),
  checked_at timestamptz NOT NULL DEFAULT now()
 );

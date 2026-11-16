@@ -98,11 +98,28 @@ mod tests {
         assert_eq!(current[0]["received"], 0);
         assert_eq!(current[0]["records"], 3);
         tx.commit().await.unwrap();
+        // The derived per-message emoji state must not pin source projections.
+        sqlx::query("INSERT INTO crm.wechat_emoji_cache(md5,state) VALUES(repeat('a',32),'not_in_local_archive')").execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.wechat_emoji_messages(message_id,reference_fingerprint,md5,state) SELECT message_id,'synthetic',repeat('a',32),'not_in_local_archive' FROM crm.message_search WHERE conversation_id=$1").bind(conversation).execute(&pool).await.unwrap();
         sqlx::query("DELETE FROM crm.message_search WHERE conversation_id=$1")
             .bind(conversation)
             .execute(&pool)
             .await
             .unwrap();
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM crm.wechat_emoji_messages")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM crm.wechat_emoji_cache")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            1
+        );
         let mut tx = pool.begin().await.unwrap();
         assert!(rows(&mut tx, target, "UTC").await.unwrap().is_empty());
         assert_eq!(summary(&mut tx, target).await.unwrap()["record_total"], 0);

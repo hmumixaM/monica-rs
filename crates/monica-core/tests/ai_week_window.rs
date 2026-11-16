@@ -188,14 +188,15 @@ async fn whole_week_volume_privacy_citations_and_role_cache(pool: PgPool) {
         .await
         .unwrap();
     run(&pool, &provider).await;
-    let calls = provider.calls.lock().unwrap();
-    assert_eq!(
-        calls.len() - before,
-        1,
-        "person-only model change must reuse batch parts"
-    );
-    assert_eq!(calls.last().unwrap().1, "new-person");
-    drop(calls);
+    {
+        let calls = provider.calls.lock().unwrap();
+        assert_eq!(
+            calls.len() - before,
+            1,
+            "person-only model change must reuse batch parts"
+        );
+        assert_eq!(calls.last().unwrap().1, "new-person");
+    }
     sqlx::query("UPDATE crm.ai_settings SET include_messages=false,include_private_notes=false")
         .execute(&pool)
         .await
@@ -203,14 +204,15 @@ async fn whole_week_volume_privacy_citations_and_role_cache(pool: PgPool) {
     provider.calls.lock().unwrap().clear();
     ai::enqueue(&pool, "ai.digest", "2026-11-09").await.unwrap();
     run(&pool, &provider).await;
-    let calls = provider.calls.lock().unwrap();
-    assert!(
-        calls
-            .iter()
-            .all(|(_, _, s)| !s.contains("CHAT-") && !s.contains("NOTE-"))
-    );
-    assert_eq!(calls.last().unwrap().1, "saved-writer");
-    drop(calls);
+    {
+        let calls = provider.calls.lock().unwrap();
+        assert!(
+            calls
+                .iter()
+                .all(|(_, _, s)| !s.contains("CHAT-") && !s.contains("NOTE-"))
+        );
+        assert_eq!(calls.last().unwrap().1, "saved-writer");
+    }
     let digest: Value =
         sqlx::query_scalar("SELECT output FROM crm.weekly_digests WHERE week_start='2026-11-09'")
             .fetch_one(&pool)
@@ -422,13 +424,12 @@ async fn retained_observation_dates_recovery_and_stale_window_retry(pool: PgPool
         .await
         .unwrap();
     let replay = ai::enqueue(&pool, "ai.digest", "2026-11-09").await.unwrap();
-    assert_eq!(
+    assert!(
         sqlx::query_scalar::<_, bool>("SELECT pruned FROM crm.ai_week_runs WHERE job_id=$1")
             .bind(replay)
             .fetch_one(&pool)
             .await
-            .unwrap(),
-        true
+            .unwrap()
     );
     run(&pool, &provider).await;
     let replayed: Value = sqlx::query_scalar("SELECT output FROM crm.ai_outputs WHERE job_id=$1")
