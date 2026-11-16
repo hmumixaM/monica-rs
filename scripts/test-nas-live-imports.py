@@ -206,9 +206,25 @@ class LiveImportContract(unittest.TestCase):
             writer.execute('CREATE TABLE messages(id)');writer.commit();writer.execute('BEGIN EXCLUSIVE')
             with closing(sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=0.01))as source,closing(sqlite3.connect(self.args.state/'unfinished.db'))as target:
                 reports=[]
-                with self.assertRaises(TimeoutError):live.backup_with_progress(source,target,lambda *row:reports.append(row),stall_seconds=0.02)
-                self.assertTrue(reports)
+                with self.assertRaises(sqlite3.OperationalError):live.backup_with_progress(source,target,lambda *row:reports.append(row),stall_seconds=0.02)
+                self.assertFalse(source.in_transaction)
             writer.rollback();self.assertEqual(writer.execute('SELECT count(*) FROM messages').fetchone()[0],0)
+
+    def test_backup_keeps_one_read_snapshot_while_wal_writer_commits(self):
+        path=self.args.source/'wal-snapshot.db'
+        with closing(sqlite3.connect(path))as writer:
+            writer.execute('PRAGMA journal_mode=WAL');writer.execute('CREATE TABLE messages(id INTEGER PRIMARY KEY,body TEXT)')
+            writer.executemany('INSERT INTO messages(body)VALUES(?)',[('x'*4000,)]*2500);writer.commit()
+            inserted=[]
+            def report(*_):
+                if not inserted:
+                    writer.execute("INSERT INTO messages(body)VALUES('arrived during copy')");writer.commit();inserted.append(True)
+            with closing(sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.01))as source,closing(sqlite3.connect(self.args.state/'snapshot.db'))as target:
+                live.backup_with_progress(source,target,report)
+                self.assertTrue(inserted)
+                self.assertEqual(target.execute('SELECT count(*) FROM messages').fetchone()[0],2500)
+                self.assertFalse(source.in_transaction)
+            self.assertEqual(writer.execute('SELECT count(*) FROM messages').fetchone()[0],2501)
 
     def test_database_disconnect_exits_for_a_fresh_supervised_connection(self):
         argv = ['nas-live-imports.py','--run','--once','--source',str(self.args.source),'--state',str(self.args.state),'--media',str(self.args.media),'--since',self.args.since]

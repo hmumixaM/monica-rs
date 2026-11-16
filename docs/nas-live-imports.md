@@ -103,3 +103,13 @@ the Mac, bounded by a two-second SQLite busy timeout and one probe per changed
 file per minute. Preserve its PID/start receipt and restart it after a NAS reboot.
 SQLite backup reports page counts and retries a file after 120 seconds without
 progress; partial exports are not published or acknowledged.
+
+Each source file backup pins an explicit read transaction before stepping pages.
+This prevents a read-only WAL source from restarting every incremental step.
+The snapshot is released on success, cancellation or failure. WAL writers can
+continue committing while that read snapshot is held. Source journal mode and
+business data are not changed; a busy initial read fails within the connection
+busy timeout and is retried without acknowledging a partial export.
+
+Each polling cycle handles WeChat before social archive scans so the large
+Instagram history walk does not postpone an unfinished WeChat backfill.
