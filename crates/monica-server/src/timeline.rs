@@ -383,9 +383,7 @@ fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
     // The entity's numbered media slot still identifies the same attachment.
     // Additive history can contain several assets for a role: do not guess then.
     let by_role = |role: &str| {
-        let mut matches = local
-            .iter()
-            .filter(|m| m["ready"] != false && m["role"].as_str() == Some(role));
+        let mut matches = local.iter().filter(|m| m["role"].as_str() == Some(role));
         let first = matches.next()?;
         let source = first["source_url"].as_str().unwrap_or("");
         (matches.all(|m| m["id"] == first["id"])
@@ -650,6 +648,12 @@ mod tests {
         assert_eq!(merged[1]["thumbnail_id"], "cover");
         assert_eq!(merged[1]["source_media_type"], "video");
         assert!(merged[2]["id"].is_null());
+        let mut unavailable = local.clone();
+        unavailable[2]["ready"] = json!(false);
+        let one = merge_media(&json!([remote[0]]), &json!([unavailable[2]]));
+        assert_eq!(one.len(), 1);
+        assert_eq!(one[0]["id"], "photo");
+        assert_eq!(one[0]["ready"], false);
 
         let ambiguous = json!([
             {"id":"older","role":"media-1"},
