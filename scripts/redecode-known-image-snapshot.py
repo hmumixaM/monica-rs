@@ -87,7 +87,7 @@ def run(args, credentials):
     with sqlite3.connect(args.journal) as db:
         db.executescript('''CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT);
             CREATE TABLE IF NOT EXISTS results(source_key TEXT PRIMARY KEY,raw_sha256 TEXT NOT NULL,
-            old_asset_sha256 TEXT NOT NULL,code TEXT NOT NULL,asset TEXT,frames INT,finished_at REAL NOT NULL);''')
+            old_asset_sha256 TEXT,code TEXT NOT NULL,asset TEXT,frames INT,finished_at REAL NOT NULL);''')
         existing = dict(db.execute('SELECT key,value FROM metadata'))
         require(not existing or existing == metadata)
         if not existing:
@@ -102,8 +102,10 @@ def run(args, credentials):
         started, last = time.monotonic(), time.monotonic()
 
         def record(row, code, asset=None, frames=0):
+            previous = json.loads(row[3])
+            require(previous is None or (isinstance(previous, dict) and helper.digest(previous.get('sha256'))))
             db.execute('INSERT INTO results VALUES(?,?,?,?,?,?,?)',
-                       (row[0], row[2], json.loads(row[3])['sha256'], code,
+                       (row[0], row[2], previous['sha256'] if previous else None, code,
                         json.dumps(asset) if asset else None, frames, time.time()))
 
         for start in range(0, len(rows), args.batch_size):
@@ -116,8 +118,11 @@ def run(args, credentials):
                         and str(relative) == row[1])
                 source = args.source / row[1]
                 try:
-                    require(0 < helper.canonical(source).st_size <= 64 * 1024 * 1024)
-                    matching = helper.checksum(source) == row[2]
+                    # Existing WeChat cache files can legitimately be hardlinked.
+                    # Reading them is safe; canonical paths and stable content
+                    # hashes still bind both sides of the codec invocation.
+                    require(0 < helper.canonical(source, independent=False).st_size <= 64 * 1024 * 1024)
+                    matching = helper.checksum(source, independent=False) == row[2]
                 except (OSError, helper.Failure):
                     matching = False
                 if not matching:
@@ -156,7 +161,7 @@ def run(args, credentials):
                     if 'asset' not in response:
                         record(row, response.get('error_code', 'codec_failed'))
                         continue
-                    require(helper.checksum(args.source / row[1]) == row[2])
+                    require(helper.checksum(args.source / row[1], independent=False) == row[2])
                     asset = response['asset']
                     try:
                         if asset['sha256'] not in cache:

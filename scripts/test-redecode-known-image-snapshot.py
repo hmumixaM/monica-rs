@@ -71,6 +71,23 @@ class CorrectionTests(unittest.TestCase):
         with self.assertRaises(Exception):
             correction.run(self.args, {'image_key': '', 'image_xor': ''})
 
+    def test_hardlinked_original_is_read_without_changing_either_name(self):
+        source = self.args.source / 'synthetic.dat'
+        alias = self.args.source / 'same-source.dat'
+        os.link(source, alias)
+        self.assertEqual(correction.run(self.args, {'image_key': '', 'image_xor': ''})['counts'], {'ready': 1})
+        self.assertEqual(source.read_bytes(), self.original)
+        self.assertEqual(alias.read_bytes(), self.original)
+        self.assertEqual(source.stat().st_nlink, 2)
+
+    def test_previously_missing_image_has_no_invented_previous_asset_hash(self):
+        manifest = json.loads(self.args.input.read_text())
+        manifest['rows'][0][3] = 'null'
+        self.args.input.write_text(json.dumps(manifest))
+        self.assertEqual(correction.run(self.args, {'image_key': '', 'image_xor': ''})['counts'], {'ready': 1})
+        with sqlite3.connect(self.args.journal) as db:
+            self.assertIsNone(db.execute('SELECT old_asset_sha256 FROM results').fetchone()[0])
+
 
 if __name__ == '__main__':
     unittest.main()
