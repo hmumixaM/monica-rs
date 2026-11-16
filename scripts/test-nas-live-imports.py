@@ -220,7 +220,9 @@ class LiveImportContract(unittest.TestCase):
                 if not inserted:
                     writer.execute("INSERT INTO messages(body)VALUES('arrived during copy')");writer.commit();inserted.append(True)
             with closing(sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.01))as source,closing(sqlite3.connect(self.args.state/'snapshot.db'))as target:
-                live.backup_with_progress(source,target,report)
+                clock=live.time.monotonic;origin=clock()
+                with patch.object(live.time,'monotonic',side_effect=lambda:10+clock()-origin):
+                    live.backup_with_progress(source,target,report)
                 self.assertTrue(inserted)
                 self.assertEqual(target.execute('SELECT count(*) FROM messages').fetchone()[0],2500)
                 self.assertFalse(source.in_transaction)
