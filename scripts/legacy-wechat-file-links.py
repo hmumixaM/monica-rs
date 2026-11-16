@@ -79,6 +79,26 @@ def prepare_media_keys(index,state,identity):
                 match=re.fullmatch(r'([0-9a-fA-F]{32})(?:[._].*)?',Path(source_path).name)
                 if kind in ('image','video')and match:values.add((kind,match.group(1).lower(),key))
             index.executemany('INSERT OR IGNORE INTO media_keys.keys VALUES(?,?,?)',values)
+def message_with_frozen_row(candidates,local_id,server_id,at,message_type):
+    # Only disambiguate using the frozen source row, never a UUID or row order.
+    def integer(value):
+        if type(value)is int:return value
+        if isinstance(value,str)and re.fullmatch('-?[0-9]+',value):return int(value)
+        raise ValueError('frozen message identity is not an integer')
+    expected=(integer(local_id),integer(server_id or 0),integer(at),integer(message_type))
+    matched=set()
+    for mid,original,projected in candidates:
+        for raw in(original,projected):
+            if not isinstance(raw,dict)or not all(k in raw for k in('local_id','server_id','create_time','local_type')):continue
+            try:
+                values=[raw[k]for k in('local_id','server_id','create_time','local_type')]
+                if any(isinstance(v,bool)for v in values):continue
+                actual=(integer(values[0]),integer(values[1]or 0),integer(values[2]),integer(values[3])&0xffffffff)
+            except(TypeError,ValueError):continue
+            if actual==expected:matched.add(mid)
+    if len(matched)!=1:raise ValueError('ambiguous message media association; frozen source evidence is not unique')
+    return next(iter(matched))
+
 def main():
     _ssd_copy_lock = open('/copy.lock', 'r')
     _ssd_fcntl.flock(_ssd_copy_lock, _ssd_fcntl.LOCK_EX | _ssd_fcntl.LOCK_NB)
@@ -141,12 +161,18 @@ def main():
                     source_id='server:'+str(server_id) if server_id else (key[8:] if key.startswith('message/') else key)
                     conversation=('group:' if legacy.reader.is_group_identity(chat) else 'direct:')+chat
                     rows=db.execute("SELECT m.message_id FROM crm.conversations c JOIN crm.message_search m ON m.conversation_id=c.id JOIN crm.legacy_message_evidence e USING(message_id) WHERE c.provider='wechat' AND c.account=%s AND c.external_id=%s AND m.message_type=%s AND m.occurred_at=to_timestamp(%s) AND e.source_record_id=%s",(manifest['own_id'],conversation,message_type,at,source_id)).fetchall()
-                    if len(rows)>1:raise ValueError('ambiguous message media association; no link guessed')
                     if not rows:missing_current+=1;continue
+                    if len(rows)>1:
+                        candidates=db.execute("SELECT e.message_id,e.original,coalesce(v.payload_json,o.payload_json)->'chatlog_original'->'raw_message' FROM crm.legacy_message_evidence e LEFT JOIN crm.legacy_chatlog_projection p ON p.entity_type='message' AND p.entity_id=e.message_id LEFT JOIN crm.legacy_chatlog_versions lv ON lv.entity_type=p.entity_type AND lv.entity_id=p.entity_id AND lv.revision=p.revision LEFT JOIN crm.content_objects v ON v.id=lv.content_object_id LEFT JOIN crm.content_objects o ON o.id=e.content_object_id WHERE e.message_id=ANY(%s)",([r[0]for r in rows],)).fetchall()
+                        try:mid=message_with_frozen_row(candidates,local_id,server_id,at,message_type)
+                        except ValueError:
+                            print(json.dumps({'phase':'ambiguous_message_media','source_key':key,'candidate_ids':[str(r[0])for r in rows]}),flush=True)
+                            raise
+                    else:mid=rows[0][0]
                     media_id=db.execute('SELECT id FROM crm.media_assets WHERE sha256=%s',(asset['sha256'],)).fetchone()[0]
                     # Only the message owns this link. Account/person ownership
                     # remains governed by its existing attribution rules.
-                    db.execute("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) SELECT 'message_event',%s,%s,%s WHERE NOT EXISTS(SELECT 1 FROM crm.media_links WHERE entity_type='message_event' AND entity_id=%s AND media_id=%s) ON CONFLICT DO NOTHING",(rows[0][0],media_id,kind,rows[0][0],media_id))
+                    db.execute("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) SELECT 'message_event',%s,%s,%s WHERE NOT EXISTS(SELECT 1 FROM crm.media_links WHERE entity_type='message_event' AND entity_id=%s AND media_id=%s) ON CONFLICT DO NOTHING",(mid,media_id,kind,mid,media_id))
                     linked+=1
             print(json.dumps({'phase':'indexed_message_media','references_linked':linked,'pending_file_resolution':pending,'unmatched_current_messages':missing_current}),flush=True)
         print(json.dumps({'phase':'indexed_message_media_registered','registered_file_records':registered,'message_references_linked':linked,'pending_file_resolution':pending,'unmatched_current_messages':missing_current,'all_chatlog_media_complete':False,'unresolved_file_records':failures,'partial':bool(failures)}),flush=True)

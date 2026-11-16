@@ -46,4 +46,12 @@ class RecoveryLinkContract(unittest.TestCase):
             self.assertEqual(linker.proven_source_paths(index,set(),'legacy','image','b'*32,['msg/actual.dat'],'msg/actual.dat','c'*64,asset),['msg/actual.dat'])
             with self.assertRaises(ValueError):linker.proven_source_paths(index,set(),'legacy','image','b'*32,['msg/actual.dat'],'msg/other.dat','c'*64,asset)
 
+    def test_duplicate_presentation_uses_only_unique_frozen_row_evidence(self):
+        source=dict(local_id=114,server_id=2842852990818986645,create_time=1636266057,local_type=3)
+        candidates=[('legacy-presentation',{'id':'old-presentation'},None),('frozen-message',source,source)]
+        self.assertEqual(linker.message_with_frozen_row(candidates,114,2842852990818986645,1636266057,'3'),'frozen-message')
+        with self.assertRaises(ValueError):linker.message_with_frozen_row(candidates,115,2842852990818986645,1636266057,'3')
+        with self.assertRaises(ValueError):linker.message_with_frozen_row([*candidates,('another-proven-message',source,None)],114,2842852990818986645,1636266057,'3')
+        with self.assertRaises(ValueError):linker.message_with_frozen_row([('fractional',{**source,'local_id':114.5},None)],114,2842852990818986645,1636266057,'3')
+
 if __name__=='__main__':unittest.main()
