@@ -68,6 +68,26 @@ class LiveImportContract(unittest.TestCase):
         # Never relax the production identity guard; this test uses another DB.
         self.consumer.guard = lambda: None
 
+    def test_archived_media_url_restore_checks_bytes_and_replays_without_changes(self):
+        binding = live.module('legacy_media_bindings', 'legacy-media-bindings.py')
+        migration, mid = uuid.uuid4(), uuid.uuid4()
+        image = b'synthetic-published-image'
+        digest = hashlib.sha256(image).hexdigest()
+        path = self.args.media/'sha256'/digest[:2]/digest[2:4]/digest
+        path.parent.mkdir(parents=True);path.write_bytes(image)
+        self.db.execute("INSERT INTO crm.legacy_migrations(id,manifest_hash,source_manifest,status) VALUES(%s,'binding-test','{}','database_ready')", (migration,))
+        self.db.execute("INSERT INTO crm.media_assets(id,sha256,byte_length,media_type,object_path,source_type) VALUES(%s,%s,%s,'image/jpeg','legacy-path','wechat')", (mid,digest,len(image)))
+        value = json.dumps(dict(media_id=str(mid),source_url='https://synthetic.invalid/photo'))
+        self.db.execute("INSERT INTO crm.legacy_history VALUES(%s,'crm','remote_media_sources','one',%s)", (migration,value))
+        first = binding.restore_page(self.db,self.args.media,migration,'')
+        self.assertEqual((first['processed'],first['inserted'],first['missing_files']),(1,1,0))
+        self.assertEqual(binding.restore_page(self.db,self.args.media,migration,'')['inserted'],0)
+        self.assertEqual(self.db.execute('SELECT source_url FROM crm.media_provenance WHERE media_id=%s',(mid,)).fetchall(),[('https://synthetic.invalid/photo',)])
+        path.write_bytes(b'truncated')
+        self.assertEqual(binding.restore_page(self.db,self.args.media,migration,'')['missing_files'],1)
+        self.assertEqual(self.db.execute('SELECT payload FROM crm.legacy_history WHERE migration_id=%s',(migration,)).fetchone()[0],json.loads(value))
+        self.assertEqual(self.db.execute('SELECT count(*) FROM crm.media_provenance WHERE media_id=%s',(mid,)).fetchone()[0],1)
+
     def test_social_ack_retry_cas_reuse_and_raw_bytes(self):
         folder = self.args.source/'raw/linkedin'
         (folder/'assets').mkdir(parents=True)

@@ -3,18 +3,18 @@
 import { Heart, ImageIcon, MessageCircle } from "lucide-react";
 
 import { recordText } from "../../lib/record-text";
-import { localMediaUrl } from "../../lib/media";
 import { PersonLink } from "../ui/person-link";
 import { Avatar } from "../ui/primitives";
 import { ChannelsInfo, EventAnnotations, FeedImage, SharedLinkCard } from "./feed-parts";
 import styles from "./feed.module.css";
 import { InstagramPostBadge } from "./instagram-post";
-import { eventDate, eventKind, type FeedEvent } from "./types";
+import { availableMedia, eventDate, eventKind, type FeedEvent } from "./types";
 
 /** One post. Clicking anywhere that is not a link or control opens the detail; the photo zooms from its thumbnail. */
 export function FeedCard({ event, onOpen }: { event: FeedEvent; onOpen: (event: FeedEvent, origin: HTMLElement | null) => void }) {
   const caption = recordText(event.summary);
-  const cover = !event.shared_link && event.media?.find((item) => item.ready !== false && localMediaUrl(item.id));
+  const media = availableMedia(event.media);
+  const cover = !event.shared_link && media[0];
   return <article className={styles.card} data-text={cover ? undefined : ""} data-source={event.provider}
     onClick={(click) => {
       const target = click.target as HTMLElement;
@@ -24,7 +24,7 @@ export function FeedCard({ event, onOpen }: { event: FeedEvent; onOpen: (event: 
     {cover && <button type="button" className={styles.photo} data-thumb="" aria-label={`打开${event.profile_name || ""}的${event.title}`}
       onClick={(click) => onOpen(event, click.currentTarget.querySelector("img"))}>
       <FeedImage media={cover} alt={caption.slice(0, 80) || event.title} />
-      {event.media.length > 1 && <span className={styles.count}><ImageIcon size={12} aria-hidden="true" />{event.media.length}</span>}
+      {media.length > 1 && <span className={styles.count}><ImageIcon size={12} aria-hidden="true" />{media.length}</span>}
     </button>}
     <header className={styles.cardHeader}>
       {event.profile_id ? <PersonLink className={styles.person} href={`/profiles/${event.profile_id}`}>

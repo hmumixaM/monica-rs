@@ -41,3 +41,6 @@ export function eventKind(event: Pick<FeedEvent, "provider" | "media" | "event_m
   if (event.provider === "wechat") return event.media?.some((media) => media.source_kind === "wechat_channels") ? "视频号 · 朋友圈" : "朋友圈";
   return FEED_SOURCES[event.provider] || event.provider;
 }
+
+/** Only actual local attachments belong in the photo stream; missing references stay diagnostic. */
+export const availableMedia = (media: FeedMedia[] = []) => media.filter(item => item.ready !== false && !!item.id);

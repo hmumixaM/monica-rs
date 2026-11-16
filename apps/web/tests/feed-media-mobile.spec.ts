@@ -14,7 +14,7 @@ async function feed(page: Page, media: FeedMedia[] = event.media) {
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/v1/timeline') return route.fulfill({json: [{...event, media}]});
-    if (path === `/api/v1/timeline/${event.id}`) return route.fulfill({json: {...event, content: {caption: event.summary}}});
+    if (path === `/api/v1/timeline/${event.id}`) return route.fulfill({json: {...event, media, content: {caption: event.summary}}});
     if (path.startsWith('/api/v1/media/')) {
       const i = ids.indexOf(path.split('/').at(-1)!);
       if (i < 0) return route.fulfill({status: 404});
@@ -35,6 +35,16 @@ test('a stale source reference and failed thumbnail do not hide the registered o
   await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
   expect(await page.getByRole('group', {name: '动态来源'}).getByRole('button').evaluateAll(buttons =>
     buttons.every(button => button.getBoundingClientRect().height >= 44))).toBeTruthy();
+});
+
+test('detail hides actual missing references without putting placeholders before valid photos', async ({page}) => {
+  await feed(page, [{media_type: 'image', ready: false}, ...event.media]);
+  await page.locator('article [data-thumb]').click();
+  const dialog = page.getByRole('dialog', {name: '动态详情'});
+  await expect(dialog.getByAltText(/^动态照片/)).toHaveCount(3);
+  await expect(dialog.getByText('图片尚未缓存或暂不可用')).toHaveCount(0);
+  await expect(dialog.getByRole('status')).toContainText('1 个附件未能读取');
+  await expect(dialog.getByAltText('动态照片 1')).toHaveAttribute('src', `/api/v1/media/${ids[0]}`);
 });
 
 test('mobile photos and text never overlap and the close button stays reachable', async ({page}) => {

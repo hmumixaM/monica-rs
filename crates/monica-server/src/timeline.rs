@@ -86,7 +86,7 @@ SELECT jsonb_build_object(
  'media',coalesce(e.content->'media','[]'::jsonb),'local_media',coalesce(media.items,'[]'::jsonb),
  '_content',e.content,'_event_type',e.event_type,'event_metadata',e.content->'metadata')
 FROM candidates e LEFT JOIN crm.profiles p ON p.id=e.profile_id
-LEFT JOIN LATERAL(SELECT jsonb_agg(jsonb_build_object('id',m.id,'media_type',m.media_type,'width',m.width,'height',m.height,'role',l.role,'source_url',(SELECT min(source_url) FROM crm.media_provenance WHERE media_id=m.id)) ORDER BY l.role,m.id) AS items FROM crm.media_links l JOIN crm.media_assets m ON m.id=l.media_id WHERE l.entity_id=e.id AND (e.provider<>'manual' OR m.media_type LIKE 'image/%' OR m.media_type LIKE 'video/%')) media ON true
+LEFT JOIN LATERAL(SELECT jsonb_agg(jsonb_build_object('id',m.id,'media_type',m.media_type,'width',m.width,'height',m.height,'role',l.role,'sha256',m.sha256,'byte_length',m.byte_length,'source_urls',(SELECT jsonb_agg(DISTINCT source_url) FROM crm.media_provenance WHERE media_id=m.id AND source_url IS NOT NULL),'source_url',(SELECT min(source_url) FROM crm.media_provenance WHERE media_id=m.id)) ORDER BY l.role,m.id) AS items FROM crm.media_links l JOIN crm.media_assets m ON m.id=l.media_id WHERE l.entity_id=e.id AND (e.provider<>'manual' OR m.media_type LIKE 'image/%' OR m.media_type LIKE 'video/%')) media ON true
 ORDER BY e.occurred_at DESC NULLS LAST,e.id DESC
 "#;
     // Scope through indexed IDs before filtering and hydrating this page. Keep
@@ -107,6 +107,11 @@ ORDER BY e.occurred_at DESC NULLS LAST,e.id DESC
         .bind(q.limit.unwrap_or(50).clamp(1, 100))
         .fetch_all(&s.pool)
         .await?;
+    let mut rows = rows;
+    let mut availability = std::collections::HashMap::new();
+    for row in &mut rows {
+        check_local_media(&s.media_root, &mut row["local_media"], &mut availability).await;
+    }
     let mut rows = rows
         .into_iter()
         .map(|mut r| {
@@ -129,7 +134,8 @@ ORDER BY e.occurred_at DESC NULLS LAST,e.id DESC
                 .unwrap_or(json!([]));
             let mut media = merge_media(&r["media"], &local);
             for item in &mut media {
-                item["ready"] = json!(item.get("id").is_some_and(|v| !v.is_null()));
+                item["ready"] =
+                    json!(item.get("id").is_some_and(|v| !v.is_null()) && item["ready"] != false);
             }
             if q.media.is_some() {
                 media.retain(|v| v["ready"] == true);
@@ -159,7 +165,14 @@ async fn detail(
         let media: Vec<Value> = sqlx::query_scalar("SELECT to_jsonb(m)-'object_path'||jsonb_build_object('role',l.role,'ready',true) FROM crm.media_links l JOIN crm.media_assets m ON m.id=l.media_id WHERE l.entity_type='activity' AND l.entity_id=$1 AND (m.media_type LIKE 'image/%' OR m.media_type LIKE 'video/%') ORDER BY l.role,m.id")
             .bind(id).fetch_all(&s.pool).await?;
         activity["participants"] = json!(participants);
-        activity["media"] = json!(media);
+        let mut media = json!(media);
+        check_local_media(
+            &s.media_root,
+            &mut media,
+            &mut std::collections::HashMap::new(),
+        )
+        .await;
+        activity["media"] = media;
         return Ok(Json(activity));
     }
     let (mut row, source_object_id):(Value,Uuid)=sqlx::query_as("SELECT jsonb_build_object('id',e.id,'provider',e.provider,'external_id',e.external_id,'profile_id',e.profile_id,'occurred_at',e.occurred_at,'content_hash',e.content_hash,'profile_display_name',p.display_name,'content',e.content,'event_type',e.event_type)||CASE WHEN e.event_type='post' THEN jsonb_build_object('source_updated_at',e.source_updated_at,'last_seen_at',e.last_seen_at,'status',e.status) ELSE jsonb_build_object('expires_at',e.expires_at,'coverage_status',e.status) END, e.object_id FROM crm.timeline_events e LEFT JOIN crm.profiles p ON p.id=e.profile_id WHERE e.id=$1 AND ($2::text IS NULL OR e.provider=$2)").bind(id).bind(q.provider).fetch_optional(&s.pool).await?.ok_or(ApiError(StatusCode::NOT_FOUND,"timeline event not found"))?;
@@ -171,9 +184,20 @@ async fn detail(
         &row["content"],
     );
     resolve_mentions(&s.pool, std::slice::from_mut(&mut row)).await?;
-    let media:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',m.id,'role',l.role,'media_type',m.media_type,'byte_length',m.byte_length,'width',m.width,'height',m.height,'duration_ms',to_jsonb(m)->'duration_ms','capture_at',m.capture_at,'source_url',coalesce((SELECT min(source_url) FROM crm.media_provenance WHERE media_id=m.id),m.source_record_id)) FROM crm.media_links l JOIN crm.media_assets m ON m.id=l.media_id WHERE l.entity_id=$1 ORDER BY l.role,m.id").bind(id).fetch_all(&s.pool).await?;
-    let interactions:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',i.id,'interaction_type',i.interaction_type,'external_id',i.external_id,'author_profile_id',i.author_profile_id,'author_external_id',i.author_external_id,'author_name',i.author_name,'occurred_at',i.occurred_at,'metadata',i.metadata,'content',i.content,'local_media',coalesce((SELECT jsonb_agg(jsonb_build_object('id',m.id,'media_type',m.media_type,'width',m.width,'height',m.height,'role',l.role,'source_url',(SELECT min(source_url) FROM crm.media_provenance WHERE media_id=m.id)) ORDER BY l.role) FROM crm.media_links l JOIN crm.media_assets m ON m.id=l.media_id WHERE l.entity_type='social_interaction' AND l.entity_id=i.id),'[]')) FROM crm.social_interactions i WHERE post_id=$1 AND NOT is_deleted ORDER BY occurred_at NULLS LAST,id").bind(id).fetch_all(&s.pool).await?;
-    row["media"] = json!(merge_media(&row["content"]["media"], &json!(media)));
+    let media:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',m.id,'role',l.role,'media_type',m.media_type,'byte_length',m.byte_length,'width',m.width,'height',m.height,'duration_ms',to_jsonb(m)->'duration_ms','capture_at',m.capture_at,'sha256',m.sha256,'source_urls',(SELECT jsonb_agg(DISTINCT source_url) FROM crm.media_provenance WHERE media_id=m.id AND source_url IS NOT NULL),'source_url',coalesce((SELECT min(source_url) FROM crm.media_provenance WHERE media_id=m.id),m.source_record_id)) FROM crm.media_links l JOIN crm.media_assets m ON m.id=l.media_id WHERE l.entity_id=$1 ORDER BY l.role,m.id").bind(id).fetch_all(&s.pool).await?;
+    let mut interactions:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',i.id,'interaction_type',i.interaction_type,'external_id',i.external_id,'author_profile_id',i.author_profile_id,'author_external_id',i.author_external_id,'author_name',i.author_name,'occurred_at',i.occurred_at,'metadata',i.metadata,'content',i.content,'local_media',coalesce((SELECT jsonb_agg(jsonb_build_object('id',m.id,'media_type',m.media_type,'width',m.width,'height',m.height,'role',l.role,'sha256',m.sha256,'byte_length',m.byte_length,'source_urls',(SELECT jsonb_agg(DISTINCT source_url) FROM crm.media_provenance WHERE media_id=m.id AND source_url IS NOT NULL),'source_url',(SELECT min(source_url) FROM crm.media_provenance WHERE media_id=m.id)) ORDER BY l.role) FROM crm.media_links l JOIN crm.media_assets m ON m.id=l.media_id WHERE l.entity_type='social_interaction' AND l.entity_id=i.id),'[]')) FROM crm.social_interactions i WHERE post_id=$1 AND NOT is_deleted ORDER BY occurred_at NULLS LAST,id").bind(id).fetch_all(&s.pool).await?;
+    let mut media = json!(media);
+    let mut availability = std::collections::HashMap::new();
+    check_local_media(&s.media_root, &mut media, &mut availability).await;
+    for interaction in &mut interactions {
+        check_local_media(
+            &s.media_root,
+            &mut interaction["local_media"],
+            &mut availability,
+        )
+        .await;
+    }
+    row["media"] = json!(merge_media(&row["content"]["media"], &media));
     if row["event_type"] == "post" {
         row["interactions"] = json!(
             interactions
@@ -296,15 +320,49 @@ fn display_text(value: &Value) -> Value {
     }
 }
 
+async fn check_local_media(
+    root: &std::path::Path,
+    media: &mut Value,
+    checked: &mut std::collections::HashMap<(String, u64), bool>,
+) {
+    for item in media.as_array_mut().into_iter().flatten() {
+        let hash = item["sha256"].as_str().unwrap_or("").to_owned();
+        let bytes = item["byte_length"].as_u64();
+        let available =
+            if let (Ok(relative), Some(bytes)) = (monica_core::media::object_path(&hash), bytes) {
+                let key = (hash, bytes);
+                if let Some(value) = checked.get(&key) {
+                    *value
+                } else {
+                    let value = tokio::fs::metadata(root.join(relative))
+                        .await
+                        .is_ok_and(|metadata| metadata.is_file() && metadata.len() == bytes);
+                    checked.insert(key, value);
+                    value
+                }
+            } else {
+                false
+            };
+        item["ready"] = json!(available);
+    }
+}
+
 fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
     let local = local.as_array().cloned().unwrap_or_default();
     let by_url = local
         .iter()
-        .filter_map(|m| {
-            m["source_url"]
-                .as_str()
-                .filter(|u| !u.is_empty())
-                .map(|u| (u, m))
+        .filter(|media| media["ready"] != false)
+        .flat_map(|media| {
+            media["source_urls"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .chain(std::iter::once(&media["source_url"]))
+                .filter_map(move |url| {
+                    url.as_str()
+                        .filter(|url| !url.is_empty())
+                        .map(|url| (url, media))
+                })
         })
         .collect::<std::collections::BTreeMap<_, _>>();
     let exact_ids = remote
@@ -326,7 +384,9 @@ fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
     // The entity's numbered media slot still identifies the same attachment.
     // Additive history can contain several assets for a role: do not guess then.
     let by_role = |role: &str| {
-        let mut matches = local.iter().filter(|m| m["role"].as_str() == Some(role));
+        let mut matches = local
+            .iter()
+            .filter(|m| m["ready"] != false && m["role"].as_str() == Some(role));
         let first = matches.next()?;
         let source = first["source_url"].as_str().unwrap_or("");
         (matches.all(|m| m["id"] == first["id"])
@@ -411,6 +471,9 @@ fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
         {
             resolved["thumbnail_id"] = poster["id"].clone();
         }
+        resolved["ready"] = json!(resolved["id"].is_string() && resolved["ready"] != false);
+        resolved.as_object_mut().unwrap().remove("sha256");
+        resolved.as_object_mut().unwrap().remove("source_urls");
         let key = resolved
             .get("id")
             .filter(|v| !v.is_null())
@@ -510,6 +573,62 @@ async fn reading(pool: &sqlx::PgPool, id: Uuid, kind: &str) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn availability_checks_real_cas_bytes_and_rechecks_after_removal() {
+        let folder = tempfile::tempdir().unwrap();
+        let hash = "a".repeat(64);
+        let path = folder
+            .path()
+            .join(monica_core::media::object_path(&hash).unwrap());
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"published").unwrap();
+        let mut media = json!([
+            {"id":"valid","sha256":hash,"byte_length":9},
+            {"id":"truncated","sha256":hash,"byte_length":20},
+            {"id":"absent","sha256":"b".repeat(64),"byte_length":9}
+        ]);
+        check_local_media(
+            folder.path(),
+            &mut media,
+            &mut std::collections::HashMap::new(),
+        )
+        .await;
+        assert_eq!(media[0]["ready"], true);
+        assert_eq!(media[1]["ready"], false);
+        assert_eq!(media[2]["ready"], false);
+        std::fs::remove_file(path).unwrap();
+        check_local_media(
+            folder.path(),
+            &mut media,
+            &mut std::collections::HashMap::new(),
+        )
+        .await;
+        assert_eq!(media[0]["ready"], false);
+    }
+
+    #[test]
+    fn restored_url_aliases_fill_original_slots_without_duplicate_placeholders() {
+        let remote = json!([
+            {"role":"media-1","media_type":"image","source_url":"https://source.invalid/one"},
+            {"role":"media-2","media_type":"image","source_url":"https://source.invalid/two"}
+        ]);
+        let local = json!([
+            {"id":"two","role":"media-2","media_type":"image/jpeg","source_url":"/data/sns-cache/old.bin","source_urls":["https://other.invalid/alias","https://source.invalid/two"],"ready":true},
+            {"id":"one","role":"media-1","media_type":"image/jpeg","source_urls":["https://source.invalid/one"],"ready":true}
+        ]);
+        let merged = merge_media(&remote, &local);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0]["id"], "one");
+        assert_eq!(merged[1]["id"], "two");
+        assert!(merged.iter().all(|item| item["ready"] == true));
+        let mut missing = local.clone();
+        missing[1]["ready"] = json!(false);
+        let merged = merge_media(&remote, &missing);
+        assert!(!merged[0]["id"].is_string());
+        assert_eq!(merged[0]["ready"], false);
+        assert_eq!(merged[1]["id"], "two");
+    }
+
     #[test]
     fn archive_slots_replace_stale_references_and_pair_video_posters() {
         let remote = json!([
