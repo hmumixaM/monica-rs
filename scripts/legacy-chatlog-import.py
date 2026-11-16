@@ -113,6 +113,7 @@ class Importer:
         self.id=uuid.uuid5(NS,"chatlog-snapshot:"+hashlib.sha256(reader.encode(manifest).encode()).hexdigest())
         self.accounts={r[0]:(r[1],r[2]) for r in db.execute("SELECT a.external_id,a.id,l.profile_id FROM crm.source_accounts a LEFT JOIN crm.source_account_links l ON l.account_id=a.id WHERE a.provider='wechat'")}
         self.conversations={}
+        self.on_message_changed=None
         if not verifying:db.execute("INSERT INTO crm.legacy_chatlog_snapshots(id,manifest,own_id) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING",(self.id,Jsonb(manifest),self.own))
         elif not db.execute("SELECT 1 FROM crm.legacy_chatlog_snapshots WHERE id=%s AND status IN ('converted','verified')",(self.id,)).fetchone():raise ValueError("Chatlog snapshot has not been fully converted")
 
@@ -324,6 +325,8 @@ class Importer:
         saved={**current,**new,**({"raw_object_id":str(raw_id)} if raw_id else {})}
         self.db.execute("INSERT INTO crm.legacy_chatlog_versions(entity_type,entity_id,revision,content_object_id,saved_row,snapshot_id) VALUES(%s,%s,%s,%s,%s,%s)",(kind,eid,revision,content_id,Jsonb(saved),self.id))
         self.db.execute(sql.SQL("UPDATE crm.{} SET {} WHERE {}=%s").format(sql.Identifier(table),sql.SQL(',').join(sql.SQL('{}=%s').format(sql.Identifier(k)) for k in new),sql.Identifier(key)),[*[Jsonb(v) if isinstance(v,(dict,list)) else v for v in new.values()],eid])
+        if kind=='message' and self.on_message_changed and (force or any(name in new and new[name]!=current.get(name) for name in ('body','message_type','tombstone'))):
+            self.on_message_changed(eid)
         return True
 
     def messages(self,records):

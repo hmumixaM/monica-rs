@@ -448,6 +448,7 @@ class Consumer:
         with self.chatlog_control():
             manifest = dict(format=1,own_id=own,files=[],kind='continuous_business_pages',source='existing-chatlog-export')
             importer = self.legacy.Importer(self.db,manifest)
+            importer.on_message_changed = self.changed_message_media
             reader_state = self.state/'chatlog-reader'
             reader_state.mkdir(parents=True,exist_ok=True)
             self.legacy.bind_reader_target(self.db,reader_state,own,importer.id)
@@ -475,6 +476,12 @@ class Consumer:
                 importer.settle_revocations()
             finally:
                 scan.close()
+
+    def changed_message_media(self, mid):
+        # React only to a newly imported source revision. Completed photos are
+        # not periodically rechecked. Original bytes and provenance stay intact.
+        self.db.execute("DELETE FROM crm.media_links WHERE entity_type='message_event' AND entity_id=%s AND role LIKE 'wechat-group-image:%%'", (mid,))
+        self.db.execute("UPDATE crm.wechat_group_images SET state='pending',quality='none',media_id=NULL WHERE message_id=%s", (mid,))
 
     @contextmanager
     def chatlog_control(self):

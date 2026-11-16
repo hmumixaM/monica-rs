@@ -16,7 +16,7 @@ def restore_page(db, media, migration, after, limit=250):
         for key, value in rows:
             mid, url = uuid.UUID(value['media_id']), value['source_url']
             parsed = urlsplit(url)
-            if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password:
+            if parsed.scheme not in ('http', 'https', 'archive') or not parsed.hostname or parsed.username or parsed.password:
                 raise ValueError('invalid archived media identity')
             asset = db.execute('SELECT sha256,byte_length,source_type FROM crm.media_assets WHERE id=%s', (mid,)).fetchone()
             if not asset:
