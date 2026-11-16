@@ -35,7 +35,7 @@ def probe(path,timeout=2):
         connection.execute('PRAGMA query_only=ON')
         version=connection.execute('PRAGMA schema_version').fetchone()[0]
     after=signature(path)
-    return dict(schema_version=version,seconds=round(time.monotonic()-started,3),main_file_unchanged=before[0]==after[0],source_stable=all(before[i]==after[i]for i in(0,1,3)))
+    return dict(source_signature=after,schema_version=version,seconds=round(time.monotonic()-started,3),main_file_unchanged=before[0]==after[0],source_stable=all(before[i]==after[i]for i in(0,1,3)))
 
 def atomic(path,value):
     fd,name=tempfile.mkstemp(prefix='.readiness-',dir=path.parent)
@@ -75,8 +75,8 @@ def main():
                     assert path.resolve()==path and path.is_file()
                     current=signature(path)
                     if known.get(relative)!=current:
-                        result=probe(path);results[relative]=dict(result,state='readable'if result['source_stable']else'changed_during_probe',at=time.time())
-                        if result['source_stable']:known[relative]=signature(path)
+                        result=probe(path);verified=result.pop('source_signature');results[relative]=dict(result,state='readable'if result['source_stable']else'changed_during_probe',at=time.time())
+                        if result['source_stable']:known[relative]=verified
                         else:known.pop(relative,None)
                 except Exception as error:
                     known.pop(relative,None);results[relative]=dict(state='retry_pending',error_type=type(error).__name__,at=time.time())
