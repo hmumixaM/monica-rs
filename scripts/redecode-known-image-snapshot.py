@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 import re
 import sqlite3
 import sys
+import tempfile
 import time
 import warnings
 from PIL import Image
@@ -132,9 +133,10 @@ def run(args, credentials):
                 # The codec also clears its credential variables before FFmpeg;
                 # no workstation/NAS secrets are inherited by this subprocess.
                 saved = os.environ.copy()
+                scratch = tempfile.TemporaryDirectory(prefix='.codec-tmp-', dir=args.target)
                 try:
                     os.environ.clear()
-                    os.environ.update(PATH=args.codec_path, TMPDIR='/tmp')
+                    os.environ.update(PATH=args.codec_path, TMPDIR=scratch.name)
                     code, output, errors = helper.capture(
                         [str(args.codec), '--source-root', str(args.source), '--target-root', str(args.target),
                          '--credentials-stdin', '--batch'], input_data=frame, deadline=180)
@@ -142,6 +144,7 @@ def run(args, credentials):
                     os.environ.clear()
                     os.environ.update(saved)
                     frame[:] = b'\0' * len(frame)
+                    scratch.cleanup()
                 require(code == 0 and not errors)
                 seen = set()
                 for line in output.splitlines():
