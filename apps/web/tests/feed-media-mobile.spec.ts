@@ -135,7 +135,7 @@ test('photo details keep a usable viewport while the original loads and the mobi
 
 test('a shared video keeps its cover label and opens the original video link', async ({page}) => {
   const shared = {url: 'https://www.xiaohongshu.com/explore/synthetic-video', title: 'Source video title', kind: 'video'};
-  const media = [{...event.media[0], source_media_type: 'video', source_kind: 'wechat_video_share'}];
+  const media: FeedMedia[] = [{...event.media[0], source_media_type: 'video', source_kind: 'wechat_video_share'}];
   const item = {...event, provider: 'wechat', shared_link: shared, media, event_metadata: {event_type: 'post', locations: [], mentions: []}};
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname;
@@ -152,4 +152,7 @@ test('a shared video keeps its cover label and opens the original video link', a
   await expect(dialog.getByRole('link',{name:/Source video title/})).toHaveAttribute('href',shared.url);
   await expect(dialog).toContainText('视频封面');
   await expect(dialog.locator('video')).toHaveCount(0);
+  media[0] = {media_type:'image',source_media_type:'video',source_kind:'wechat_video_share',ready:false};
+  await page.reload();
+  await expect(page.locator('article')).toContainText('视频封面 · 暂时无法读取');
 });
