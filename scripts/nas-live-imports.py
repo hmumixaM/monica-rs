@@ -1,0 +1,425 @@
+#!/usr/bin/env python3
+"""Consume existing, read-only NAS collector archives into the isolated Rust copy.
+
+No login, browser, network collection, decryption or model calls. Social records
+use the signed Rust batch endpoint. Chatlog uses the existing legacy reconciler
+so already imported conversations, message IDs and edits are retained.
+"""
+import argparse
+from contextlib import closing, contextmanager
+from datetime import datetime, timezone
+import fcntl
+import hashlib
+import hmac
+import http.client
+import importlib.util
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import sqlite3
+import tempfile
+import time
+from urllib.parse import quote, urlsplit
+import uuid
+
+import psycopg
+
+STOP = False
+NAMESPACE = uuid.UUID('534b6268-97a1-4d99-a086-f8c9e3955815')
+
+
+def module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(filename))
+    result = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(result)
+    return result
+
+
+def canonical(value):
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode()
+
+
+def signature(path):
+    s = path.stat()
+    return [s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns]
+
+
+def digest_file(path):
+    h = hashlib.sha256()
+    with path.open('rb') as source:
+        for block in iter(lambda: source.read(1024 * 1024), b''):
+            h.update(block)
+    return h.hexdigest()
+
+
+def atomic(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix='.' + path.name, dir=path.parent)
+    try:
+        with os.fdopen(fd, 'wb') as output:
+            output.write(data)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(name, path)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        Path(name).unlink(missing_ok=True)
+
+
+def stamp(value):
+    if not value:
+        return None
+    return datetime.fromisoformat(str(value).replace('Z', '+00:00')).timestamp()
+
+
+class Consumer:
+    def __init__(self, args, db):
+        self.args, self.db = args, db
+        self.bridge = module('nas_bridge', 'collector-bridge.py')
+        self.legacy = module('nas_legacy', 'legacy-chatlog-import.py')
+        self.state = args.state
+        self.cutoff = stamp(args.since)
+        self.journal = sqlite3.connect(self.state / 'consumer.sqlite')
+        self.journal.execute('CREATE TABLE IF NOT EXISTS delivered(provider TEXT,stream TEXT,external_id TEXT,account TEXT,digest TEXT,receipt TEXT,PRIMARY KEY(provider,stream,external_id,account))')
+        self.journal.execute('CREATE TABLE IF NOT EXISTS source_files(path TEXT PRIMARY KEY,signature TEXT)')
+        self.last_path = None
+        self.last_input_time = None
+        self.read_inputs = []
+        self.bridge.load_json = self.load
+        self.bridge.media = self.deferred_media
+        self.counters = dict(batches=0, records=0, unchanged=0, media=0, chatlog_pages=0)
+        self.checked_media = set()
+        self.provider_status = {}
+
+    def guard(self):
+        row = self.db.execute("SELECT system_identifier::text,current_database(),(SELECT oid FROM pg_database WHERE datname=current_database()),(SELECT max(version) FROM _sqlx_migrations WHERE success) FROM pg_control_system()").fetchone()
+        if tuple(row) != ('7707886811981668386', 'monica_rust', 16384, 86):
+            raise ValueError('isolated Rust target identity changed')
+        if not (self.args.media.parent / '.monica-rs-ssd-target').read_bytes() == b'monica-rs-ssd-target-v1\n':
+            raise ValueError('isolated SSD marker changed')
+        if shutil.disk_usage(self.state).free < 512 * 1024 * 1024:
+            raise ValueError('isolated SSD has insufficient space')
+
+    def progress(self, phase, **extra):
+        if extra.get('provider'):
+            self.provider_status[extra['provider']] = dict(phase=phase,at=time.time(),**extra)
+        atomic(self.state / 'status.json', canonical(dict(phase=phase, at=time.time(), pid=os.getpid(), counters=self.counters, providers=self.provider_status, **extra)))
+
+    def load(self, path, max_bytes=4 * 1024 * 1024):
+        before = signature(path)
+        if path.is_symlink() or not path.is_file() or before[2] > max_bytes:
+            raise ValueError('invalid source JSON budget or alias')
+        raw = path.read_bytes()
+        if signature(path) != before:
+            raise ValueError('source JSON changed while reading')
+        self.last_path = path
+        self.last_input_time = before[3]/1_000_000_000
+        self.read_inputs.append((path,self.last_input_time))
+        key = hashlib.sha256(raw).hexdigest()
+        archive = self.state / 'raw-json' / (key + '.json')
+        if not archive.exists():
+            atomic(archive, raw)
+        return json.loads(raw)
+
+    def deferred_media(self, path, entity, external, role, expected=None):
+        path = path.resolve(strict=True)
+        if not path.is_relative_to(self.args.source) or not path.is_file():
+            raise ValueError('collector media escapes explicit read-only source')
+        return dict(entity_type=entity, external_id=str(external), role=role,
+                    _path=str(path), _signature=signature(path), _expected=expected)
+
+    def materialize(self, manifest, provider):
+        path = Path(manifest['_path'])
+        if signature(path) != manifest['_signature'] or not 0 < path.stat().st_size <= 512 * 1024 * 1024:
+            raise ValueError('collector media changed or exceeds budget')
+        key = digest_file(path)
+        if signature(path) != manifest['_signature'] or manifest['_expected'] and key != manifest['_expected']:
+            raise ValueError('collector media checksum differs')
+        relative = 'sha256/' + key[:2] + '/' + key[2:4] + '/' + key
+        target = self.args.media / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.resolve() != target:
+            raise ValueError('media CAS alias')
+        if not target.exists():
+            fd, name = tempfile.mkstemp(prefix='.live-', dir=target.parent)
+            try:
+                h = hashlib.sha256()
+                with path.open('rb') as source, os.fdopen(fd, 'wb') as output:
+                    os.fchmod(output.fileno(),0o644)
+                    for block in iter(lambda: source.read(1024 * 1024), b''):
+                        output.write(block)
+                        h.update(block)
+                    output.flush()
+                    os.fsync(output.fileno())
+                if h.hexdigest() != key:
+                    raise ValueError('collector media changed during copy')
+                # Link is an atomic no-replace publication, including concurrent uploads.
+                try:
+                    os.link(name, target)
+                except FileExistsError:
+                    pass
+            finally:
+                Path(name).unlink(missing_ok=True)
+        if key not in self.checked_media:
+            if target.stat().st_size != path.stat().st_size or digest_file(target) != key:
+                raise ValueError('existing isolated CAS differs')
+            directory = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+            self.checked_media.add(key)
+        with target.open('rb') as source:
+            header = source.read(64)
+        kind = ('image/jpeg' if header.startswith(b'\xff\xd8\xff') else
+                'image/png' if header.startswith(b'\x89PNG\r\n\x1a\n') else
+                'image/webp' if header[:4] == b'RIFF' and header[8:12] == b'WEBP' else
+                'image/gif' if header.startswith((b'GIF87a', b'GIF89a')) else
+                'video/mp4' if header[4:8] == b'ftyp' else None)
+        if kind is None:
+            raise ValueError('unsupported local collector media type')
+        media = uuid.uuid5(NAMESPACE, 'live-media:' + key)
+        with self.db.transaction():
+            self.db.execute("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,file_name,source_type,source_record_id,verified_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,now()) ON CONFLICT(sha256) DO NOTHING", (media,key,kind,target.stat().st_size,relative,path.name,provider,manifest.get('source_url') or key))
+            saved = self.db.execute('SELECT id,object_path,byte_length FROM crm.media_assets WHERE sha256=%s', (key,)).fetchone()
+            if saved[1:] != (relative,target.stat().st_size):
+                raise ValueError('registered isolated media identity differs')
+            self.db.execute('UPDATE crm.media_assets SET verified_at=now() WHERE id=%s AND verified_at IS NULL', (saved[0],))
+        self.counters['media'] += 1
+        return {**{k:v for k,v in manifest.items() if not k.startswith('_')}, 'sha256':key}
+
+    def accept(self, batch):
+        raw = canonical(batch)
+        if len(raw) > 7 * 1024 * 1024:
+            raise ValueError('live import batch exceeds request budget')
+        stamp_text, nonce = str(int(time.time())), uuid.uuid4().hex
+        secret = os.environ['MONICA_IMPORT_HMAC_SECRET'].encode()
+        mac = hmac.new(secret, stamp_text.encode()+b'.'+nonce.encode()+b'.'+raw, hashlib.sha256).hexdigest()
+        address = urlsplit(self.args.url)
+        if address.scheme != 'http' or address.hostname != 'monica-rs-server-1' or address.port != 17494 or address.path not in ('', '/'):
+            raise ValueError('explicit isolated Rust endpoint required')
+        connection = http.client.HTTPConnection(address.hostname, address.port, timeout=40)
+        try:
+            connection.request('POST','/api/v1/imports/batches',raw,headers={
+                'Host':'nas.tailfb022c.ts.net:9444','Content-Type':'application/json',
+                'x-import-timestamp':stamp_text,'x-import-nonce':nonce,'x-import-signature':mac,
+                'x-import-token':os.environ['MONICA_IMPORT_TOKEN_'+batch['source'].upper()]})
+            response = connection.getresponse()
+            body = response.read(1024 * 1024)
+            if response.status != 201:
+                raise ValueError('signed import rejected: HTTP '+str(response.status))
+            receipt = json.loads(body)
+            return str(receipt['id'])
+        finally:
+            connection.close()
+
+    def social(self, provider):
+        self.guard()
+        destinations = [('linkedin', self.args.source/'raw/linkedin')] if provider == 'linkedin' else [(k,self.args.source/'staging'/('instagram-'+k)) for k in ('current','stories','highlights')]
+        for kind, destination in destinations:
+            if not destination.is_dir():
+                continue
+            snapshot = self.bridge.completed(destination) or destination
+            records = self.bridge.linkedin_records(snapshot) if provider == 'linkedin' else self.bridge.instagram_records(snapshot, kind)
+            while True:
+                self.read_inputs = []
+                try:
+                    stream, item = next(records)
+                except StopIteration:
+                    break
+                if STOP:
+                    return
+                captured = max((at for _,at in self.read_inputs),default=self.last_input_time)
+                occurred = stamp(item.get('occurred_at'))
+                if captured < self.cutoff and (occurred is None or occurred < self.cutoff):
+                    continue
+                signature_hash = hashlib.sha256(canonical(item)).hexdigest()
+                account = item.get('source_account_external_id') or ''
+                identity = (provider,stream,item['external_id'],account)
+                old = self.journal.execute('SELECT digest FROM delivered WHERE provider=? AND stream=? AND external_id=? AND account=?',identity).fetchone()
+                if old and old[0] == signature_hash:
+                    self.counters['unchanged'] += 1
+                    continue
+                manifests = [self.materialize(m,provider) for m in item.get('_manifest',[])]
+                record = {k:v for k,v in item.items() if k != '_manifest'}
+                observed = datetime.fromtimestamp(captured,timezone.utc).isoformat()
+                key = hashlib.sha256(canonical([identity,signature_hash,observed])).hexdigest()
+                batch = dict(source=provider,stream=stream,schema_version=1,batch_id='nas-live-'+key,
+                             idempotency_key='nas-live:'+key,observed_at=observed,records=[record],
+                             raw_objects=[dict(kind='existing_collector_archive',collector_kind=kind,relative_path=self.last_path.relative_to(self.args.source).as_posix())],media_manifest=manifests)
+                receipt = self.accept(batch)
+                with self.journal:
+                    self.journal.execute('INSERT OR REPLACE INTO delivered VALUES(?,?,?,?,?,?)',(*identity,signature_hash,receipt))
+                self.counters['batches'] += 1
+                self.counters['records'] += 1
+                self.progress('social_received',provider=provider,stream=stream)
+
+    def backup_chatlog(self):
+        root = self.args.chatlog
+        destination = self.state/'chatlog-export'
+        paths = [*root.glob('contact/contact.db'),*root.glob('message/message_[0-9]*.db'),*root.glob('message/biz_message_[0-9]*.db'),*root.glob('sns/sns.db')]
+        if not paths or len(paths) > 1024:
+            raise ValueError('explicit Chatlog export unavailable')
+        for path in sorted(paths):
+            if STOP:
+                return destination
+            if path.resolve() != path:
+                raise ValueError('Chatlog source alias')
+            rel = path.relative_to(root).as_posix()
+            state = [signature(path),*[signature(Path(str(path)+s)) if Path(str(path)+s).exists() else None for s in ('-wal','-journal')]]
+            prior = self.journal.execute('SELECT signature FROM source_files WHERE path=?',(rel,)).fetchone()
+            if prior and json.loads(prior[0]) == state and (destination/rel).is_file():
+                continue
+            target = destination/rel
+            target.parent.mkdir(parents=True,exist_ok=True)
+            fd, name = tempfile.mkstemp(prefix='.backup-',dir=target.parent)
+            os.close(fd)
+            try:
+                self.progress('chatlog_consistent_backup',file=rel)
+                with closing(sqlite3.connect('file:'+quote(str(path))+'?mode=ro',uri=True,timeout=2)) as source, closing(sqlite3.connect(name)) as backup:
+                    source.backup(backup,pages=128,sleep=0.05)
+                    backup.execute('PRAGMA journal_mode=DELETE')
+                    if backup.execute('PRAGMA quick_check').fetchall() != [('ok',)]:
+                        raise ValueError('Chatlog consistent backup failed integrity check')
+                with open(name,'rb') as output:
+                    os.fsync(output.fileno())
+                os.replace(name,target)
+                directory = os.open(target.parent,os.O_RDONLY|os.O_DIRECTORY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+                with self.journal:
+                    self.journal.execute('INSERT OR REPLACE INTO source_files VALUES(?,?)',(rel,canonical(state).decode()))
+            finally:
+                Path(name).unlink(missing_ok=True)
+        return destination
+
+    def wechat(self):
+        self.guard()
+        if not self.args.chatlog:
+            return
+        source = self.backup_chatlog()
+        if STOP:
+            return
+        own = self.args.wechat_self
+        if not own or not self.db.execute("SELECT 1 FROM crm.legacy_chatlog_snapshots WHERE own_id=%s AND status IN ('converted','verified') LIMIT 1",(own,)).fetchone():
+            raise ValueError('verified existing WeChat owner required')
+        with self.chatlog_control():
+            manifest = dict(format=1,own_id=own,files=[],kind='continuous_business_pages',source='existing-chatlog-export')
+            importer = self.legacy.Importer(self.db,manifest)
+            reader_state = self.state/'chatlog-reader'
+            reader_state.mkdir(parents=True,exist_ok=True)
+            self.legacy.bind_reader_target(self.db,reader_state,own,importer.id)
+            scan = self.legacy.reader.Reader(reader_state,source,own,self.legacy.atomic,lambda p:json.loads(Path(p).read_text()),own_id=own,allow_unknown_source_sender=True)
+            def emit(frame):
+                with self.db.transaction():
+                    before = self.db.execute("SELECT inserted,changed,unchanged FROM crm.legacy_chatlog_snapshots WHERE id=%s",(importer.id,)).fetchone()
+                    importer.page(frame)
+                    importer.settle_revocations()
+                    # Only current conversation heads change; source facts retain their IDs.
+                    talkers = {r['content']['thread_id'] for r in frame['batch']['records'] if r['content'].get('kind')=='message'}
+                    for talker in sorted(talkers):
+                        self.settle_conversation(importer.conversation(talker))
+                    after = self.db.execute("SELECT inserted,changed,unchanged FROM crm.legacy_chatlog_snapshots WHERE id=%s",(importer.id,)).fetchone()
+                    inserted,changed,unchanged = (a-b for a,b in zip(after,before))
+                    count = len(frame['batch']['records'])
+                    run = 'nas-chatlog:'+str(importer.id)+':'+frame['page_sha256']
+                    self.db.execute("INSERT INTO crm.import_activity(id,provider,stream,kind,batch_id,state,phase,received_at,completed_at,records,processed,inserted,changed,unchanged) VALUES(%s,'wechat',%s,'page',%s,'complete','existing_archive',now(),now(),%s,%s,%s,%s,%s) ON CONFLICT(id) DO NOTHING",(run,frame['batch']['stream'],frame['page_sha256'],count,count,inserted,changed,unchanged))
+                self.legacy.atomic(reader_state/frame['ack_path'],dict(page_sha256=frame['page_sha256'],receipt_id=str(importer.id)))
+                self.counters['chatlog_pages'] += 1
+                self.progress('chatlog_received')
+            try:
+                while not STOP and scan.step(emit):
+                    pass
+                importer.settle_revocations()
+            finally:
+                scan.close()
+
+    @contextmanager
+    def chatlog_control(self):
+        if not self.db.execute("SELECT pg_try_advisory_lock(hashtextextended('monica-offline-chatlog',0))").fetchone()[0]:
+            raise ValueError('another legacy reconciliation is active')
+        try:
+            yield
+        finally:
+            self.db.execute("SELECT pg_advisory_unlock(hashtextextended('monica-offline-chatlog',0))")
+
+    def settle_conversation(self, conversation):
+        with self.db.transaction():
+            self.db.execute("SET LOCAL lock_timeout='2s'")
+            self.db.execute("UPDATE crm.conversations c SET message_count=coalesce((SELECT sent+received+system+unknown FROM crm.message_stat_counts WHERE conversation_id=c.id AND scope='all'),0),first_message_at=(SELECT occurred_at FROM crm.message_search WHERE conversation_id=c.id AND NOT tombstone ORDER BY occurred_at,message_id LIMIT 1),last_message_at=(SELECT occurred_at FROM crm.message_search WHERE conversation_id=c.id AND NOT tombstone ORDER BY occurred_at DESC,message_id DESC LIMIT 1),last_message_id=(SELECT message_id FROM crm.message_search WHERE conversation_id=c.id AND NOT tombstone ORDER BY occurred_at DESC,message_id DESC LIMIT 1),last_message_preview=(SELECT left(body,80) FROM crm.message_search WHERE conversation_id=c.id AND NOT tombstone ORDER BY occurred_at DESC,message_id DESC LIMIT 1) WHERE id=%s",(conversation,))
+            self.db.execute("INSERT INTO crm.conversation_state(provider,account,conversation,message_count,last_at_ms,last_id,preview,generation) SELECT c.provider,c.account,c.external_id,c.message_count,coalesce((extract(epoch FROM c.last_message_at)*1000)::bigint,0),coalesce(m.external_id,''),coalesce(c.last_message_preview,''),1 FROM crm.conversations c LEFT JOIN crm.message_search m ON m.message_id=c.last_message_id WHERE c.id=%s ON CONFLICT(provider,account,conversation) DO UPDATE SET message_count=excluded.message_count,last_at_ms=excluded.last_at_ms,last_id=excluded.last_id,preview=excluded.preview,generation=crm.conversation_state.generation+1 WHERE (conversation_state.message_count,conversation_state.last_at_ms,conversation_state.last_id,conversation_state.preview) IS DISTINCT FROM (excluded.message_count,excluded.last_at_ms,excluded.last_id,excluded.preview)",(conversation,))
+            self.db.execute("INSERT INTO crm.conversation_summaries SELECT s.* FROM crm.conversation_state s JOIN crm.conversations c ON (c.provider,c.account,c.external_id)=(s.provider,s.account,s.conversation) WHERE c.id=%s ON CONFLICT(provider,account,conversation) DO UPDATE SET message_count=excluded.message_count,last_at_ms=excluded.last_at_ms,last_id=excluded.last_id,preview=excluded.preview,generation=excluded.generation",(conversation,))
+
+    def close(self):
+        self.journal.close()
+
+
+def main():
+    global STOP
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--run',action='store_true',required=True)
+    parser.add_argument('--source',type=Path,required=True)
+    parser.add_argument('--chatlog',type=Path)
+    parser.add_argument('--wechat-self')
+    parser.add_argument('--state',type=Path,required=True)
+    parser.add_argument('--media',type=Path,required=True)
+    parser.add_argument('--url',default='http://monica-rs-server-1:17494')
+    parser.add_argument('--since',required=True)
+    parser.add_argument('--once',action='store_true')
+    parser.add_argument('--interval',type=int,default=300)
+    args = parser.parse_args()
+    if args.interval < 30 or not args.since.endswith(('Z','+00:00')):
+        parser.error('UTC cutoff and interval >=30 seconds required')
+    for path in (args.source,args.state,args.media,*([args.chatlog] if args.chatlog else [])):
+        if not path.is_absolute() or path.resolve() != path:
+            parser.error('canonical absolute roots required')
+    if args.source in args.state.parents or args.source in args.media.parents:
+        parser.error('collector source and Rust writable roots must be separate')
+    if args.state.name!='live-imports' or args.media.name!='media' or args.state.parent != args.media.parent or not (args.media.parent/'.monica-rs-ssd-target').is_file():
+        parser.error('state and media must use the existing isolated Rust data root')
+    os.umask(0o077)
+    args.state.mkdir(parents=True,exist_ok=True)
+    def stop(_signal,_frame):
+        global STOP
+        STOP = True
+    signal.signal(signal.SIGTERM,stop)
+    signal.signal(signal.SIGINT,stop)
+    with (args.state/'control.lock').open('a') as lock, psycopg.connect(os.environ['MONICA_DATABASE_URL'],autocommit=True) as db:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        consumer = Consumer(args,db)
+        try:
+            failed = False
+            while not STOP:
+                failed = False
+                for provider in ('linkedin','instagram','wechat'):
+                    if STOP:
+                        break
+                    try:
+                        consumer.progress('checking',provider=provider)
+                        consumer.wechat() if provider=='wechat' else consumer.social(provider)
+                        consumer.progress('waiting_for_source',provider=provider)
+                    except Exception as error:
+                        failed = True
+                        # Private original inputs remain available; no payload/secret is logged.
+                        consumer.progress('retry_pending',provider=provider,error_type=type(error).__name__)
+                if args.once:
+                    break
+                for _ in range(args.interval):
+                    if STOP:
+                        break
+                    time.sleep(1)
+        finally:
+            consumer.close()
+        return 1 if failed else 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
