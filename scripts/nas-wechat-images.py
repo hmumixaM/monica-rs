@@ -37,7 +37,14 @@ def requested_catalog(source, metadata, ledger, requested, guard):
         if index % 500 == 0:
             guard()
         key, name, one, two, extra = row
-        if not isinstance(key, str) or key.lower() not in requested:
+        identities = set()
+        if isinstance(key, str) and re.fullmatch('[0-9a-fA-F]{32}', key):
+            identities.add(key.lower())
+        filename = images.NAME.match(name) if isinstance(name, str) else None
+        if filename:
+            identities.add(filename[1].lower())
+        matched = identities & requested
+        if not matched:
             continue
         name, one, two = map(component, (name, one, two))
         base = Path('attach')/one/two
@@ -55,8 +62,9 @@ def requested_catalog(source, metadata, ledger, requested, guard):
             except FileNotFoundError:
                 continue
             quality, tier = images.quality(name)
-            ledger.execute('INSERT OR IGNORE INTO files VALUES(?,?,?,?,?,?)', (key.lower(), str(relative), quality, tier, info.st_size, info.st_mtime_ns))
-            count += 1
+            for identity in sorted(matched):
+                ledger.execute('INSERT OR IGNORE INTO files VALUES(?,?,?,?,?,?)', (identity, str(relative), quality, tier, info.st_size, info.st_mtime_ns))
+                count += 1
     ledger.commit()
     return count
 

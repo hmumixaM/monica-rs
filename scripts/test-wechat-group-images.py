@@ -50,6 +50,10 @@ class Images(unittest.TestCase):
                 ledger.execute('CREATE TABLE files(md5 TEXT,path TEXT,quality TEXT,tier INTEGER,bytes INTEGER,mtime INTEGER,PRIMARY KEY(md5,path))')
                 self.assertEqual(recent.requested_catalog(source,metadata,ledger,{key},lambda:None),1)
                 self.assertEqual(ledger.execute('SELECT md5,path,quality FROM files').fetchall(),[(key,str(image.relative_to(source)),'high')])
+                alias = image.with_name('c'*32+'_h.dat');alias.write_bytes(PNG)
+                metadata.execute('INSERT INTO image_hardlink_info_v4 VALUES(?,?,?,?,?)',('d'*32,alias.name,1,2,None))
+                self.assertEqual(recent.requested_catalog(source,metadata,ledger,{'c'*32,'d'*32},lambda:None),2)
+                self.assertEqual(ledger.execute('SELECT md5,path,quality FROM files ORDER BY md5').fetchall(),[(identity,str(alias.relative_to(source)),'high')for identity in ('c'*32,'d'*32)])
                 image.unlink()
                 self.assertEqual(recent.requested_catalog(source,metadata,ledger,{key},lambda:None),0)
 
