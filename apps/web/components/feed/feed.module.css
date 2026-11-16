@@ -9,6 +9,7 @@
 }
 @media (max-width: 720px) { .toolbar[data-sticky] { inset-block-start: var(--shell-topbar); } }
 .month { inline-size: auto; min-block-size: 32px; padding-block: 4px; font-size: var(--text-xs); color: var(--color-text-soft); }
+.sources { min-inline-size: 0; max-inline-size: 100%; overflow-x: auto; }
 .scope { display: inline-flex; align-items: center; gap: var(--space-2); padding: 2px 4px 2px 10px; border-radius: var(--radius-chip);
   background: var(--color-accent-wash); color: var(--color-accent-text); font-size: var(--text-sm); font-weight: 600;
   & a { padding: 2px 8px; border-radius: var(--radius-chip); color: var(--color-text-soft); font-weight: 500; }
@@ -19,11 +20,12 @@
 /* Masonry */
 .masonryHost { container-type: inline-size; min-inline-size: 0; }
 .masonry {
-  --feed-columns: 2; --feed-gap: 12px;
+  --feed-columns: 1; --feed-gap: 12px;
   position: relative; display: grid; grid-template-columns: repeat(var(--feed-columns), minmax(0, 1fr)); gap: var(--feed-gap);
   &[data-positioned] { display: block; }
   &[data-positioned] > * { position: absolute; margin: 0; }
 }
+@container (min-width: 520px) { .masonry { --feed-columns: 2; } }
 @container (min-width: 640px) { .masonry { --feed-columns: 3; --feed-gap: 14px; } }
 @container (min-width: 980px) { .masonry { --feed-columns: 4; --feed-gap: 16px; } }
 @container (min-width: 1360px) { .masonry:not([data-columns="compact"]) { --feed-columns: 5; } }
@@ -141,7 +143,7 @@ a.person:hover strong { text-decoration: underline; text-underline-offset: 3px; 
 }
 .detailPhotos {
   grid-area: photos;
-  display: grid; gap: 8px; min-block-size: 0; overflow: auto; overscroll-behavior: contain; padding: 8px;
+  display: grid; gap: 8px; min-inline-size: 0; min-block-size: 0; overflow: auto; overscroll-behavior: contain; padding: 8px;
   container-type: size; scroll-snap-type: y mandatory; scroll-padding: 8px;
   background: rgb(10 12 16 / .94);
   /* Each photo is one panel tall, so it is always seen whole; more photos scroll one at a time. */
@@ -150,7 +152,7 @@ a.person:hover strong { text-decoration: underline; text-underline-offset: 3px; 
   & a { inline-size: 100%; }
   & img, & video { inline-size: 100%; block-size: 100%; object-fit: contain; }
 }
-.detailText { grid-area: text; display: flex; flex-direction: column; gap: var(--space-3); min-block-size: 0; overflow: auto; overscroll-behavior: contain;
+.detailText { grid-area: text; display: flex; flex-direction: column; gap: var(--space-3); min-inline-size: 0; min-block-size: 0; overflow: auto; overscroll-behavior: contain;
   padding: 0 var(--space-5) var(--space-5);
   & .annotations, & .sharedLink, & .igBadge { padding: 0; margin: 0; font-size: var(--text-sm); } }
 .detailHeader { grid-area: header; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
@@ -179,15 +181,22 @@ a.person:hover strong { text-decoration: underline; text-underline-offset: 3px; 
   & q { display: block; color: var(--color-text-soft); overflow-wrap: anywhere; } }
 
 @media (max-width: 720px) {
+  .toolbar { gap: var(--space-2); }
+  .toolbar h2 { flex-basis: 100%; }
+  .sources { flex: 0 1 auto; }
+  .sources[data-size="sm"] > button { min-block-size: 44px; min-inline-size: 44px; }
+  .month { min-block-size: 44px; }
   .detail { inline-size: 100vw; block-size: 100dvh; max-block-size: none; margin: 0; border-radius: 0; }
-  .detail[open], .detail[open][data-photos] { grid-template: "header" auto "photos" auto "text" auto / minmax(0, 1fr); align-content: start; overflow: auto; }
+  .detail[open], .detail[open][data-photos] { display: block; overflow: auto; overscroll-behavior: contain; }
   .detail:not([data-photos]) { inline-size: 100vw; block-size: 100dvh; max-block-size: none; }
   .detailPhotos, .detailText { overflow: visible; }
-  .detailPhotos { padding: 0; background: none; container-type: normal; scroll-snap-type: none; }
+  .detailPhotos { padding: 0; background: var(--color-sunken); container-type: normal; scroll-snap-type: none; }
   .detailPhotos a, .detailPhotos > span { block-size: auto; }
   .detailPhotos img, .detailPhotos video { block-size: auto; max-block-size: 70dvh; }
   .detailText { padding: var(--space-4); padding-block-end: calc(var(--space-6) + env(safe-area-inset-bottom)); }
   .detailHeader { position: sticky; inset-block-start: 0; z-index: 1; padding: var(--space-3) var(--space-4);
     padding-block-start: max(var(--space-3), env(safe-area-inset-top)); background: var(--color-surface); border-block-end: 1px solid var(--color-rule); }
+  .detailHeader .person { min-inline-size: 0; }
+  .detailHeader .person small { white-space: normal; }
 }
 @keyframes detail-in { from { opacity: 0; } }

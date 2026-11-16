@@ -8,14 +8,14 @@
   &[open]::backdrop { animation: fade-in var(--duration-base) ease-out; }
 }
 .dialog[data-size="wide"] { --dialog-width: 920px; }
-.dialog[data-size="full"] { --dialog-width: 1400px; max-block-size: 96dvh; }
+.dialog[data-size="full"] { --dialog-width: 1400px; block-size: 96dvh; max-block-size: 96dvh; }
 .dialogHeader {
-  display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4) var(--space-4) var(--space-3) var(--space-5);
+  display: flex; flex: none; align-items: flex-start; gap: var(--space-3); padding: var(--space-4) var(--space-4) var(--space-3) var(--space-5);
   & > div { flex: 1; min-inline-size: 0; display: grid; gap: 2px; }
   & h2 { font: 600 var(--text-lg) / 1.3 var(--font-display); }
   & p { color: var(--color-text-soft); font-size: var(--text-sm); }
 }
-.dialogBody { flex: 1; min-block-size: 0; overflow: auto; padding: 0 var(--space-5) var(--space-5); overscroll-behavior: contain; }
+.dialogBody { flex: 1 1 auto; min-inline-size: 0; min-block-size: 0; overflow: auto; padding: 0 var(--space-5) var(--space-5); overscroll-behavior: contain; }
 
 /* Sheets rise from the bottom on narrow screens and can be dragged down to dismiss. */
 .sheet {
@@ -75,5 +75,7 @@
 
 @media (max-width: 720px) {
   .dialog { max-block-size: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px); }
+  .dialog[data-size="full"] { block-size: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);
+    max-block-size: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px); }
   .menuItem { min-block-size: 44px; }
 }

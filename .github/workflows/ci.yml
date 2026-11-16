@@ -63,10 +63,15 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
       - run: sudo apt-get update && sudo apt-get install -y postgresql-16
-      - run: npm ci && npm run build && npx playwright install --with-deps chrome
+      - run: npm ci && npm run build && npx playwright install --with-deps chrome webkit
         working-directory: apps/web
-      - run: npm test -- tests/router.spec.ts tests/ask-runtime.spec.ts tests/auth-errors.spec.ts tests/home-read-failures.spec.ts
+      - run: npm test -- tests/router.spec.ts tests/ask-runtime.spec.ts tests/auth-errors.spec.ts tests/home-read-failures.spec.ts tests/feed-media-mobile.spec.ts
         working-directory: apps/web
+      - name: Mobile WebKit media layouts
+        run: npm test -- tests/feed-media-mobile.spec.ts
+        working-directory: apps/web
+        env:
+          MONICA_WEB_TEST_BROWSER: webkit
       - run: cargo build --locked -p monica-server
       - run: python3 scripts/frontend-smoke.py
         env:

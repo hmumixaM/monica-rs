@@ -50,6 +50,13 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
     style={ratio ? { "--photo-ratio": ratio } as CSSProperties : undefined} aria-label="动态详情" onClose={onClose}
     onCancel={(cancel) => { cancel.preventDefault(); close(); }}
     onClick={(click) => { if (click.target === click.currentTarget) close(); }}>
+    <header className={styles.detailHeader}>
+      {event.profile_id ? <PersonLink className={styles.person} href={`/profiles/${event.profile_id}`}>
+        <Avatar name={event.profile_name || event.title} mediaId={event.avatar_media_id} size={36} round />
+        <span><strong>{event.profile_name || event.title}</strong><small><SourceMark provider={event.provider} size={11} /> {eventKind({ ...event, event_metadata: metadata })} · <time dateTime={event.occurred_at}>{eventDate(event.occurred_at, event.provider)}</time></small></span>
+      </PersonLink> : <span className={styles.person}><span><strong>{event.title}</strong><small>{eventKind(event)} · {eventDate(event.occurred_at, event.provider)}</small></span></span>}
+      <IconButton label="关闭动态详情" onClick={close}><X size={18} /></IconButton>
+    </header>
     {hasPhotos && <div className={styles.detailPhotos}>
       {media.map((item, index) => localMediaUrl(item.id)
         ? <a href={localMediaUrl(item.id)} target="_blank" rel="noreferrer" aria-label={`查看原图 ${index + 1}`} key={item.id}>
@@ -59,13 +66,6 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
         </a>
         : <span key={index}>{isVideo(item) ? <VideoCover media={item} /> : <Unavailable />}</span>)}
     </div>}
-    <header className={styles.detailHeader}>
-      {event.profile_id ? <PersonLink className={styles.person} href={`/profiles/${event.profile_id}`}>
-        <Avatar name={event.profile_name || event.title} mediaId={event.avatar_media_id} size={36} round />
-        <span><strong>{event.profile_name || event.title}</strong><small><SourceMark provider={event.provider} size={11} /> {eventKind({ ...event, event_metadata: metadata })} · <time dateTime={event.occurred_at}>{eventDate(event.occurred_at, event.provider)}</time></small></span>
-      </PersonLink> : <span className={styles.person}><span><strong>{event.title}</strong><small>{eventKind(event)} · {eventDate(event.occurred_at, event.provider)}</small></span></span>}
-      <IconButton label="关闭动态详情" onClick={close}><X size={18} /></IconButton>
-    </header>
     <div className={styles.detailText}>
       {link && <SharedLinkCard link={link} media={media[0]} />}
       {body && <p className={styles.body}>{body}</p>}

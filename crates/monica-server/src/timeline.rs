@@ -171,7 +171,7 @@ async fn detail(
         &row["content"],
     );
     resolve_mentions(&s.pool, std::slice::from_mut(&mut row)).await?;
-    let media:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',m.id,'media_type',m.media_type,'byte_length',m.byte_length,'width',m.width,'height',m.height,'duration_ms',to_jsonb(m)->'duration_ms','capture_at',m.capture_at,'source_url',coalesce((SELECT min(source_url) FROM crm.media_provenance WHERE media_id=m.id),m.source_record_id)) FROM crm.media_links l JOIN crm.media_assets m ON m.id=l.media_id WHERE l.entity_id=$1 ORDER BY l.role,m.id").bind(id).fetch_all(&s.pool).await?;
+    let media:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',m.id,'role',l.role,'media_type',m.media_type,'byte_length',m.byte_length,'width',m.width,'height',m.height,'duration_ms',to_jsonb(m)->'duration_ms','capture_at',m.capture_at,'source_url',coalesce((SELECT min(source_url) FROM crm.media_provenance WHERE media_id=m.id),m.source_record_id)) FROM crm.media_links l JOIN crm.media_assets m ON m.id=l.media_id WHERE l.entity_id=$1 ORDER BY l.role,m.id").bind(id).fetch_all(&s.pool).await?;
     let interactions:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',i.id,'interaction_type',i.interaction_type,'external_id',i.external_id,'author_profile_id',i.author_profile_id,'author_external_id',i.author_external_id,'author_name',i.author_name,'occurred_at',i.occurred_at,'metadata',i.metadata,'content',i.content,'local_media',coalesce((SELECT jsonb_agg(jsonb_build_object('id',m.id,'media_type',m.media_type,'width',m.width,'height',m.height,'role',l.role,'source_url',(SELECT min(source_url) FROM crm.media_provenance WHERE media_id=m.id)) ORDER BY l.role) FROM crm.media_links l JOIN crm.media_assets m ON m.id=l.media_id WHERE l.entity_type='social_interaction' AND l.entity_id=i.id),'[]')) FROM crm.social_interactions i WHERE post_id=$1 AND NOT is_deleted ORDER BY occurred_at NULLS LAST,id").bind(id).fetch_all(&s.pool).await?;
     row["media"] = json!(merge_media(&row["content"]["media"], &json!(media)));
     if row["event_type"] == "post" {
@@ -307,26 +307,101 @@ fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
                 .map(|u| (u, m))
         })
         .collect::<std::collections::BTreeMap<_, _>>();
+    let exact_ids = remote
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|item| {
+            ["source_url", "thumbnail_url"]
+                .into_iter()
+                .filter_map(|key| {
+                    item[key]
+                        .as_str()
+                        .and_then(|url| by_url.get(url))
+                        .map(|media| media["id"].to_string())
+                })
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    // Imported archives can keep file paths instead of the original CDN URL.
+    // The entity's numbered media slot still identifies the same attachment.
+    // Additive history can contain several assets for a role: do not guess then.
+    let by_role = |role: &str| {
+        let mut matches = local.iter().filter(|m| m["role"].as_str() == Some(role));
+        let first = matches.next()?;
+        let source = first["source_url"].as_str().unwrap_or("");
+        (matches.all(|m| m["id"] == first["id"])
+            && !exact_ids.contains(&first["id"].to_string())
+            && (source.is_empty() || source.starts_with('/') || source.starts_with("file://")))
+        .then_some(first)
+    };
     let mut result = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
-    for item in remote
+    for (index, item) in remote
         .as_array()
         .into_iter()
         .flatten()
         .filter(|m| m.is_object())
+        .enumerate()
     {
         let url = item["source_url"]
             .as_str()
             .filter(|u| !u.is_empty())
             .or(item["thumbnail_url"].as_str());
-        let poster = item["thumbnail_url"].as_str().and_then(|u| by_url.get(u));
-        let local = url.and_then(|u| by_url.get(u)).or(poster);
+        let role = item["role"]
+            .as_str()
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("media-{}", index + 1));
+        // Only the archived Instagram attachment identity permits positional
+        // recovery. A current CDN URL miss can be a newer, uncached revision.
+        let archived = ["source_url", "thumbnail_url"].into_iter().any(|key| {
+            item[key]
+                .as_str()
+                .is_some_and(|url| url.starts_with("archive://instagram/"))
+        });
+        let archive_role = |role: &str| {
+            archived
+                .then(|| by_role(role))
+                .flatten()
+                .filter(|media| !seen.contains(&media["id"].to_string()))
+        };
+        let poster = item["thumbnail_url"]
+            .as_str()
+            .and_then(|u| by_url.get(u).copied())
+            .or_else(|| {
+                let index = role.strip_prefix("media-")?;
+                [
+                    format!("thumbnail-{index}"),
+                    format!("thumbnail-{role}"),
+                    format!("{role}-poster"),
+                ]
+                .iter()
+                .find_map(|role| archive_role(role))
+                .filter(|media| {
+                    media["media_type"]
+                        .as_str()
+                        .is_some_and(|kind| kind.starts_with("image"))
+                })
+            });
+        let local = url
+            .and_then(|u| by_url.get(u).copied())
+            .or_else(|| {
+                archive_role(&role).filter(|media| {
+                    let expected = item["media_type"].as_str().unwrap_or("").split('/').next();
+                    let actual = media["media_type"].as_str().unwrap_or("").split('/').next();
+                    expected == actual
+                })
+            })
+            .or(poster);
         let mut resolved = item.clone();
         if let Some(local) = local {
             resolved
                 .as_object_mut()
                 .unwrap()
                 .extend(local.as_object().unwrap().clone());
+            // Keep the current record's evidence, including when a poster is used.
+            if item["source_url"].is_string() {
+                resolved["source_url"] = item["source_url"].clone();
+            }
         }
         if item["media_type"].as_str().is_some_and(|s| !s.is_empty()) {
             resolved["source_media_type"] = item["media_type"].clone();
@@ -436,6 +511,61 @@ async fn reading(pool: &sqlx::PgPool, id: Uuid, kind: &str) -> Result<Value> {
 mod tests {
     use super::*;
     #[test]
+    fn archive_slots_replace_stale_references_and_pair_video_posters() {
+        let remote = json!([
+            {"media_type":"image","source_url":"archive://instagram/photo/image"},
+            {"media_type":"video","source_url":"https://expired.invalid/video","thumbnail_url":"archive://instagram/video/image"},
+            {"media_type":"image","source_url":"https://uncached.invalid/photo"}
+        ]);
+        // SQL role ordering and saved file paths differ from the source array.
+        let local = json!([
+            {"id":"movie","role":"media-2","media_type":"video/mp4","source_url":null},
+            {"id":"cover","role":"thumbnail-2","media_type":"image/jpeg","source_url":null},
+            {"id":"photo","role":"media-1","media_type":"image/jpeg","source_url":null}
+        ]);
+        let merged = merge_media(&remote, &local);
+        assert_eq!(merged.len(), 3);
+        assert_eq!(merged[0]["id"], "photo");
+        assert_eq!(merged[0]["source_url"], remote[0]["source_url"]);
+        assert_eq!(merged[1]["id"], "movie");
+        assert_eq!(merged[1]["thumbnail_id"], "cover");
+        assert_eq!(merged[1]["source_media_type"], "video");
+        assert!(merged[2]["id"].is_null());
+
+        let ambiguous = json!([
+            {"id":"older","role":"media-1"},
+            {"id":"newer","role":"media-1"}
+        ]);
+        let merged = merge_media(&json!([remote[0]]), &ambiguous);
+        assert!(merged[0]["id"].is_null());
+        assert_eq!(merged.len(), 3);
+    }
+
+    #[test]
+    fn current_and_reordered_media_never_reuse_a_historical_slot() {
+        let a = json!({"source_url":"https://synthetic.invalid/A","media_type":"image"});
+        let b = json!({"source_url":"https://synthetic.invalid/B","media_type":"image"});
+        let cached = json!([{"id":"A","role":"media-2","source_url":"https://synthetic.invalid/A","media_type":"image/jpeg"}]);
+        let merged = merge_media(&json!([a, b]), &cached);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0]["id"], "A");
+        assert!(merged[1]["id"].is_null());
+        assert_eq!(merged[1]["source_url"], b["source_url"]);
+
+        let merged = merge_media(&json!([b, a]), &cached);
+        assert!(merged[0]["id"].is_null());
+        assert_eq!(merged[1]["id"], "A");
+        let old = json!([{"id":"old-video","role":"media-1","media_type":"video/mp4","source_url":"/data/old.mp4"}]);
+        let archived_image =
+            json!({"media_type":"image","source_url":"archive://instagram/photo/image"});
+        let merged = merge_media(&json!([archived_image]), &old);
+        assert_eq!(merged.len(), 2);
+        assert!(merged[0]["id"].is_null());
+        assert_eq!(merged[0]["source_url"], archived_image["source_url"]);
+        assert_eq!(merged[1]["id"], "old-video");
+    }
+
+    #[test]
     fn remote_video_order_posters_and_placeholder_text() {
         let remote = json!([{"source_url":"https://synthetic.invalid/video","thumbnail_url":"https://synthetic.invalid/poster","media_type":"video/mp4"},{"source_url":"https://synthetic.invalid/remote","media_type":"image/jpeg"}]);
         let local = json!([{"id":"video","source_url":"https://synthetic.invalid/video","media_type":"video/mp4"},{"id":"poster","source_url":"https://synthetic.invalid/poster","media_type":"image/jpeg"}]);
@@ -526,8 +656,10 @@ mod read_tests {
             .bind(account).execute(&pool).await.unwrap();
         let event = Uuid::new_v4();
         assert_ne!(event, object);
-        sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,source_account_id,event_type,external_id,content,content_hash,version) VALUES($1,'instagram',$2,$3,'post','history-post','{\"caption\":\"Legacy content\"}','legacy',1)")
-            .bind(event).bind(object).bind(account).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,source_account_id,event_type,external_id,content,content_hash,version) VALUES($1,'instagram',$2,$3,'post','history-post',$4,'legacy',1)")
+            .bind(event).bind(object).bind(account)
+            .bind(json!({"caption":"Legacy content","media":[{"source_url":"archive://instagram/history/image","media_type":"image"}]}))
+            .execute(&pool).await.unwrap();
         let mut tx = pool.begin().await.unwrap();
         let notebook =
             monica_core::content::register(&mut tx, "post", &json!({"text":"Notebook content"}))
@@ -539,7 +671,7 @@ mod read_tests {
         let media = Uuid::new_v4();
         sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,verified_at) VALUES($1,$2,'image/jpeg',1,'synthetic',now())")
             .bind(media).bind("e".repeat(64)).execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('social_post',$1,$2,'image-1')")
+        sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('social_post',$1,$2,'media-1')")
             .bind(event).bind(media).execute(&pool).await.unwrap();
         let router = crate::auth::routes(state);
         let response = router
@@ -558,6 +690,7 @@ mod read_tests {
             serde_json::from_slice(&to_bytes(response.into_body(), 1 << 20).await.unwrap())
                 .unwrap();
         assert_eq!(row["id"], event.to_string());
+        assert_eq!(row["media"].as_array().unwrap().len(), 1);
         assert_eq!(row["media"][0]["id"], media.to_string());
         let hashes: Vec<_> = row["revisions"]
             .as_array()
