@@ -34,6 +34,29 @@ class Images(unittest.TestCase):
         self.assertEqual(worker.quality(a + '_h.dat'), ('high', 4))
         self.assertEqual(worker.quality(a + '.dat'), ('unknown', 2))
 
+    def test_recent_metadata_uses_requested_hardlink_identity_without_a_cache_walk(self):
+        spec = importlib.util.spec_from_file_location('recent_images', ROOT/'scripts/nas-wechat-images.py')
+        recent = importlib.util.module_from_spec(spec);spec.loader.exec_module(recent)
+        key = 'a'*32
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder).resolve()
+            image = source/'attach/talker/2026-11/Img/different-name_h.dat'
+            image.parent.mkdir(parents=True);image.write_bytes(PNG)
+            with closing(sqlite3.connect(':memory:')) as metadata, closing(sqlite3.connect(':memory:')) as ledger:
+                metadata.executescript('CREATE TABLE dir2id(username TEXT PRIMARY KEY);CREATE TABLE image_hardlink_info_v4(md5 TEXT,file_name TEXT,dir1 INTEGER,dir2 INTEGER,extra_buffer BLOB);')
+                metadata.execute("INSERT INTO dir2id VALUES('talker')");metadata.execute("INSERT INTO dir2id VALUES('2026-11')")
+                metadata.execute('INSERT INTO image_hardlink_info_v4 VALUES(?,?,?,?,?)',(key,image.name,1,2,None))
+                metadata.execute('INSERT INTO image_hardlink_info_v4 VALUES(?,?,?,?,?)',('b'*32,'../unrelated-alias',1,2,None))
+                ledger.execute('CREATE TABLE files(md5 TEXT,path TEXT,quality TEXT,tier INTEGER,bytes INTEGER,mtime INTEGER,PRIMARY KEY(md5,path))')
+                self.assertEqual(recent.requested_catalog(source,metadata,ledger,{key},lambda:None),1)
+                self.assertEqual(ledger.execute('SELECT md5,path,quality FROM files').fetchall(),[(key,str(image.relative_to(source)),'high')])
+                alias = image.with_name('c'*32+'_h.dat');alias.write_bytes(PNG)
+                metadata.execute('INSERT INTO image_hardlink_info_v4 VALUES(?,?,?,?,?)',('d'*32,alias.name,1,2,None))
+                self.assertEqual(recent.requested_catalog(source,metadata,ledger,{'c'*32,'d'*32},lambda:None),2)
+                self.assertEqual(ledger.execute('SELECT md5,path,quality FROM files ORDER BY md5').fetchall(),[(identity,str(alias.relative_to(source)),'high')for identity in ('c'*32,'d'*32)])
+                image.unlink()
+                self.assertEqual(recent.requested_catalog(source,metadata,ledger,{key},lambda:None),0)
+
     def test_no_run_does_not_open_database_or_source(self):
         result = subprocess.run([sys.executable, str(ROOT / 'scripts/wechat-group-images.py')],
                                 env={'PATH': os.environ['PATH']}, capture_output=True)

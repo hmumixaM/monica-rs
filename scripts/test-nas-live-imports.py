@@ -68,6 +68,28 @@ class LiveImportContract(unittest.TestCase):
         # Never relax the production identity guard; this test uses another DB.
         self.consumer.guard = lambda: None
 
+    def test_recent_images_include_direct_and_group_but_exclude_old_messages(self):
+        recent = live.module('recent_images', 'nas-wechat-images.py')
+        self.db.execute('CREATE TABLE _sqlx_migrations(version bigint,success boolean)')
+        self.db.execute('INSERT INTO _sqlx_migrations VALUES(68,true)')
+        self.db.execute('UPDATE crm.wechat_image_control SET enabled=true,paused=false')
+        account, key = 'synthetic-self', 'a'*32
+        selected=[]
+        for kind, at in [('direct','2026-11-14'),('group','2026-11-15'),('group','2026-11-12')]:
+            cid, mid = uuid.uuid4(), uuid.uuid4()
+            self.db.execute("INSERT INTO crm.conversations(id,provider,account,external_id,conversation_type)VALUES(%s,'wechat',%s,%s,%s)",(cid,account,str(cid),kind))
+            self.db.execute("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,occurred_at,body,message_type)VALUES(%s,%s,'wechat',%s,%s,'peer',%s,%s,'3')",(mid,cid,account,str(mid),at,f'<msg><img md5="{key}"/></msg>'))
+            selected.append(mid)
+        state=Path(self.temp.name).resolve()/'recent-state';state.mkdir()
+        args=types.SimpleNamespace(account=account,source_owner=None,include_direct=True,since='2026-11-13T00:00:00Z',expected_database=self.db.info.dbname,expected_system_id=self.db.execute('SELECT system_identifier::text FROM pg_control_system()').fetchone()[0])
+        with closing(sqlite3.connect(':memory:'))as ledger:
+            item=recent.RecentImages(self.db,ledger,args,(self.args.source,self.args.media,state),{})
+            item.open();item.discover()
+            self.assertEqual({r[0]for r in self.db.execute('SELECT message_id FROM crm.wechat_group_images WHERE run_id=%s',(item.run_id,))},set(selected[:2]))
+            self.assertIsNotNone(self.db.execute(item.current_sql+' AND m.message_id=%s',(*item.query_args,selected[0])).fetchone())
+            self.assertIsNone(self.db.execute(item.current_sql+' AND m.message_id=%s',(*item.query_args,selected[2])).fetchone())
+            self.assertEqual(self.db.execute('SELECT count(*)FROM crm.message_search').fetchone()[0],3)
+
     def test_archived_media_url_restore_checks_bytes_and_replays_without_changes(self):
         binding = live.module('legacy_media_bindings', 'legacy-media-bindings.py')
         migration, mid = uuid.uuid4(), uuid.uuid4()
@@ -77,12 +99,12 @@ class LiveImportContract(unittest.TestCase):
         path.parent.mkdir(parents=True);path.write_bytes(image)
         self.db.execute("INSERT INTO crm.legacy_migrations(id,manifest_hash,source_manifest,status) VALUES(%s,'binding-test','{}','database_ready')", (migration,))
         self.db.execute("INSERT INTO crm.media_assets(id,sha256,byte_length,media_type,object_path,source_type) VALUES(%s,%s,%s,'image/jpeg','legacy-path','wechat')", (mid,digest,len(image)))
-        value = json.dumps(dict(media_id=str(mid),source_url='https://synthetic.invalid/photo'))
+        value = json.dumps(dict(media_id=str(mid),source_url='archive://instagram/synthetic/photo'))
         self.db.execute("INSERT INTO crm.legacy_history VALUES(%s,'crm','remote_media_sources','one',%s)", (migration,value))
         first = binding.restore_page(self.db,self.args.media,migration,'')
         self.assertEqual((first['processed'],first['inserted'],first['missing_files']),(1,1,0))
         self.assertEqual(binding.restore_page(self.db,self.args.media,migration,'')['inserted'],0)
-        self.assertEqual(self.db.execute('SELECT source_url FROM crm.media_provenance WHERE media_id=%s',(mid,)).fetchall(),[('https://synthetic.invalid/photo',)])
+        self.assertEqual(self.db.execute('SELECT source_url FROM crm.media_provenance WHERE media_id=%s',(mid,)).fetchall(),[('archive://instagram/synthetic/photo',)])
         path.write_bytes(b'truncated')
         self.assertEqual(binding.restore_page(self.db,self.args.media,migration,'')['missing_files'],1)
         self.assertEqual(self.db.execute('SELECT payload FROM crm.legacy_history WHERE migration_id=%s',(migration,)).fetchone()[0],json.loads(value))
@@ -280,12 +302,23 @@ class LiveImportContract(unittest.TestCase):
             self.consumer.wechat()
             first = self.db.execute("SELECT message_id,conversation_id FROM crm.message_search WHERE body='Original'").fetchone()
             self.assertIsNotNone(first)
+            media = uuid.uuid4()
+            self.db.execute("INSERT INTO crm.media_assets(id,sha256,byte_length,media_type,object_path)VALUES(%s,%s,1,'image/png','synthetic')",(media,'e'*64))
+            self.db.execute("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role)VALUES('message_event',%s,%s,'wechat-group-image:high'),('message_event',%s,%s,'manual')",(first[0],media,first[0],media))
+            run=uuid.uuid4()
+            self.db.execute("INSERT INTO crm.wechat_image_runs(id,account)VALUES(%s,'synthetic-self')",(run,))
+            self.db.execute("INSERT INTO crm.wechat_group_images(run_id,message_id,conversation_id,day,state,quality,media_id)VALUES(%s,%s,%s,'2026-11-15','available','high',%s)",(run,first[0],first[1],media))
+            self.consumer.wechat()
+            self.assertEqual(self.db.execute('SELECT count(*)FROM crm.media_links WHERE entity_id=%s',(first[0],)).fetchone()[0],2)
+            self.assertEqual(self.db.execute('SELECT state,media_id FROM crm.wechat_group_images WHERE run_id=%s',(run,)).fetchone(),('available',media))
             source.execute(f"UPDATE {table} SET message_content='Corrected' WHERE local_id=1")
             source.execute(f"INSERT INTO {table} VALUES(2,8,1794780001,'text',1,'Downtime backlog',NULL)")
             source.execute(f"INSERT INTO {table} VALUES(3,9,1794780002,'10000',1,'<sysmsg><revokemsg><newmsgid>7</newmsgid></revokemsg></sysmsg>',NULL)")
             source.commit()
             self.assertTrue(Path(str(root/'message/message_0.db')+'-wal').exists())
             self.consumer.wechat()
+            self.assertEqual(self.db.execute('SELECT role FROM crm.media_links WHERE entity_id=%s',(first[0],)).fetchall(),[('manual',)])
+            self.assertEqual(self.db.execute('SELECT state,quality,media_id FROM crm.wechat_group_images WHERE run_id=%s',(run,)).fetchone(),('pending','none',None))
             self.consumer.wechat()
         self.assertEqual(self.db.execute('SELECT count(*) FROM crm.message_search').fetchone()[0],3)
         self.assertEqual(self.db.execute('SELECT body FROM crm.message_search WHERE message_id=%s',(first[0],)).fetchone()[0],'Corrected')

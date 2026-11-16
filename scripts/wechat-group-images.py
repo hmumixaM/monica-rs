@@ -245,6 +245,15 @@ class Worker:
         self.env = env
         self.run_id = None
         self.last_guard = 0
+        scope = SCOPE
+        if getattr(args, 'include_direct', False):
+            scope = scope.replace("c.conversation_type='group'", "c.conversation_type IN ('group','direct')")
+        self.query_args = (args.account,)
+        self.discover_sql, self.current_sql = DISCOVER.replace(SCOPE, scope), CURRENT.replace(SCOPE, scope)
+        if getattr(args, 'since', None):
+            self.discover_sql += ' AND m.occurred_at>=%s'
+            self.current_sql += ' AND m.occurred_at>=%s'
+            self.query_args += (args.since,)
 
     def guard(self, force=False):
         if not force and time.monotonic() - self.last_guard < 1:
@@ -294,7 +303,7 @@ class Worker:
         after = NIL
         while True:
             self.guard()
-            rows = self.db.execute(DISCOVER + ' AND m.message_id>%s ORDER BY m.message_id LIMIT 500', (self.args.account, after)).fetchall()
+            rows = self.db.execute(self.discover_sql + ' AND m.message_id>%s ORDER BY m.message_id LIMIT 500', (*self.query_args, after)).fetchall()
             if not rows:
                 break
             with self.db.transaction():
@@ -305,7 +314,7 @@ class Worker:
 
     def item(self, mid):
         self.guard()
-        row = self.db.execute(CURRENT + ' AND m.message_id=%s', (self.args.account, mid)).fetchone()
+        row = self.db.execute(self.current_sql + ' AND m.message_id=%s', (*self.query_args, mid)).fetchone()
         state, q, asset = 'source_changed', 'none', None
         if row:
             refs = image_references(*row[3:])
@@ -385,7 +394,7 @@ class Worker:
             # is needed here: image/raw/lifecycle/position changes write it in
             # the same transaction. Do not introduce the reverse m -> c order.
             self.db.execute("SELECT message_id FROM crm.message_search WHERE message_id=%s FOR SHARE", (mid,)).fetchone()
-            current = self.db.execute(CURRENT + ' AND m.message_id=%s', (self.args.account, mid)).fetchone()
+            current = self.db.execute(self.current_sql + ' AND m.message_id=%s', (*self.query_args, mid)).fetchone()
             if current != row:
                 state, q, asset = 'source_changed', 'none', None
             media_id = None
