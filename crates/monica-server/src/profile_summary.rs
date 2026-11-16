@@ -71,16 +71,10 @@ async fn summary(
     let has_posts:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.timeline_events WHERE profile_id=$1 AND status<>'deleted')").bind(id).fetch_one(&mut *tx).await?;
     let mut overview = json!({"contact_events":contact_events(&mut tx,id).await?});
     if profile["profile_type"] == "person" {
-        let stats:Value=sqlx::query_scalar("SELECT jsonb_build_object('total',coalesce(sum(c.message_count) FILTER(WHERE conversation_type='direct'),0),'group_total',coalesce(sum(c.message_count) FILTER(WHERE conversation_type='group'),0),'first_contact_at',min(c.first_message_at) FILTER(WHERE conversation_type='direct'),'last_contact_at',max(c.last_message_at) FILTER(WHERE conversation_type='direct'),'last_group_at',max(c.last_message_at) FILTER(WHERE conversation_type='group')) FROM crm.conversations c WHERE c.profile_id=$1")
-            .bind(id).fetch_one(&mut *tx).await?;
-        if stats["total"] != 0 || stats["group_total"] != 0 {
-            let mut stats = stats;
-            let counts:(i64,i64)=sqlx::query_as("SELECT coalesce(sum(m.sent),0)::bigint,coalesce(sum(m.received),0)::bigint FROM crm.message_months m JOIN crm.conversations c ON c.id=m.conversation_id WHERE c.profile_id=$1 AND c.conversation_type='direct'")
-                .bind(id).fetch_one(&mut *tx).await?;
-            let months:Vec<Value>=sqlx::query_scalar("WITH months AS (SELECT to_char(month,'YYYY-MM') AS month FROM generate_series(date_trunc('month',now() AT TIME ZONE 'America/Chicago')-interval '23 months',date_trunc('month',now() AT TIME ZONE 'America/Chicago'),interval '1 month') month),counts AS (SELECT m.month,sum(m.sent) AS sent,sum(m.received) AS received FROM crm.message_months m JOIN crm.conversations c ON c.id=m.conversation_id WHERE c.profile_id=$1 AND c.conversation_type='direct' GROUP BY m.month) SELECT jsonb_build_object('month',months.month,'sent',coalesce(counts.sent,0),'received',coalesce(counts.received,0)) FROM months LEFT JOIN counts USING(month) ORDER BY months.month")
+        let mut stats = crate::messages::stats::summary(&mut tx, id).await?;
+        if stats["record_total"] != 0 || stats["group_total"] != 0 {
+            let months:Vec<Value>=sqlx::query_scalar("WITH months AS (SELECT to_char(month,'YYYY-MM') AS month FROM generate_series(date_trunc('month',now() AT TIME ZONE 'America/Chicago')-interval '23 months',date_trunc('month',now() AT TIME ZONE 'America/Chicago'),interval '1 month') month),counts AS (SELECT month,sent,received FROM crm.page_profile_months WHERE profile_id=$1) SELECT jsonb_build_object('month',months.month,'sent',coalesce(counts.sent,0),'received',coalesce(counts.received,0)) FROM months LEFT JOIN counts USING(month) ORDER BY months.month")
                 .bind(id).fetch_all(&mut *tx).await?;
-            stats["sent"] = json!(counts.0);
-            stats["received"] = json!(counts.1);
             stats["months"] = json!(months);
             overview["messages"] = stats;
         } else {

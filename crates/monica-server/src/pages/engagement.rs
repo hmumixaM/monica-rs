@@ -25,8 +25,8 @@ async fn home(
     let mut tx = snapshot_on(&s, &h, read_pool.map(|p| p.0.0)).await?;
     // Only the partial first day needs exact timestamps; all full days read counts.
     let value:Value=sqlx::query_scalar(r#"WITH cutoff AS(SELECT now()-interval '30 days' t),recent AS(
- SELECT d.conversation_id,sum(d.sent+d.received)::bigint n FROM crm.conversation_days d,cutoff WHERE d.day>(cutoff.t AT TIME ZONE 'America/Chicago')::date GROUP BY d.conversation_id
- UNION ALL SELECT m.conversation_id,count(*) FROM crm.message_search m,cutoff WHERE NOT m.tombstone AND m.occurred_at>=cutoff.t AND m.occurred_at<((cutoff.t AT TIME ZONE 'America/Chicago')::date+1)::timestamp AT TIME ZONE 'America/Chicago' GROUP BY m.conversation_id)
+ SELECT d.conversation_id,sum(d.sent+d.received)::bigint n FROM crm.message_stat_counts d,cutoff WHERE d.scope='day:America/Chicago' AND d.period>((cutoff.t AT TIME ZONE 'America/Chicago')::date)::text GROUP BY d.conversation_id
+ UNION ALL SELECT m.conversation_id,count(*) FROM crm.message_search m,cutoff WHERE NOT m.tombstone AND crm.message_stat_kind(m.direction,m.sender,m.account,m.message_type) IN('sent','received') AND m.occurred_at>=cutoff.t AND m.occurred_at<((cutoff.t AT TIME ZONE 'America/Chicago')::date+1)::timestamp AT TIME ZONE 'America/Chicago' GROUP BY m.conversation_id)
  SELECT jsonb_build_object('key_numbers',jsonb_build_object('contacts',(SELECT count(*) FROM crm.directory_profiles WHERE archived_at IS NULL AND profile_type='person'),'groups',(SELECT count(*) FROM crm.directory_profiles WHERE archived_at IS NULL AND profile_type='group'),'messages_30d',coalesce((SELECT sum(n) FROM recent),0),'active_contacts_30d',(SELECT count(DISTINCT c.profile_id) FROM recent r JOIN crm.conversations c ON c.id=r.conversation_id WHERE r.n>0 AND c.conversation_type='direct')))"#).fetch_one(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(value))
@@ -113,8 +113,8 @@ async fn calendar(
             "year is out of range",
         ));
     }
-    let days:Vec<Value>=sqlx::query_scalar("WITH contacts AS(SELECT d.day,c.profile_id FROM crm.conversation_days d JOIN crm.conversations c ON c.id=d.conversation_id WHERE c.conversation_type='direct' AND d.sent+d.received>0 AND d.day>=make_date($1,1,1) AND d.day<make_date($1+1,1,1) UNION SELECT day,profile_id FROM crm.contact_days WHERE kind='call' AND count>0 AND day>=make_date($1,1,1) AND day<make_date($1+1,1,1)) SELECT jsonb_build_object('date',c.day,'people',count(DISTINCT c.profile_id)) FROM contacts c JOIN crm.directory_profiles p ON p.id=c.profile_id AND p.archived_at IS NULL AND p.profile_type='person' GROUP BY c.day ORDER BY c.day").bind(year).fetch_all(&mut *tx).await?;
-    let first:Option<i32>=sqlx::query_scalar("SELECT extract(year from min(day))::int FROM(SELECT min(day) AS day FROM crm.conversation_days WHERE sent+received>0 UNION ALL SELECT min(day) FROM crm.contact_days WHERE kind='call' AND count>0) days").fetch_one(&mut *tx).await?;
+    let days:Vec<Value>=sqlx::query_scalar("WITH contacts AS(SELECT d.day,c.profile_id FROM crm.message_days_presented d JOIN crm.conversations c ON c.id=d.conversation_id WHERE c.conversation_type='direct' AND d.sent+d.received>0 AND d.day>=make_date($1,1,1) AND d.day<make_date($1+1,1,1) UNION SELECT day,profile_id FROM crm.contact_days WHERE kind='call' AND count>0 AND day>=make_date($1,1,1) AND day<make_date($1+1,1,1)) SELECT jsonb_build_object('date',c.day,'people',count(DISTINCT c.profile_id)) FROM contacts c JOIN crm.directory_profiles p ON p.id=c.profile_id AND p.archived_at IS NULL AND p.profile_type='person' GROUP BY c.day ORDER BY c.day").bind(year).fetch_all(&mut *tx).await?;
+    let first:Option<i32>=sqlx::query_scalar("SELECT extract(year from min(day))::int FROM(SELECT min(day) AS day FROM crm.message_days_presented WHERE sent+received>0 UNION ALL SELECT min(day) FROM crm.contact_days WHERE kind='call' AND count>0) days").fetch_one(&mut *tx).await?;
     tx.commit().await?;
     let max = days
         .iter()
@@ -131,19 +131,19 @@ struct Day {
 }
 async fn day(State(s): State<AppState>, h: HeaderMap, Query(q): Query<Day>) -> Result<Json<Value>> {
     let mut tx = snapshot(&s, &h).await?;
-    let people:Vec<Value>=sqlx::query_scalar("WITH contacts AS(SELECT c.profile_id,d.sent+d.received messages,0::bigint calls FROM crm.conversation_days d JOIN crm.conversations c ON c.id=d.conversation_id WHERE c.conversation_type='direct' AND d.day=$1::text::date AND d.sent+d.received>0 UNION ALL SELECT profile_id,0,count FROM crm.contact_days WHERE day=$1::text::date AND kind='call' AND count>0) SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'messages',sum(c.messages),'calls',sum(c.calls)) FROM contacts c JOIN crm.directory_profiles p ON p.id=c.profile_id AND p.archived_at IS NULL AND p.profile_type='person' GROUP BY p.id,p.display_name,p.avatar_media_id ORDER BY sum(c.calls) DESC,sum(c.messages) DESC,p.display_name").bind(q.day.to_string()).fetch_all(&mut *tx).await?;
+    let people:Vec<Value>=sqlx::query_scalar("WITH contacts AS(SELECT c.profile_id,d.sent+d.received messages,0::bigint calls FROM crm.message_days_presented d JOIN crm.conversations c ON c.id=d.conversation_id WHERE c.conversation_type='direct' AND d.day=$1::text::date AND d.sent+d.received>0 UNION ALL SELECT profile_id,0,count FROM crm.contact_days WHERE day=$1::text::date AND kind='call' AND count>0) SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'messages',sum(c.messages),'calls',sum(c.calls)) FROM contacts c JOIN crm.directory_profiles p ON p.id=c.profile_id AND p.archived_at IS NULL AND p.profile_type='person' GROUP BY p.id,p.display_name,p.avatar_media_id ORDER BY sum(c.calls) DESC,sum(c.messages) DESC,p.display_name").bind(q.day.to_string()).fetch_all(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(json!({"date":q.day,"people":people})))
 }
 pub(super) async fn ribbon_value(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result<Value> {
-    let zone:String=sqlx::query_scalar("SELECT coalesce(min(m.timezone),'UTC') FROM crm.source_chat_months m JOIN crm.source_account_links l ON l.account_id=m.account_id WHERE l.profile_id=$1").bind(id).fetch_one(&mut **tx).await?;
-    let months:Vec<Value>=sqlx::query_scalar(r#"WITH archived AS(SELECT m.month,sum(m.sent)::bigint sent,sum(m.received)::bigint received FROM crm.source_chat_months m JOIN crm.source_account_links l ON l.account_id=m.account_id WHERE l.profile_id=$1 GROUP BY m.month),messages AS(
- SELECT * FROM archived UNION ALL SELECT m.month,sum(m.sent)::bigint,sum(m.received)::bigint FROM crm.message_months_utc m JOIN crm.conversations c ON c.id=m.conversation_id WHERE c.profile_id=$1 AND NOT EXISTS(SELECT 1 FROM archived) GROUP BY m.month),m AS(
+    let zone = "America/Chicago";
+    let messages = crate::messages::stats::rows(tx, id, zone).await?;
+    let months:Vec<Value>=sqlx::query_scalar(r#"WITH messages AS(SELECT month,sent,received FROM jsonb_to_recordset($3) AS x(month text,sent bigint,received bigint)),m AS(
  SELECT month,sent,received,0::bigint calls,0::bigint interactions FROM messages
  UNION ALL SELECT to_char(occurred_at AT TIME ZONE $2,'YYYY-MM'),0,0,count(*),0 FROM crm.contact_events WHERE profile_id=$1 AND kind='call' AND occurred_at IS NOT NULL GROUP BY 1
  UNION ALL SELECT to_char(i.occurred_at AT TIME ZONE $2,'YYYY-MM'),0,0,0,count(*) FROM crm.social_interactions i JOIN crm.page_posts p ON p.id=i.post_id WHERE i.author_profile_id=$1 AND p.profile_id IS DISTINCT FROM i.author_profile_id AND i.interaction_type IN('like','comment','reply') AND i.occurred_at IS NOT NULL GROUP BY 1)
- SELECT jsonb_build_object('month',month,'sent',sum(sent),'received',sum(received),'calls',sum(calls),'interactions',sum(interactions)) FROM m GROUP BY month ORDER BY month"#).bind(id).bind(&zone).fetch_all(&mut **tx).await?;
-    Ok(json!({"timezone":if months.is_empty(){"UTC"}else{&zone},"months":months}))
+ SELECT jsonb_build_object('month',month,'sent',sum(sent),'received',sum(received),'calls',sum(calls),'interactions',sum(interactions)) FROM m GROUP BY month ORDER BY month"#).bind(id).bind(zone).bind(json!(messages)).fetch_all(&mut **tx).await?;
+    Ok(json!({"timezone":zone,"months":months}))
 }
 async fn ribbon(State(s): State<AppState>, h: HeaderMap, Path(id): Path<Uuid>) -> Result<Response> {
     let mut tx = snapshot(&s, &h).await?;

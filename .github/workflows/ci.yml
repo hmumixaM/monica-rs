@@ -65,10 +65,10 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y postgresql-16
       - run: npm ci && npm run build && npx playwright install --with-deps chrome webkit
         working-directory: apps/web
-      - run: npm test -- tests/router.spec.ts tests/ask-runtime.spec.ts tests/auth-errors.spec.ts tests/home-read-failures.spec.ts tests/feed-media-mobile.spec.ts
+      - run: npm test -- tests/router.spec.ts tests/ask-runtime.spec.ts tests/auth-errors.spec.ts tests/home-read-failures.spec.ts tests/feed-media-mobile.spec.ts tests/profile-linked-bugs.spec.ts
         working-directory: apps/web
       - name: Mobile WebKit media layouts
-        run: npm test -- tests/feed-media-mobile.spec.ts
+        run: npm test -- tests/feed-media-mobile.spec.ts tests/profile-linked-bugs.spec.ts
         working-directory: apps/web
         env:
           MONICA_WEB_TEST_BROWSER: webkit
@@ -102,6 +102,7 @@ jobs:
       - run: python3 scripts/test-collector-bridge.py && python3 scripts/test-collector-chatlog.py
       - run: python3 scripts/test-build-context.py
       - run: python3 scripts/test-collector-supervisor.py
+      - run: python3 scripts/test-legacy-wechat-emoji.py
       - run: python3 scripts/test-retry-wechat-media.py
       - run: python3 -m pip install uv==0.9.17
       - name: Benchmark availability and latency reporting

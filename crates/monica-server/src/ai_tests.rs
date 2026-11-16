@@ -395,8 +395,24 @@ async fn generated_digest_has_complete_web_contract_and_privacy_fence(pool: sqlx
         .execute(&pool)
         .await
         .unwrap();
+    ai::week_window::refresh_observations(&pool).await.unwrap();
     ai::enqueue(&pool, "ai.digest", "2026-01-05").await.unwrap();
     let lease = ai::claim(&pool).await.unwrap().unwrap();
+    let provider = ai::provider::FakeProvider {
+        output: json!({"summary":"Synthetic context","sources":[post]}),
+    };
+    let mut prepared = false;
+    for _ in 0..10 {
+        if ai::week_window::prepare(&pool, &provider, &lease)
+            .await
+            .unwrap()
+            .is_some()
+        {
+            prepared = true;
+            break;
+        }
+    }
+    assert!(prepared, "offline context must be ready before publishing");
     assert!(ai::finish(&pool,&lease,json!({"summary":"Synthetic generated recap","life_events":[{"profile_id":person,"post_id":post,"kind":"travel","text":"Synthetic trip"},{"profile_id":person,"post_id":post,"kind":"invalid-model-kind","text":"Must be dropped"}],"suggestions":[]})).await.unwrap());
     let app = crate::auth::routes(state);
     let row = response(

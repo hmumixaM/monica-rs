@@ -17,6 +17,7 @@ pub mod mail_oauth;
 pub mod media;
 pub mod messages;
 pub mod pages;
+pub mod profile_merge;
 pub mod resources;
 pub mod scheduler;
 pub mod source_blobs;

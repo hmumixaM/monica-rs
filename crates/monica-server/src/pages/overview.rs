@@ -19,7 +19,7 @@ async fn overview(
     let fields:Value=sqlx::query_scalar("SELECT coalesce(jsonb_object_agg(c.field_key,r.value),'{}') FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1 AND c.field_key IN('wechat.remark','linkedin.headline','monica.company','monica.job','monica.residence','wechat.city','linkedin.location','wechat.province')").bind(id).fetch_one(&mut *tx).await?;
     header["note"] = field(&fields, &["wechat.remark"]);
     header["city"] = monica_core::pages::city(&fields);
-    let avatars:Vec<Value>=sqlx::query_scalar("SELECT DISTINCT ON(role) jsonb_build_object('provider',replace(role,'_avatar',''),'media_id',media_id) FROM crm.media_links WHERE entity_type='profile' AND entity_id=$1 AND role IN('wechat_avatar','instagram_avatar','linkedin_avatar') ORDER BY role,created_at DESC,media_id").bind(id).fetch_all(&mut *tx).await?;
+    let avatars:Vec<Value>=sqlx::query_scalar("SELECT DISTINCT ON(role) jsonb_build_object('provider',replace(role,'_avatar',''),'media_id',media_id) FROM crm.profile_source_media WHERE profile_id=$1 AND role IN('wechat_avatar','instagram_avatar','linkedin_avatar') ORDER BY role,observed_at DESC,media_id").bind(id).fetch_all(&mut *tx).await?;
     header["avatars"] = json!(avatars);
     let facts:Vec<Value>=sqlx::query_scalar("SELECT (CASE WHEN jsonb_typeof(value)='object' THEN value ELSE '{}'::jsonb END)||jsonb_build_object('type',fact_type,'company',coalesce(company_name,value->>'company_name',value->>'company'),'school',coalesce(school_name,value->>'school_name'),'company_id',company_id,'school_id',school_id,'source',current_source_type) FROM crm.profile_structured_current WHERE profile_id=$1 AND fact_type IN('employment','education') ORDER BY fact_type,fact_key").bind(id).fetch_all(&mut *tx).await?;
     let facts = monica_core::pages::ordered_experience(
@@ -53,9 +53,12 @@ async fn overview(
             "calls":if events["calls"]["total"].as_i64().unwrap_or(0)>0 {events["calls"].clone()} else {Value::Null},
             "money":if events["money"]["total"].as_i64().unwrap_or(0)>0 {events["money"].clone()} else {Value::Null}
         }));
-        if let Some(mut messages)=sqlx::query_scalar::<_,Value>("SELECT jsonb_build_object('total',direct_message_count,'group_total',group_message_count,'first_contact_at',first_contact_at,'last_contact_at',last_contact_at,'last_group_at',last_group_at,'sent',coalesce((SELECT sum(sent) FROM crm.page_profile_months WHERE profile_id=$1),0),'received',coalesce((SELECT sum(received) FROM crm.page_profile_months WHERE profile_id=$1),0)) FROM crm.page_contact_stats WHERE profile_id=$1").bind(id).fetch_optional(&mut *tx).await?{
-   let months:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('month',to_char(m,'YYYY-MM'),'sent',coalesce(c.sent,0),'received',coalesce(c.received,0)) FROM generate_series(date_trunc('month',now() AT TIME ZONE 'America/Chicago')-interval '23 months',date_trunc('month',now() AT TIME ZONE 'America/Chicago'),interval '1 month') m LEFT JOIN crm.page_profile_months c ON c.profile_id=$1 AND c.month=to_char(m,'YYYY-MM') ORDER BY m").bind(id).fetch_all(&mut *tx).await?;messages["months"]=json!(months);result["messages"]=messages;
-  }
+        let mut messages = crate::messages::stats::summary(&mut tx, id).await?;
+        if messages["record_total"] != 0 || messages["group_total"] != 0 {
+            let months:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('month',to_char(m,'YYYY-MM'),'sent',coalesce(c.sent,0),'received',coalesce(c.received,0)) FROM generate_series(date_trunc('month',now() AT TIME ZONE 'America/Chicago')-interval '23 months',date_trunc('month',now() AT TIME ZONE 'America/Chicago'),interval '1 month') m LEFT JOIN crm.page_profile_months c ON c.profile_id=$1 AND c.month=to_char(m,'YYYY-MM') ORDER BY m").bind(id).fetch_all(&mut *tx).await?;
+            messages["months"] = json!(months);
+            result["messages"] = messages;
+        }
         let relationships:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'relationship_type',e.relationship_type,'direction',CASE WHEN count(DISTINCT e.from_profile_id)>1 THEN 'both' WHEN bool_or(e.from_profile_id=$1) THEN 'outgoing' ELSE 'incoming' END) FROM crm.presented_relationship_edges e JOIN crm.profiles p ON p.id=CASE WHEN e.from_profile_id=$1 THEN e.to_profile_id ELSE e.from_profile_id END AND p.archived_at IS NULL WHERE(e.from_profile_id=$1 OR e.to_profile_id=$1) AND(e.valid_to IS NULL OR e.valid_to>now()) GROUP BY p.id,e.relationship_type ORDER BY p.display_name,e.relationship_type LIMIT 8").bind(id).fetch_all(&mut *tx).await?;
         result["relationships"] = json!(
             relationships

@@ -20,6 +20,7 @@ import styles from "./profile.module.css";
 import { RelationshipPulse } from "./pulse";
 import type { Profile } from "./types";
 
+const MergePerson = dynamic(() => import("./merge-person").then(module => module.MergePerson), { loading: () => <Skeleton height={160} /> });
 const ProfilePhotoGallery = dynamic(() => import("../faces/profile-photos").then(module => module.ProfilePhotoGallery), { loading: () => <Skeleton height={160} /> });
 const SocialFeed = dynamic(() => import("../feed/social-feed").then(module => module.SocialFeed), { loading: () => <Skeleton height={160} /> });
 const MessagesTab = dynamic(() => import("./chat-detail").then(module => module.MessagesTab), { loading: () => <Skeleton height={160} /> });
@@ -45,6 +46,7 @@ export function ProfileView({ profileId }: { profileId: string }) {
   const params = useSearchParams();
   const router = useRouter();
   const client = useQueryClient();
+  const [merging, setMerging] = useState(false);
   const [editing, setEditing] = useState(false);
   const [photo, setPhoto] = useState<Photo | null>(null);
   const summary = useProfileSummary(profileId);
@@ -87,6 +89,8 @@ export function ProfileView({ profileId }: { profileId: string }) {
     <ProfileHero profile={profile} hasMessages={!!overview.data?.messages || !person} editing={editing}
       onEdit={() => setEditing((value) => !value)} onPhoto={setPhoto} onLinksChanged={refresh} />
     {person && <ButtonLink className={styles.askLink} href={`/ask?profile=${profile.id}`}>询问此人</ButtonLink>}
+    {person && editing && <Button onClick={() => setMerging(true)}>合并到其他人物</Button>}
+    {merging && <MergePerson sourceId={canonicalId} onClose={() => setMerging(false)} onMerged={(id) => { void client.invalidateQueries(); setMerging(false); router.replace(`/profiles/${id}`); }} />}
     {editing && detail.data && <FieldEditor profileId={profileId} profile={profile} onSaved={refresh} onCancel={() => setEditing(false)} />}
     {person && <RelationshipPulse profileId={profileId} overview={overview.data} dates={profile.significant_dates ?? []} groupCount={groupCount} />}
     <Tabs className={styles.tabs} label="资料分区" items={tabs} value={tab} onSelect={select} />

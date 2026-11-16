@@ -1307,3 +1307,185 @@ async fn notebook_owner_corrections_move_memory_and_keep_message_direction(pool:
     assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM crm.memory_inputs WHERE profile_id=$1 AND source_kind IN ('chat','social')").bind(first).fetch_one(&pool).await.unwrap(),0);
     assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM crm.memory_inputs WHERE profile_id=$1 AND source_kind IN ('chat','social')").bind(second).fetch_one(&pool).await.unwrap(),2);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn avatar_history_tracks_bytes_and_preserves_manual_choice(pool: PgPool) {
+    let person = profile(&pool, "Avatar person").await;
+    let account = Uuid::new_v4();
+    let old = Uuid::new_v4();
+    let new = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'linkedin','avatar-peer','person','Avatar peer')").bind(account).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.source_account_links(account_id,profile_id) VALUES($1,$2)")
+        .bind(account)
+        .bind(person)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (id, digit) in [(old, 'a'), (new, 'b')] {
+        sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,verified_at) VALUES($1,$2,'image/jpeg',1,'synthetic',now())").bind(id).bind(digit.to_string().repeat(64)).execute(&pool).await.unwrap();
+    }
+    monica_core::media::set_slot(
+        &pool,
+        "source_account",
+        account,
+        "linkedin_avatar",
+        old,
+        Some(account),
+    )
+    .await
+    .unwrap();
+    linking::refresh_account(&pool, account).await.unwrap();
+    monica_core::media::set_slot(
+        &pool,
+        "source_account",
+        account,
+        "linkedin_avatar",
+        new,
+        Some(account),
+    )
+    .await
+    .unwrap();
+    monica_core::media::set_slot(
+        &pool,
+        "source_account",
+        account,
+        "linkedin_avatar",
+        new,
+        Some(account),
+    )
+    .await
+    .unwrap();
+    linking::refresh_account(&pool, account).await.unwrap();
+    let observed: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM crm.avatar_observations WHERE account_id=$1")
+            .bind(account)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(observed, 2);
+    let selected: Option<Uuid> =
+        sqlx::query_scalar("SELECT avatar_media_id FROM crm.profiles WHERE id=$1")
+            .bind(person)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(selected, Some(new));
+    let mut tx = pool.begin().await.unwrap();
+    monica_core::ai::memory::profile_facts(&mut tx, person)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let input: Value = sqlx::query_scalar(
+        "SELECT payload FROM crm.memory_inputs WHERE profile_id=$1 AND source_kind='profile'",
+    )
+    .bind(person)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(input["avatar_observations"].as_array().unwrap().len(), 2);
+    monica_core::media::set_slot(&pool, "profile", person, "avatar", old, None)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE crm.profiles SET avatar_media_id=$2 WHERE id=$1")
+        .bind(person)
+        .bind(old)
+        .execute(&pool)
+        .await
+        .unwrap();
+    linking::refresh_account(&pool, account).await.unwrap();
+    let pinned: Option<Uuid> =
+        sqlx::query_scalar("SELECT avatar_media_id FROM crm.profiles WHERE id=$1")
+            .bind(person)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(pinned, Some(old));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM crm.ai_jobs")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn proven_legacy_avatar_history_and_current_slot_override_aliases(pool: PgPool) {
+    let person = profile(&pool, "Legacy avatar").await;
+    let account = Uuid::new_v4();
+    let old = Uuid::new_v4();
+    let new = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'wechat','legacy-avatar','person','Legacy')").bind(account).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.source_account_links(account_id,profile_id) VALUES($1,$2)")
+        .bind(account)
+        .bind(person)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (id, key, url, at) in [
+        (
+            old,
+            'd',
+            "https://example.invalid/old",
+            "2026-10-01T12:00:00Z",
+        ),
+        (
+            new,
+            'e',
+            "https://example.invalid/new",
+            "2026-10-20T12:00:00Z",
+        ),
+    ] {
+        sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,source_type,source_record_id,verified_at) VALUES($1,$2,'image/jpeg',1,'synthetic','wechat',$3,now())").bind(id).bind(key.to_string().repeat(64)).bind(if id==new {"https://example.invalid/original-shared-content"} else {url}).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('source_account',$1,$2,'wechat_avatar')").bind(account).bind(id).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,source_account_id,field_key,value,content_hash,source_type,operation,observed_at) VALUES(gen_random_uuid(),$1,$2,'wechat.avatar_url',$3,'synthetic','wechat','import',$4::text::timestamptz)").bind(person).bind(account).bind(json!(url)).bind(at).execute(&pool).await.unwrap();
+    }
+    // Deduplicated content may first belong to a different provider/URL.
+    sqlx::query("UPDATE crm.media_assets SET source_type='instagram' WHERE id=$1")
+        .bind(new)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO crm.media_provenance(media_id,source,source_record_id,source_url) VALUES($1,'wechat','new-avatar','https://example.invalid/new')").bind(new).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,source_account_id,field_key,value,content_hash,source_type,operation,observed_at) VALUES(gen_random_uuid(),$1,$2,'wechat.avatar_url',$3,'synthetic','wechat','import','2026-10-21')").bind(person).bind(account).bind(json!("https://example.invalid/old")).execute(&pool).await.unwrap();
+    // Both contents have the reused URL, one via provenance only. It proves neither.
+    for id in [old, new] {
+        sqlx::query("INSERT INTO crm.media_provenance(media_id,source,source_record_id,source_url) VALUES($1,'wechat','ambiguous-avatar','https://example.invalid/reused')").bind(id).execute(&pool).await.unwrap();
+    }
+    sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,source_account_id,field_key,value,content_hash,source_type,operation,observed_at) VALUES(gen_random_uuid(),$1,$2,'wechat.avatar_url',$3,'synthetic','wechat','import','2026-10-22')").bind(person).bind(account).bind(json!("https://example.invalid/reused")).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('profile',$1,$2,'wechat_avatar')").bind(person).bind(old).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE crm.profiles SET avatar_media_id=$2 WHERE id=$1")
+        .bind(person)
+        .bind(old)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Legacy person link is newer than the source observation, but not current.
+    sqlx::query("INSERT INTO crm.media_slots(entity_type,entity_id,role,media_id,source_observed_at) VALUES('source_account',$1,'wechat_avatar_small',$2,'2026-10-20')").bind(account).bind(new).execute(&pool).await.unwrap();
+    let selected:Vec<Uuid>=sqlx::query_scalar("SELECT media_id FROM crm.profile_source_media WHERE profile_id=$1 AND role='wechat_avatar'").bind(person).fetch_all(&pool).await.unwrap();
+    assert_eq!(selected, vec![new]);
+    linking::refresh_account(&pool, account).await.unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, Option<Uuid>>(
+            "SELECT avatar_media_id FROM crm.profiles WHERE id=$1"
+        )
+        .bind(person)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        Some(new)
+    );
+    sqlx::query("SELECT crm.backfill_avatar_observations()")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("SELECT crm.backfill_avatar_observations()")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let changes:Vec<(Option<Uuid>,Uuid)>=sqlx::query_as("SELECT previous_media_id,media_id FROM crm.avatar_observations WHERE account_id=$1 AND revision_id IS NOT NULL ORDER BY observed_at").bind(account).fetch_all(&pool).await.unwrap();
+    assert_eq!(
+        changes,
+        vec![(None, old), (Some(old), new), (Some(new), old)]
+    );
+}

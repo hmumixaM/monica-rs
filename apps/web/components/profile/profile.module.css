@@ -356,3 +356,6 @@
   .meta > * { max-inline-size: 100%; overflow-wrap: anywhere; }
   .versionAvatar { min-inline-size: 44px; min-block-size: 44px; }
 }
+
+.avatarHistoryImages { display: flex; gap: 12px; flex-wrap: wrap; }
+.avatarHistoryImages img { display: block; inline-size: 96px; block-size: 96px; object-fit: cover; border-radius: var(--radius-md, 12px); }

@@ -355,25 +355,26 @@ async fn configured_roles_drive_memory_and_preserve_profile_field_evidence(pool:
             break;
         }
     }
-    let calls = provider.0.lock().unwrap();
-    assert!(
-        calls
-            .iter()
-            .any(|(k, m)| k == "ai.memory_chunk" && m == "saved-batch"),
-        "{calls:?}"
-    );
-    assert!(
-        calls
-            .iter()
-            .any(|(k, m)| k == "ai.memory_final" && m == "updated-person"),
-        "{calls:?}"
-    );
-    assert!(
-        calls
-            .iter()
-            .all(|(_, m)| m != "saved-person" && m != "default-model")
-    );
-    drop(calls);
+    {
+        let calls = provider.0.lock().unwrap();
+        assert!(
+            calls
+                .iter()
+                .any(|(k, m)| k == "ai.memory_chunk" && m == "saved-batch"),
+            "{calls:?}"
+        );
+        assert!(
+            calls
+                .iter()
+                .any(|(k, m)| k == "ai.memory_final" && m == "updated-person"),
+            "{calls:?}"
+        );
+        assert!(
+            calls
+                .iter()
+                .all(|(_, m)| m != "saved-person" && m != "default-model")
+        );
+    }
     // A batch-only settings change must enter normal pending processing even
     // when source generation, privacy and the final/person model are unchanged.
     provider.0.lock().unwrap().clear();
@@ -410,18 +411,19 @@ async fn configured_roles_drive_memory_and_preserve_profile_field_evidence(pool:
             break;
         }
     }
-    let calls = provider.0.lock().unwrap();
-    assert!(
-        calls
-            .iter()
-            .any(|(k, m)| k == "ai.memory_final" && m == "final-person")
-    );
-    assert!(
-        calls
-            .iter()
-            .all(|(k, m)| k != "ai.memory_chunk" && m == "final-person")
-    );
-    drop(calls);
+    {
+        let calls = provider.0.lock().unwrap();
+        assert!(
+            calls
+                .iter()
+                .any(|(k, m)| k == "ai.memory_final" && m == "final-person")
+        );
+        assert!(
+            calls
+                .iter()
+                .all(|(k, m)| k != "ai.memory_chunk" && m == "final-person")
+        );
+    }
     let facts:serde_json::Value=sqlx::query_scalar("SELECT payload FROM crm.memory_inputs WHERE profile_id=$1 AND source_kind='profile' AND source_id='current'").bind(id).fetch_one(&pool).await.unwrap();
     assert_eq!(facts["fields"]["linkedin.about"], "Synthetic biography");
     assert_eq!(facts["fields"]["wechat.signature"], "Synthetic signature");

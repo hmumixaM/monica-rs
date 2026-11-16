@@ -81,7 +81,7 @@ async fn ensure_profile(
     record: &BatchRecord,
 ) -> Result<Option<Uuid>> {
     if let Some(id) = profile_hint(record, "profile_id")? {
-        sqlx::query("SELECT id FROM crm.profiles WHERE id=$1 FOR UPDATE")
+        let id:Uuid=sqlx::query_scalar("SELECT id FROM crm.profiles WHERE id=crm.canonical_profile($1) AND archived_at IS NULL FOR UPDATE")
             .bind(id)
             .fetch_optional(&mut **tx)
             .await?
@@ -173,7 +173,7 @@ pub(super) async fn project(
         .flatten()
         .collect();
     let external: Vec<&str> = records.iter().map(|r| r.external_id.as_str()).collect();
-    sqlx::query("SELECT id FROM crm.profiles WHERE id=ANY($1) OR id IN (SELECT profile_id FROM crm.identities WHERE provider='monica' AND external_id=ANY($2) AND status NOT IN ('invalid','merged')) OR id IN (SELECT profile_id FROM crm.notebook_objects WHERE external_id=ANY($2)) ORDER BY id FOR UPDATE").bind(explicit).bind(external).fetch_all(&mut **tx).await?;
+    sqlx::query("WITH owners AS(SELECT unnest($1::uuid[]) id UNION SELECT profile_id FROM crm.identities WHERE provider='monica' AND external_id=ANY($2) AND status NOT IN ('invalid','merged') UNION SELECT profile_id FROM crm.notebook_objects WHERE external_id=ANY($2)) SELECT id FROM crm.profiles WHERE id IN(SELECT id FROM owners UNION SELECT crm.canonical_profile(id) FROM owners) ORDER BY id FOR UPDATE").bind(explicit).bind(external).fetch_all(&mut **tx).await?;
     let mut prepared = vec![];
     for record in records {
         let profile = ensure_profile(tx, batch, record).await?;
@@ -354,7 +354,14 @@ async fn message(
         &conversation,
         format!("message:{}:{}", record.external_id, at.to_rfc3339()).as_bytes(),
     );
-    let sender = profile_hint(record, "sender_profile_id")?;
+    let sender = if let Some(id) = profile_hint(record, "sender_profile_id")? {
+        sqlx::query_scalar::<_, Option<Uuid>>("SELECT crm.canonical_profile($1)")
+            .bind(id)
+            .fetch_one(&mut **tx)
+            .await?
+    } else {
+        None
+    };
     let old_row=sqlx::query("SELECT m.conversation_id,m.occurred_at,m.direction,m.sender_profile_id,CASE WHEN c.conversation_type='group' THEN m.sender_profile_id ELSE c.profile_id END memory_owner FROM crm.message_search m JOIN crm.conversations c ON c.id=m.conversation_id WHERE m.message_id=$1 AND NOT m.tombstone").bind(id).fetch_optional(&mut **tx).await?;
     let old = old_row.as_ref().map(|r| {
         (

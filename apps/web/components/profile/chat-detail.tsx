@@ -10,7 +10,8 @@ import { Failure, Faint, Panel, Skeleton, Stat, formatNumber } from "../ui/primi
 import styles from "./profile.module.css";
 
 type ChatMonths = {
-  months: { month: string; total: number; sent: number; received: number }[]; total: number; sent: number; received: number;
+  months: { month: string; total: number; sent: number; received: number; system?: number; unknown?: number; records?: number }[]; total: number; sent: number; received: number;
+  system?: number; unknown?: number; records?: number;
   first?: string; last?: string; snapshot_at?: string; active_months: number; peak?: { month: string; total: number }; timezone: string;
 };
 
@@ -24,24 +25,28 @@ function MonthlyDetail({ profileId }: { profileId: string }) {
   return <Panel className={styles.monthly} label="月度明细">
     <header className={styles.blockHeader}>
       <h2><CalendarRange size={15} aria-hidden="true" />月度明细</h2>
-      {data.snapshot_at && <small>统计截至 {date(data.snapshot_at)}</small>}
+      <small>已导入记录 · {data.timezone}</small>
     </header>
     <div className={styles.statRow}>
-      <Stat value={formatNumber(data.total)} label="全部私聊" />
+      <Stat value={formatNumber(data.total)} label="双方私聊消息" />
       <Stat value={formatNumber(data.sent)} label="我发送" />
       <Stat value={formatNumber(data.received)} label="对方发送" />
+      {!!data.system && <Stat value={formatNumber(data.system)} label="系统消息" />}
+      {!!data.unknown && <Stat value={formatNumber(data.unknown)} label="发送方未知" />}
+      <Stat value={formatNumber(data.records ?? data.total)} label="全部记录" />
       {data.peak && <Stat highlight size="sm" value={monthLabel(data.peak.month)} label={`高峰月 · ${formatNumber(data.peak.total)} 条`} />}
       <Stat size="sm" value={data.active_months} label="有消息的月份" />
-      <Stat size="sm" value={date(data.first)} label="首次联系" />
+      <Stat size="sm" value={date(data.first)} label="最早记录" />
     </div>
+    <Faint>双方消息不含系统消息和发送方未知的记录。点击月份可查看该月全部已导入记录；最新记录：{date(data.last)}。</Faint>
     <MonthlyBars rows={data.months} label="每月私聊" stacked
       href={(month) => `/profiles/${profileId}?tab=messages&month=${month}&timezone=${encodeURIComponent(data.timezone)}`} />
     <details className={styles.more}>
       <summary>每月精确数据</summary>
       <div className={styles.tableScroll}><table className={styles.table}>
-        <thead><tr><th>月份</th><th>我发送</th><th>对方发送</th><th>合计</th></tr></thead>
+        <thead><tr><th>月份</th><th>我发送</th><th>对方发送</th><th>双方消息</th><th>系统</th><th>发送方未知</th><th>全部记录</th></tr></thead>
         <tbody>{[...data.months].reverse().map((row) => <tr key={row.month}>
-          <th scope="row">{row.month}</th><td>{formatNumber(row.sent)}</td><td>{formatNumber(row.received)}</td><td>{formatNumber(row.total)}</td>
+          <th scope="row">{row.month}</th><td>{formatNumber(row.sent)}</td><td>{formatNumber(row.received)}</td><td>{formatNumber(row.total)}</td><td>{formatNumber(row.system ?? 0)}</td><td>{formatNumber(row.unknown ?? 0)}</td><td>{formatNumber(row.records ?? row.total)}</td>
         </tr>)}</tbody>
       </table></div>
     </details>

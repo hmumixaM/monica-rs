@@ -244,7 +244,7 @@ async fn history(
     user(&s, &h).await?;
     // Bound each disjoint owner stream before merging. An OR/EXISTS over the
     // global sequence can scan other people's entire imported histories.
-    let rows:Vec<Value>=sqlx::query_scalar("WITH candidates AS ((SELECT r.* FROM crm.field_revisions r WHERE r.source_account_id IS NULL AND r.profile_id=$1 AND ($2::text IS NULL OR field_key=$2) AND ($3::bigint IS NULL OR revision_seq<$3) ORDER BY revision_seq DESC LIMIT $4) UNION ALL SELECT r.* FROM crm.source_account_links l JOIN LATERAL (SELECT r.* FROM crm.field_revisions r WHERE r.source_account_id=l.account_id AND ($2::text IS NULL OR field_key=$2) AND ($3::bigint IS NULL OR revision_seq<$3) ORDER BY revision_seq DESC LIMIT $4) r ON true WHERE l.profile_id=$1) SELECT to_jsonb(r) FROM candidates r ORDER BY revision_seq DESC LIMIT $4").bind(id).bind(q.field_key).bind(q.before).bind(q.limit.unwrap_or(100).clamp(1,200)).fetch_all(&s.pool).await?;
+    let rows:Vec<Value>=sqlx::query_scalar("WITH candidates AS ((SELECT r.* FROM crm.profile_aliases($1) owner JOIN LATERAL (SELECT r.* FROM crm.field_revisions r WHERE r.source_account_id IS NULL AND r.profile_id=owner AND ($2::text IS NULL OR field_key=$2) AND ($3::bigint IS NULL OR revision_seq<$3) ORDER BY revision_seq DESC LIMIT $4) r ON true) UNION ALL SELECT r.* FROM crm.source_account_links l JOIN LATERAL (SELECT r.* FROM crm.field_revisions r WHERE r.source_account_id=l.account_id AND ($2::text IS NULL OR field_key=$2) AND ($3::bigint IS NULL OR revision_seq<$3) ORDER BY revision_seq DESC LIMIT $4) r ON true WHERE l.profile_id=$1) SELECT to_jsonb(r) FROM candidates r ORDER BY revision_seq DESC LIMIT $4").bind(id).bind(q.field_key).bind(q.before).bind(q.limit.unwrap_or(100).clamp(1,200)).fetch_all(&s.pool).await?;
     Ok(Json(json!(
         rows.iter()
             .map(|row| revision_out(row, true))
@@ -257,7 +257,7 @@ async fn restore(
     Path((id, revision)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Value>> {
     let (actor, _) = user(&s, &h).await?;
-    let (field_key,value):(String,Value)=sqlx::query_as("SELECT field_key,value FROM crm.field_revisions r WHERE id=$1 AND ((source_account_id IS NULL AND profile_id=$2) OR EXISTS(SELECT 1 FROM crm.source_account_links l WHERE l.account_id=r.source_account_id AND l.profile_id=$2)) AND value<>'null'::jsonb").bind(revision).bind(id).fetch_optional(&s.pool).await?.ok_or(ApiError(StatusCode::NOT_FOUND,"restorable revision not found"))?;
+    let (field_key,value):(String,Value)=sqlx::query_as("SELECT field_key,value FROM crm.field_revisions r WHERE id=$1 AND ((source_account_id IS NULL AND profile_id IN (SELECT crm.profile_aliases($2))) OR EXISTS(SELECT 1 FROM crm.source_account_links l WHERE l.account_id=r.source_account_id AND l.profile_id=$2)) AND value<>'null'::jsonb").bind(revision).bind(id).fetch_optional(&s.pool).await?.ok_or(ApiError(StatusCode::NOT_FOUND,"restorable revision not found"))?;
     let row = change(
         &s,
         id,

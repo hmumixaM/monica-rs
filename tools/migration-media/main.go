@@ -125,7 +125,16 @@ func transform(data []byte, kind string) ([]byte, string, error) {
 			return data, typeName, nil
 		}
 		out, ext, err := dat2img.Dat2Image(data)
+		if err != nil || !validDecodedImage(out, ext) {
+			if len(data) >= 6 && (bytes.Equal(data[:6], dat2img.V4Format1.Header) || bytes.Equal(data[:6], dat2img.V4Format2.Header)) {
+				out, ext, err = decodeV4Fallback(data)
+			}
+		}
 		if err != nil {
+			var failure *codecFailure
+			if errors.As(err, &failure) {
+				return nil, "", err
+			}
 			return nil, "", conversionFailure("image_conversion_failed", err)
 		}
 		if ext == "wxgf" {
