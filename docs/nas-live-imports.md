@@ -62,16 +62,16 @@ error does not stop checks for other providers. `--once` exits nonzero if any
 provider failed. SIGTERM waits for a safe operation/page boundary. Do not use a
 short forced shutdown timeout during a SQLite backup or database commit.
 
-Use one worker with a small CPU/memory limit. Do not run it during the release's
+Use one worker with a small CPU/memory limit and `restart: unless-stopped`. A lost database session exits nonzero so the supervisor establishes a fresh connection. Do not run it during the release's
 database backup or a conflicting legacy reconciliation. It takes the existing
 legacy control lock for Chatlog writes; immutable source facts receive no new
 explicit row locks. Model/OCR/QA execution and new network media backfills stay
 disabled independently of deterministic import processing.
 
-Local focused validation, against disposable PostgreSQL only:
+Local focused validation starts its own temporary Unix-socket PostgreSQL. An explicit `MONICA_LIVE_TEST_ADMIN` may instead name an isolated Unix-socket administrator:
 
 ```sh
-MONICA_LIVE_TEST_ADMIN=DISPOSABLE_ADMIN_URL python3 scripts/test-nas-live-imports.py
+python3 scripts/test-nas-live-imports.py
 ```
 
 The tests cover a lost HTTP response/retry and shared CAS reuse, plus a live WAL

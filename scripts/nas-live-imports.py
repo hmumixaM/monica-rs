@@ -141,58 +141,68 @@ class Consumer:
         key = digest_file(path)
         if signature(path) != manifest['_signature'] or manifest['_expected'] and key != manifest['_expected']:
             raise ValueError('collector media checksum differs')
-        relative = 'sha256/' + key[:2] + '/' + key[2:4] + '/' + key
-        target = self.args.media / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if target.resolve() != target:
-            raise ValueError('media CAS alias')
-        if not target.exists():
-            fd, name = tempfile.mkstemp(prefix='.live-', dir=target.parent)
-            try:
-                h = hashlib.sha256()
-                with path.open('rb') as source, os.fdopen(fd, 'wb') as output:
-                    os.fchmod(output.fileno(),0o644)
-                    for block in iter(lambda: source.read(1024 * 1024), b''):
-                        output.write(block)
-                        h.update(block)
-                    output.flush()
-                    os.fsync(output.fileno())
-                if h.hexdigest() != key:
-                    raise ValueError('collector media changed during copy')
-                # Link is an atomic no-replace publication, including concurrent uploads.
-                try:
-                    os.link(name, target)
-                except FileExistsError:
-                    pass
-            finally:
-                Path(name).unlink(missing_ok=True)
-        if key not in self.checked_media:
-            if target.stat().st_size != path.stat().st_size or digest_file(target) != key:
-                raise ValueError('existing isolated CAS differs')
-            directory = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
-            self.checked_media.add(key)
-        with target.open('rb') as source:
-            header = source.read(64)
-        kind = ('image/jpeg' if header.startswith(b'\xff\xd8\xff') else
-                'image/png' if header.startswith(b'\x89PNG\r\n\x1a\n') else
-                'image/webp' if header[:4] == b'RIFF' and header[8:12] == b'WEBP' else
-                'image/gif' if header.startswith((b'GIF87a', b'GIF89a')) else
-                'video/mp4' if header[4:8] == b'ftyp' else None)
-        if kind is None:
-            raise ValueError('unsupported local collector media type')
-        media = uuid.uuid5(NAMESPACE, 'live-media:' + key)
         with self.db.transaction():
-            self.db.execute("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,file_name,source_type,source_record_id,verified_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,now()) ON CONFLICT(sha256) DO NOTHING", (media,key,kind,target.stat().st_size,relative,path.name,provider,manifest.get('source_url') or key))
-            saved = self.db.execute('SELECT id,object_path,byte_length FROM crm.media_assets WHERE sha256=%s', (key,)).fetchone()
-            if saved[1:] != (relative,target.stat().st_size):
-                raise ValueError('registered isolated media identity differs')
-            self.db.execute('UPDATE crm.media_assets SET verified_at=now() WHERE id=%s AND verified_at IS NULL', (saved[0],))
-        self.counters['media'] += 1
-        return {**{k:v for k,v in manifest.items() if not k.startswith('_')}, 'sha256':key}
+            self.db.execute("SELECT pg_advisory_xact_lock(hashtextextended('media-gc:'||%s,0))",(key,))
+            relative = 'sha256/' + key[:2] + '/' + key[2:4] + '/' + key
+            target = self.args.media / relative
+            for directory in (self.args.media/'sha256',self.args.media/'sha256'/key[:2],target.parent):
+                try:
+                    directory.mkdir(mode=0o755)
+                except FileExistsError:
+                    if directory.resolve()!=directory or not directory.is_dir():
+                        raise ValueError('media CAS directory alias')
+                else:
+                    # Root's private state umask must not hide public-to-server CAS shards.
+                    directory.chmod(0o755)
+            if target.resolve() != target:
+                raise ValueError('media CAS alias')
+            if not target.exists():
+                fd, name = tempfile.mkstemp(prefix='.live-', dir=target.parent)
+                try:
+                    h = hashlib.sha256()
+                    with path.open('rb') as source, os.fdopen(fd, 'wb') as output:
+                        os.fchmod(output.fileno(),0o644)
+                        for block in iter(lambda: source.read(1024 * 1024), b''):
+                            output.write(block)
+                            h.update(block)
+                        output.flush()
+                        os.fsync(output.fileno())
+                    if h.hexdigest() != key:
+                        raise ValueError('collector media changed during copy')
+                    # Link is an atomic no-replace publication, including concurrent uploads.
+                    try:
+                        os.link(name, target)
+                    except FileExistsError:
+                        pass
+                finally:
+                    Path(name).unlink(missing_ok=True)
+            if key not in self.checked_media:
+                if target.stat().st_size != path.stat().st_size or digest_file(target) != key:
+                    raise ValueError('existing isolated CAS differs')
+                directory = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+                self.checked_media.add(key)
+            with target.open('rb') as source:
+                header = source.read(64)
+            kind = ('image/jpeg' if header.startswith(b'\xff\xd8\xff') else
+                    'image/png' if header.startswith(b'\x89PNG\r\n\x1a\n') else
+                    'image/webp' if header[:4] == b'RIFF' and header[8:12] == b'WEBP' else
+                    'image/gif' if header.startswith((b'GIF87a', b'GIF89a')) else
+                    'video/mp4' if header[4:8] == b'ftyp' else None)
+            if kind is None:
+                raise ValueError('unsupported local collector media type')
+            media = uuid.uuid5(NAMESPACE, 'live-media:' + key)
+            with self.db.transaction():
+                self.db.execute("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,file_name,source_type,source_record_id,verified_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,now()) ON CONFLICT(sha256) DO NOTHING", (media,key,kind,target.stat().st_size,relative,path.name,provider,manifest.get('source_url') or key))
+                saved = self.db.execute('SELECT id,object_path,byte_length FROM crm.media_assets WHERE sha256=%s', (key,)).fetchone()
+                if saved[1:] != (relative,target.stat().st_size):
+                    raise ValueError('registered isolated media identity differs')
+                self.db.execute('UPDATE crm.media_assets SET verified_at=now() WHERE id=%s AND verified_at IS NULL', (saved[0],))
+            self.counters['media'] += 1
+            return {**{k:v for k,v in manifest.items() if not k.startswith('_')}, 'sha256':key}
 
     def accept(self, batch):
         raw = canonical(batch)
@@ -410,6 +420,9 @@ def main():
                         failed = True
                         # Private original inputs remain available; no payload/secret is logged.
                         consumer.progress('retry_pending',provider=provider,error_type=type(error).__name__)
+                        if db.closed or db.broken:
+                            # The container supervisor restarts with a new connection.
+                            return 1
                 if args.once:
                     break
                 for _ in range(args.interval):
