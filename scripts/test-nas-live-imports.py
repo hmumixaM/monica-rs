@@ -146,7 +146,7 @@ class LiveImportContract(unittest.TestCase):
         self.assertTrue(target.is_file())
         self.assertEqual(self.db.execute('SELECT count(*) FROM crm.media_assets WHERE sha256=%s',(key,)).fetchone()[0],1)
         identity = self.db.execute('SELECT id FROM crm.media_assets WHERE sha256=%s',(key,)).fetchone()[0]
-        self.db.execute("UPDATE crm.media_assets SET media_type='application/octet-stream' WHERE id=%s",(identity,))
+        self.db.execute("UPDATE crm.media_assets SET media_type='application/octet-stream',object_path=%s WHERE id=%s",(str(target),identity))
         synced = set()
         original_open = live.os.open
         def record_directory(path,flags,*args,**kwargs):
@@ -157,6 +157,10 @@ class LiveImportContract(unittest.TestCase):
             self.consumer.materialize(manifest,'linkedin')
         self.assertEqual(self.db.execute('SELECT id,media_type FROM crm.media_assets WHERE sha256=%s',(key,)).fetchone(),(identity,'image/png'))
         self.assertTrue({target.parent,target.parent.parent,target.parent.parent.parent,self.args.media}.issubset(synced))
+        self.assertEqual(self.db.execute('SELECT object_path FROM crm.media_assets WHERE id=%s',(identity,)).fetchone()[0],str(target))
+        self.db.execute('UPDATE crm.media_assets SET object_path=%s WHERE id=%s',('/outside/'+key,identity))
+        with self.assertRaisesRegex(ValueError,'identity differs'):
+            self.consumer.materialize(manifest,'linkedin')
 
 
 

@@ -203,7 +203,7 @@ class Consumer:
             with self.db.transaction():
                 self.db.execute("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,file_name,source_type,source_record_id,verified_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,now()) ON CONFLICT(sha256) DO UPDATE SET media_type=excluded.media_type,file_name=coalesce(media_assets.file_name,excluded.file_name),verified_at=excluded.verified_at WHERE media_assets.media_type='application/octet-stream'", (media,key,kind,target.stat().st_size,relative,path.name,provider,manifest.get('source_url') or key))
                 saved = self.db.execute('SELECT id,object_path,byte_length FROM crm.media_assets WHERE sha256=%s', (key,)).fetchone()
-                if saved[1:] != (relative,target.stat().st_size):
+                if saved[1] not in (relative,str(target)) or saved[2]!=target.stat().st_size:
                     raise ValueError('registered isolated media identity differs')
                 self.db.execute('UPDATE crm.media_assets SET verified_at=now() WHERE id=%s AND verified_at IS NULL', (saved[0],))
             self.counters['media'] += 1
