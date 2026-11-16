@@ -75,7 +75,7 @@ func decodeV4Fallback(data []byte) ([]byte, string, error) {
 				}
 				ext := format.Ext
 				if ext == "wxgf" {
-					decoded, ext, err = dat2img.Wxam2pic(decoded)
+					decoded, ext, err = convertWXGF(decoded)
 					if err != nil {
 						last = conversionFailure("wxgf_conversion_failed", err)
 						break
