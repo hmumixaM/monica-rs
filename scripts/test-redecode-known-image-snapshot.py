@@ -35,7 +35,7 @@ class CorrectionTests(unittest.TestCase):
         codec = Path(os.environ['MONICA_REVIEWED_CODEC']).resolve()
         self.args = argparse.Namespace(source=source, target=target, input=manifest, codec=codec,
             codec_sha256=correction.helper.checksum(codec),
-            codec_commit='e437f63b31603faa9801bbb6d8a03185d0579770',
+            codec_commit=os.environ.get('MONICA_REVIEWED_CODEC_COMMIT', 'e437f63b31603faa9801bbb6d8a03185d0579770'),
             codec_path='/opt/homebrew/bin:/usr/bin:/bin', journal=base / 'receipts.sqlite', batch_size=2)
 
     def test_real_codec_pixels_namespaced_metadata_and_resume(self):
