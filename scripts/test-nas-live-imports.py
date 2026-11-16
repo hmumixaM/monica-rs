@@ -187,6 +187,19 @@ class LiveImportContract(unittest.TestCase):
         self.assertEqual((self.args.state/received[0]['raw_objects'][0]['archive_relative_path']).read_bytes(),raw)
         self.assertEqual(path.read_bytes(),raw)
 
+    def test_invalid_new_capture_is_archived_and_nested_ids_are_not_changed(self):
+        folder=self.args.source/'raw/linkedin';folder.mkdir(parents=True)
+        path=folder/'linkedin_enrichment.incoming.json'
+        raw=json.dumps(dict(profiles=[dict(profile={'name':'Missing stable ID'})])).encode()
+        path.write_bytes(raw)
+        with self.assertRaises(ValueError):self.consumer.social('linkedin')
+        self.assertEqual((self.args.state/'raw-json'/(hashlib.sha256(raw).hexdigest()+'.json')).read_bytes(),raw)
+        for content in [dict(sender='peer\0id'),dict(participants=[dict(id='peer\0id',name='Text')]),dict(participants=['peer\0id'])]:
+            original=json.dumps(content)
+            with self.assertRaisesRegex(ValueError,'identity contains NUL'):live.postgres_content(content)
+            self.assertEqual(json.dumps(content),original)
+        self.assertEqual(live.postgres_content(dict(participants=[dict(id='peer-id',name='Display\0name')]))[0]['participants'][0],dict(id='peer-id',name='Display␀name'))
+
     def test_database_disconnect_exits_for_a_fresh_supervised_connection(self):
         argv = ['nas-live-imports.py','--run','--once','--source',str(self.args.source),'--state',str(self.args.state),'--media',str(self.args.media),'--since',self.args.since]
         def disconnected(consumer,provider):

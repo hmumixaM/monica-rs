@@ -78,20 +78,22 @@ def stamp(value):
     return datetime.fromisoformat(str(value).replace('Z', '+00:00')).timestamp()
 
 
-def postgres_content(value, path=''):
+def postgres_content(value, path='', identity=False):
     """Render NUL visibly; the byte-exact source remains in raw-json."""
     if isinstance(value,str):
+        if identity and '\0'in value:raise ValueError('source identity contains NUL')
         return value.replace('\0','\u2400'),[path]if'\0'in value else[]
     if isinstance(value,list):
         result=[];changed=[]
         for n,item in enumerate(value):
-            normalized,fields=postgres_content(item,path+'/'+str(n));result.append(normalized);changed.extend(fields)
+            normalized,fields=postgres_content(item,path+'/'+str(n),identity);result.append(normalized);changed.extend(fields)
         return result,changed
     if isinstance(value,dict):
         result={};changed=[]
         for key,item in value.items():
             if '\0'in key:raise ValueError('source JSON key contains NUL')
-            normalized,fields=postgres_content(item,path+'/'+key.replace('~','~0').replace('/','~1'));result[key]=normalized;changed.extend(fields)
+            identifier=key in {'id','pk','urn','sender','account','conversation','thread','username','userid','participants','shortcode','code'}or key.endswith(('_id','_urn','_url'))
+            normalized,fields=postgres_content(item,path+'/'+key.replace('~','~0').replace('/','~1'),identifier);result[key]=normalized;changed.extend(fields)
         return result,changed
     return value,[]
 
@@ -99,6 +101,8 @@ def postgres_content(value, path=''):
 def failure_code(error):
     message=str(error)
     if message.startswith('signed import rejected: HTTP '):return 'import_http_'+message.rsplit(' ',1)[-1]
+    if message=='source identity contains NUL':return 'source_identity_nul'
+    if message=='source JSON key contains NUL':return 'source_json_key_nul'
     if isinstance(error,FileNotFoundError):return 'source_file_missing'
     if isinstance(error,TimeoutError):return 'source_timeout'
     if isinstance(error,ValueError):return 'source_value_invalid'
@@ -158,7 +162,13 @@ class Consumer:
         if time.monotonic()-self.last_input_progress>=5:
             self.progress('reading_source',provider=self.active_provider,input_documents=self.input_documents,input_bytes=self.input_bytes)
             self.last_input_progress=time.monotonic()
-        return json.loads(raw)
+        # New captures must survive JSON/generator validation failures too.
+        archive=self.state/'raw-json'/(key+'.json')
+        if self.last_input_time>=self.cutoff and not archive.exists():atomic(archive,raw)
+        try:return json.loads(raw)
+        except Exception:
+            if not archive.exists():atomic(archive,raw)
+            raise
 
     def archive_inputs(self, inputs, kind):
         objects=[]
@@ -323,6 +333,9 @@ class Consumer:
                     stream, item = next(records)
                 except StopIteration:
                     break
+                except Exception:
+                    if self.read_inputs or self.last_input:self.archive_inputs(self.read_inputs or [self.last_input],kind)
+                    raise
                 if STOP:
                     return
                 inputs=self.read_inputs or [self.last_input]
@@ -333,6 +346,7 @@ class Consumer:
                 raw_objects=self.archive_inputs(inputs,kind)
                 if provider=='linkedin' and stream=='messages':
                     item = self.linkedin_message(item)
+                if any('\0'in str(item.get(k,''))for k in('external_id','source_account_external_id','conversation_external_id')):raise ValueError('source identity contains NUL')
                 signature_hash = hashlib.sha256(canonical(item)).hexdigest()
                 account = item.get('source_account_external_id') or ''
                 identity = (provider,stream,item['external_id'],account)
