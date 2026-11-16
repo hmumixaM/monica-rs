@@ -73,7 +73,7 @@ button.box { cursor: pointer; pointer-events: auto; min-width: 12px; min-height:
   @media (max-width: 720px) { grid-template-columns: minmax(0, 1fr); gap: 20px; }
 }
 .stage { display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 0;
-  & .image { max-height: 72vh; width: auto; max-width: 100%; }
+  & .image { max-height: 72dvh; width: auto; max-width: 100%; }
   & a { color: var(--color-text-soft); text-decoration: underline; font-size: var(--text-sm); }
 }
 .info { min-width: 0; font-size: var(--text-sm); overflow-wrap: anywhere;

@@ -74,7 +74,7 @@ function PhotoImage({ photo, original = false, selected, onSelect }: {
     return () => window.clearTimeout(timer);
   }, [failed, original, attempt]);
   const src = `${localMediaUrl(photo.media_id)}${original ? "" : "/preview"}`;
-  return <div className={styles.image} style={{ aspectRatio: ratio, ...(original ? { width: `min(100%, ${72 * ratio}vh)` } : {}) }}>
+  return <div className={styles.image} style={{ aspectRatio: ratio, ...(original ? { width: `min(100%, ${72 * ratio}dvh)` } : {}) }}>
     {!failed ? <>
       <img key={attempt} src={src} alt={original ? "完整照片" : "相关照片预览"} loading={original ? "eager" : "lazy"}
         decoding="async" onLoad={(e) => setRatio(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)} onError={() => setFailed(true)} />

@@ -96,7 +96,7 @@ export function SocialFeed({ profileId, preview, sticky = false, title }: { prof
   return <section className={styles.feed} id="timeline" aria-label={title ?? "动态"} data-preview={preview ? "" : undefined}>
     <div className={styles.toolbar} data-sticky={sticky ? "" : undefined}>
       {title && <h2>{title}</h2>}
-      <Segmented label="动态来源" size="sm" value={provider} onChange={setProvider}
+      <Segmented label="动态来源" size="sm" className={styles.sources} value={provider} onChange={setProvider}
         options={Object.entries(FEED_SOURCES).map(([value, label]) => ({ value, label }))} />
       {!preview && <Select aria-label="只看某个月" className={styles.month} value={month && MONTH.test(month) ? month : ""}
         onChange={(event) => scope("month", event.target.value || null)}>
