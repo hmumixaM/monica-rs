@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Consume existing, read-only NAS collector archives into the isolated Rust copy.
 
-No login, browser, network collection, decryption or model calls. Social records
+No login, browser, conversation collection or model calls. New SNS image records
+also resolve existing files or download their explicitly referenced CDN photos.
+Social records
 use the signed Rust batch endpoint. Chatlog uses the existing legacy reconciler
 so already imported conversations, message IDs and edits are retained.
 """
@@ -141,6 +143,7 @@ class Consumer:
         self.journal = sqlite3.connect(self.state / 'consumer.sqlite')
         self.journal.execute('CREATE TABLE IF NOT EXISTS delivered(provider TEXT,stream TEXT,external_id TEXT,account TEXT,digest TEXT,receipt TEXT,PRIMARY KEY(provider,stream,external_id,account))')
         self.journal.execute('CREATE TABLE IF NOT EXISTS source_files(path TEXT PRIMARY KEY,signature TEXT)')
+        self.journal.execute('CREATE TABLE IF NOT EXISTS consumer_state(key TEXT PRIMARY KEY,value TEXT)')
         self.last_path = None
         self.last_input_time = None
         self.last_input = None
@@ -156,7 +159,7 @@ class Consumer:
 
     def guard(self):
         row = self.db.execute("SELECT system_identifier::text,current_database(),(SELECT oid FROM pg_database WHERE datname=current_database()),(SELECT max(version) FROM _sqlx_migrations WHERE success) FROM pg_control_system()").fetchone()
-        if tuple(row) != ('7707886811981668386', 'monica_rust', 16384, 86):
+        if tuple(row[:3]) != ('7707886811981668386', 'monica_rust', 16384) or row[3] not in (86,87):
             raise ValueError('isolated Rust target identity changed')
         if not (self.args.media.parent / '.monica-rs-ssd-target').read_bytes() == b'monica-rs-ssd-target-v1\n':
             raise ValueError('isolated SSD marker changed')
@@ -446,6 +449,14 @@ class Consumer:
         if not own or not self.db.execute("SELECT 1 FROM crm.legacy_chatlog_snapshots WHERE own_id=%s AND status IN ('converted','verified') LIMIT 1",(own,)).fetchone():
             raise ValueError('verified existing WeChat owner required')
         with self.chatlog_control():
+            if getattr(self.args,'sns_runtime',None) and not self.journal.execute("SELECT 1 FROM consumer_state WHERE key='sns-media-bootstrap-v1'").fetchone():
+                # One explicit catch-up for pages acknowledged before photos
+                # were part of SNS import. No recurring missing-image scan.
+                posts=self.db.execute("SELECT e.id FROM crm.timeline_events e WHERE e.provider='wechat' AND e.event_type='post' AND e.occurred_at>=%s AND EXISTS(SELECT 1 FROM jsonb_array_elements(coalesce(e.content->'media','[]'))m WHERE m->>'media_type'='image' AND NOT EXISTS(SELECT 1 FROM crm.media_links l WHERE l.entity_type='social_post' AND l.entity_id=e.id AND l.role=m->>'role')) ORDER BY e.occurred_at,e.id",(self.args.since,)).fetchall()
+                for post in posts:
+                    if STOP:return
+                    self.import_sns_event(source,post[0])
+                with self.journal:self.journal.execute("INSERT INTO consumer_state VALUES('sns-media-bootstrap-v1',?)",(self.args.since,))
             manifest = dict(format=1,own_id=own,files=[],kind='continuous_business_pages',source='existing-chatlog-export')
             importer = self.legacy.Importer(self.db,manifest)
             importer.on_message_changed = self.changed_message_media
@@ -467,6 +478,18 @@ class Consumer:
                     count = len(frame['batch']['records'])
                     run = 'nas-chatlog:'+str(importer.id)+':'+frame['page_sha256']
                     self.db.execute("INSERT INTO crm.import_activity(id,provider,stream,kind,batch_id,state,phase,received_at,completed_at,records,processed,inserted,changed,unchanged) VALUES(%s,'wechat',%s,'page',%s,'complete','existing_archive',now(),now(),%s,%s,%s,%s,%s) ON CONFLICT(id) DO NOTHING",(run,frame['batch']['stream'],frame['page_sha256'],count,count,inserted,changed,unchanged))
+                # Source-page replay still enters the image importer even if
+                # metadata is already committed. Decoded photos can therefore
+                # finish publication before this page is acknowledged.
+                for record in frame['batch']['records']:
+                    value=record['content']
+                    if value.get('kind')!='post':continue
+                    root,_=self.legacy.reader.moments.parse_moments_xml(value['raw_content'])
+                    obj=root if root.tag=='TimelineObject'else root.find('TimelineObject')
+                    author=next(p['id']for p in value['participants']if p['role']=='author')
+                    account,_=importer.account(author)
+                    post=self.db.execute("SELECT id FROM crm.timeline_events WHERE provider='wechat' AND source_account_id=%s AND event_type='post' AND external_id=%s",(account,obj.findtext('id'))).fetchone()
+                    if post:self.import_sns_event(source,post[0])
                 self.legacy.atomic(reader_state/frame['ack_path'],dict(page_sha256=frame['page_sha256'],receipt_id=str(importer.id)))
                 self.counters['chatlog_pages'] += 1
                 self.progress('chatlog_received')
@@ -476,6 +499,17 @@ class Consumer:
                 importer.settle_revocations()
             finally:
                 scan.close()
+
+    def import_sns_event(self, source, event_id):
+        runtime=getattr(self.args,'sns_runtime',None)
+        if runtime is None:
+            if self.db.execute("SELECT 1 FROM crm.timeline_events e CROSS JOIN LATERAL jsonb_array_elements(coalesce(e.content->'media','[]'))m WHERE e.id=%s AND m->>'media_type'='image' LIMIT 1",(event_id,)).fetchone():
+                raise ValueError('SNS image runtime must be configured')
+            return
+        images=module('sns_event_images','sns-media-import.py')
+        result=images.import_event(self.db,source/'sns/sns.db',self.args.media,self.state/'sns-media',runtime,getattr(self.args,'sns_cache',None),event_id)
+        self.counters['media']+=result['ready']
+        self.progress('sns_media_received',provider='wechat',ready=result['ready'],failed=result['failed'])
 
     def changed_message_media(self, mid):
         # React only to a newly imported source revision. Completed photos are
@@ -514,6 +548,8 @@ def main():
     parser.add_argument('--linkedin-connection',type=uuid.UUID)
     parser.add_argument('--state',type=Path,required=True)
     parser.add_argument('--media',type=Path,required=True)
+    parser.add_argument('--sns-runtime',type=Path)
+    parser.add_argument('--sns-cache',type=Path)
     parser.add_argument('--url',default='http://monica-rs-server-1:17494')
     parser.add_argument('--since',required=True)
     parser.add_argument('--once',action='store_true')

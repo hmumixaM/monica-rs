@@ -108,6 +108,29 @@ class LiveImportContract(unittest.TestCase):
         path.write_bytes(b'truncated')
         self.assertEqual(binding.restore_page(self.db,self.args.media,migration,'')['missing_files'],1)
         self.assertEqual(self.db.execute('SELECT payload FROM crm.legacy_history WHERE migration_id=%s',(migration,)).fetchone()[0],json.loads(value))
+
+    def test_sns_source_reuses_exact_registered_image_and_does_not_recheck_completed_photos(self):
+        import struct,zlib
+        images=live.module('sns_event_images_test','sns-media-import.py')
+        def chunk(kind,body):
+            return struct.pack('>I',len(body))+kind+body+struct.pack('>I',zlib.crc32(kind+body))
+        image=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',2,1,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(b'\0\xff\0\0\0\xff\0'))+chunk(b'IEND',b'')
+        digest=hashlib.sha256(image).hexdigest();mid,event=uuid.uuid4(),uuid.uuid4()
+        path=self.args.media/'sha256'/digest[:2]/digest[2:4]/digest
+        path.parent.mkdir(parents=True);path.write_bytes(image)
+        url='https://szmmsns.qpic.cn/mmsns/synthetic/0'
+        self.db.execute("INSERT INTO crm.media_assets(id,sha256,byte_length,media_type,object_path)VALUES(%s,%s,%s,'image/png',%s)",(mid,digest,len(image),str(path)))
+        self.db.execute("INSERT INTO crm.media_provenance(media_id,source,source_record_id,source_url)VALUES(%s,'wechat','old-image',%s)",(mid,url))
+        from psycopg.types.json import Jsonb
+        content={'media':[{'role':'media-1','media_type':'image','source_url':url,'source_media_id':'101','source_md5':'a'*32}]}
+        self.db.execute("INSERT INTO crm.timeline_events(id,provider,object_id,external_id,event_type,content,content_hash,version)VALUES(%s,'wechat',%s,'100','post',%s,'synthetic',1)",(event,uuid.uuid4(),Jsonb(content)))
+        args=(self.db,self.args.chatlog/'sns/sns.db',self.args.media,self.args.state/'sns-media',Path(self.temp.name).resolve()/'runtime',None,event)
+        self.assertEqual(images.import_event(*args),dict(ready=1,failed=0))
+        self.assertEqual(self.db.execute("SELECT media_id,role FROM crm.media_links WHERE entity_id=%s",(event,)).fetchall(),[(mid,'media-1')])
+        self.assertEqual(path.read_bytes(),image)
+        path.rename(path.with_suffix('.retained'))
+        self.assertEqual(images.import_event(*args),dict(ready=0,failed=0))
+        self.assertEqual(self.db.execute("SELECT count(*)FROM crm.audit_events WHERE action='media.sns_existing_file_linked'").fetchone()[0],1)
         self.assertEqual(self.db.execute('SELECT count(*) FROM crm.media_provenance WHERE media_id=%s',(mid,)).fetchone()[0],1)
 
     def test_social_ack_retry_cas_reuse_and_raw_bytes(self):

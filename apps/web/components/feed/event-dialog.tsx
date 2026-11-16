@@ -23,7 +23,6 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
   const dialog = useRef<HTMLDialogElement>(null);
   const [detail, setDetail] = useState<EventDetail | null>(null);
   const [error, setError] = useState("");
-  const [failedMedia, setFailedMedia] = useState<string[]>([]);
   const close = useZoomFrom(dialog, origin);
 
   useEffect(() => { dialog.current?.showModal(); }, []);
@@ -31,7 +30,6 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
     const abort = new AbortController();
     setDetail(null);
     setError("");
-    setFailedMedia([]);
     fetch(`/api/v1/timeline/${event.id}`, { signal: abort.signal }).then(async (response) => {
       if (!response.ok) throw new Error(String(response.status));
       setDetail(await response.json());
@@ -41,8 +39,7 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
 
   const metadata = detail?.event_metadata || event.event_metadata;
   const allMedia = detail?.media || event.media || [];
-  const media = availableMedia(allMedia).filter(item => !failedMedia.includes(item.id!));
-  const unavailableCount = allMedia.length - media.length;
+  const media = allMedia;
   const link = (detail?.content as { shared_link?: SharedLink } | undefined)?.shared_link || event.shared_link;
   const body = recordText(detail?.content) || recordText(detail?.summary || event.summary);
   const interactions = detail?.interactions?.filter((item) => item.interaction_type !== "mention") ?? [];
@@ -62,20 +59,19 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
       <IconButton label="关闭动态详情" onClick={close}><X size={18} /></IconButton>
     </header>
     {hasPhotos && <div className={styles.detailPhotos}>
-      {media.map((item, index) => localMediaUrl(item.id)
+      {media.map((item, index) => item.ready !== false && localMediaUrl(item.id)
         ? <a href={localMediaUrl(item.id)} target="_blank" rel="noreferrer" aria-label={`查看原图 ${index + 1}`} key={item.id}>
           {item.media_type?.includes("video")
             ? <video controls preload="metadata" src={localMediaUrl(item.id)} poster={localMediaUrl(item.thumbnail_id)} data-zoom-target={index === 0 ? "" : undefined} />
-            : <FeedImage media={item} original alt={`动态照片 ${index + 1}`} zoomTarget={index === 0} onUnavailable={() => setFailedMedia(old => old.includes(item.id!) ? old : [...old, item.id!])} />}
+            : <FeedImage media={item} original alt={`动态照片 ${index + 1}`} zoomTarget={index === 0} />}
         </a>
-        : <span key={index}>{isVideo(item) ? <VideoCover media={item} /> : <Unavailable />}</span>)}
+        : <span key={index}><Unavailable>{`${isVideo(item) ? "视频" : "动态照片"} ${index + 1} · 暂时无法读取`}</Unavailable></span>)}
     </div>}
     <div className={styles.detailText}>
-      {!link && unavailableCount > 0 && <p className={styles.status} role="status">{unavailableCount} 个附件未能读取，已从图片列表隐藏。原始引用保留在历史记录中。</p>}
       {link && <SharedLinkCard link={link} media={media[0]} />}
       {body && <p className={styles.body}>{body}</p>}
       <ChannelsInfo media={media[0]} />
-      {hasPhotos && <PhotoPeople mediaIds={media.flatMap((item) => !isVideo(item) && item.id && localMediaUrl(item.id) ? [item.id] : [])} />}
+      {hasPhotos && <PhotoPeople mediaIds={availableMedia(media).flatMap((item) => !isVideo(item) && item.id && localMediaUrl(item.id) ? [item.id] : [])} />}
       <EventAnnotations metadata={metadata} detailed />
       <InstagramPostDetails post={metadata?.post} content={detail?.content} />
       {detail?.media_reading && <MediaReadingNote reading={detail.media_reading} />}
@@ -91,7 +87,7 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
           {item.author_profile_id ? <Link href={`/profiles/${item.author_profile_id}`}>{item.author_name || "查看联系人"}</Link> : <strong>{item.author_name || "用户"}</strong>}
           {item.content?.text && <span>{item.content.text}</span>}
           {!!item.media?.length && <div className={styles.commentPhotos}>
-            {availableMedia(item.media).map((image, index) => localMediaUrl(image.id)
+            {(item.media || []).map((image, index) => image.ready !== false && localMediaUrl(image.id)
               ? <a key={image.id} href={localMediaUrl(image.id)} target="_blank" rel="noreferrer" aria-label={`查看评论原图 ${index + 1}`}>
                 <FeedImage media={image} original alt={`评论图片 ${index + 1}`} />
               </a>

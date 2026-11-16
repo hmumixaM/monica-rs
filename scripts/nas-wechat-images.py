@@ -184,7 +184,7 @@ def main():
     with (paths[2]/'worker.lock').open('a') as lock, closing(sqlite3.connect(paths[2]/'group-images.sqlite')) as ledger, psycopg.connect(os.environ['MONICA_DATABASE_URL'], autocommit=True) as db:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         target = db.execute("SELECT system_identifier::text,(SELECT oid FROM pg_database WHERE datname=current_database()),(SELECT max(version) FROM _sqlx_migrations WHERE success) FROM pg_control_system()").fetchone()
-        if target != (args.expected_system_id, 16384, 86):
+        if target[:2] != (args.expected_system_id, 16384) or target[2] not in (86,87):
             raise ValueError('isolated target differs')
         worker = RecentImages(db, ledger, args, paths, child_env)
         try:

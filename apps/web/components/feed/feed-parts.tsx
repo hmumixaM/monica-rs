@@ -7,14 +7,14 @@ import { localMediaUrl } from "../../lib/media";
 import styles from "./feed.module.css";
 import { type EventMetadata, type FeedMedia, isVideo, type SharedLink } from "./types";
 
-export function FeedImage({ media, alt, original = false, zoomTarget = false, onUnavailable }: { media: FeedMedia; alt: string; original?: boolean; zoomTarget?: boolean; onUnavailable?: () => void }) {
+export function FeedImage({ media, alt, original = false, zoomTarget = false }: { media: FeedMedia; alt: string; original?: boolean; zoomTarget?: boolean }) {
   const [failed, setFailed] = useState<string[]>([]);
   useEffect(() => setFailed([]), [media.id, media.thumbnail_id]);
   const src = (original ? [localMediaUrl(media.id)] : [localMediaUrl(media.thumbnail_id), localMediaUrl(media.id)])
     .find((url) => url && !failed.includes(url));
-  useEffect(() => { if (!isVideo(media) && !src) onUnavailable?.(); }, [src, onUnavailable, media]);
+  if (media.ready === false) return <Unavailable>{`${alt} · 暂时无法读取`}</Unavailable>;
   if (isVideo(media)) return <VideoCover media={media} />;
-  if (!src) return onUnavailable ? null : <Unavailable>照片暂时无法读取</Unavailable>;
+  if (!src) return <Unavailable>{`${alt} · 暂时无法读取`}</Unavailable>;
   return <img src={src} width={media.width || 640} height={media.height || 480}
     alt={alt} loading={original ? "eager" : "lazy"} onError={() => setFailed((old) => [...old, src])} data-zoom-target={zoomTarget ? "" : undefined} />;
 }

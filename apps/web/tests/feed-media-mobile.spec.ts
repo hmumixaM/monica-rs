@@ -27,24 +27,27 @@ async function feed(page: Page, media: FeedMedia[] = event.media) {
   await page.goto('/timeline');
 }
 
-test('a stale source reference and failed thumbnail do not hide the registered original', async ({page}) => {
+test('source slots remain visible and a failed thumbnail falls back to its registered original', async ({page}) => {
   await page.setViewportSize({width: 390, height: 844});
   await feed(page, [{media_type: 'image', ready: false}, {...event.media[0], thumbnail_id: '00000000-0000-4000-8000-999999999999'}]);
-  const image = page.locator('article [data-thumb] img');
+  await expect(page.locator('article [data-thumb]')).toContainText('暂时无法读取');
+  await page.locator('article [data-thumb]').click();
+  const image = page.getByRole('dialog', {name: '动态详情'}).getByAltText('动态照片 2');
   await expect(image).toHaveAttribute('src', `/api/v1/media/${ids[0]}`);
   await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
   expect(await page.getByRole('group', {name: '动态来源'}).getByRole('button').evaluateAll(buttons =>
     buttons.every(button => button.getBoundingClientRect().height >= 44))).toBeTruthy();
 });
 
-test('detail hides actual missing references without putting placeholders before valid photos', async ({page}) => {
-  await feed(page, [{media_type: 'image', ready: false}, ...event.media]);
+test('detail preserves missing and failed slots in their original order alongside real photos', async ({page}) => {
+  await feed(page, [{media_type: 'image', ready: false}, {id: '00000000-0000-4000-8000-999999999999', media_type: 'image', ready: true}, ...event.media]);
   await page.locator('article [data-thumb]').click();
   const dialog = page.getByRole('dialog', {name: '动态详情'});
   await expect(dialog.getByAltText(/^动态照片/)).toHaveCount(3);
-  await expect(dialog.getByText('图片尚未缓存或暂不可用')).toHaveCount(0);
-  await expect(dialog.getByRole('status')).toContainText('1 个附件未能读取');
-  await expect(dialog.getByAltText('动态照片 1')).toHaveAttribute('src', `/api/v1/media/${ids[0]}`);
+  await expect(dialog.getByText('动态照片 1 · 暂时无法读取', {exact: true})).toBeVisible();
+  await expect(dialog.getByText('动态照片 2 · 暂时无法读取', {exact: true})).toBeVisible();
+  await expect(dialog.getByText(/已从图片列表隐藏/)).toHaveCount(0);
+  await expect(dialog.getByAltText('动态照片 3')).toHaveAttribute('src', `/api/v1/media/${ids[0]}`);
 });
 
 test('mobile photos and text never overlap and the close button stays reachable', async ({page}) => {

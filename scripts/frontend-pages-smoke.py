@@ -70,7 +70,7 @@ def check_pages(origin,dsn,control_token,native_root):
     with ThreadPoolExecutor(max_workers=32) as executor:
         parallel=list(executor.map(lambda _:request('/api/v1/directory'),range(32)))
     assert all(value==parallel[0] for value in parallel)
-    projection_calls="SELECT coalesce(sum(calls),0) FROM pg_stat_statements WHERE query LIKE '%FROM crm.profiles p LEFT JOIN crm.page_contact_stats%'"
+    projection_calls="SELECT coalesce(sum(calls),0) FROM pg_stat_statements WHERE query LIKE '%FROM visible p LEFT JOIN crm.page_contact_stats%'"
     assert sql(projection_calls)=='1',sql(projection_calls)
     directory,headers=request('/api/v1/directory',raw=True);directory=json.loads(directory)
     assert sql(projection_calls)=='1'
@@ -111,6 +111,7 @@ def check_pages(origin,dsn,control_token,native_root):
     assert changed_row['city']==expected_city
     assert changed_row['headline']==expected_headline
     posts=request('/api/v1/directory/posts');assert [r[0] for r in posts['posts']]==[post]
+    sql("UPDATE crm.weekly_message_statistics SET week_start=week_start-7; SELECT crm.refresh_weekly_message_statistics()")
     home=request('/api/v1/home')['key_numbers'];assert home=={'contacts':2,'groups':1,'messages_30d':4,'active_contacts_30d':2},home
     summary=request('/api/v1/metrics/summary');assert summary['people']==2 and summary['posts']==1 and summary['stories']==1 and summary['revisions']>=6,summary
     people=request('/api/v1/metrics/people-overview');assert people['companies'][0]['name']=='Synthetic Company'
@@ -156,6 +157,8 @@ def check_pages(origin,dsn,control_token,native_root):
     exact=request('/api/v1/search?q=%25_');assert len(exact)==1 and exact[0]['id']==p,exact
     # Statement transition tables apply corrections, tombstones and owner changes.
     sql(f"UPDATE crm.message_search SET tombstone=true WHERE conversation_id='{conversation}' AND external_id='2';UPDATE crm.contact_events SET content=content||'{{\"is_deleted\":true}}' WHERE id='{call}';UPDATE crm.social_interactions SET is_deleted=true WHERE id='{interaction}';UPDATE crm.timeline_events SET status='deleted',version=2 WHERE id='{post}';")
+    day=request('/api/v1/insights/calendar/day?day='+today);a=next(x for x in day['people'] if x['profile_id']==p);assert a['messages']==2 and a['calls']==0,day
+    sql("UPDATE crm.weekly_message_statistics SET week_start=week_start-7; SELECT crm.refresh_weekly_message_statistics()")
     day=request('/api/v1/insights/calendar/day?day='+today);a=next(x for x in day['people'] if x['profile_id']==p);assert a['messages']==1 and a['calls']==0,day
     assert request('/api/v1/directory/posts')['posts']==[]
     assert request(f'/api/v1/profiles/{peer}/ribbon')['months'][-1]['interactions']==0

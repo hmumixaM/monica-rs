@@ -45,6 +45,7 @@ function query(params: Record<string, string | number | undefined | null>): stri
 
 export const queryKeys = {
   home: ["home"] as const,
+  homeDates: ["home", "dates"] as const,
   insights: (days: number) => ["insights", days] as const,
   profile: (id: string) => ["profile", id] as const,
   overview: (id: string) => ["profile", id, "overview"] as const,
@@ -79,6 +80,13 @@ export function QueryProvider({ children }: { children: ReactNode }) {
 
 export function useHome() {
   return useQuery({ queryKey: queryKeys.home, queryFn: () => fetchJson<HomeSummary>("/api/v1/home") });
+}
+
+export function useHomeDates() {
+  return useQuery({
+    queryKey: queryKeys.homeDates,
+    queryFn: () => fetchJson<Pick<InsightsSummary, "upcoming_dates">>("/api/v1/home/dates"),
+  });
 }
 
 export function useInsights(dormantDays: 90 | 180 | 365 = 90) {
@@ -211,6 +219,7 @@ export function useServerSearch(q: string) {
 function invalidateProfile(client: ReturnType<typeof useQueryClient>, id: string) {
   void client.invalidateQueries({ queryKey: queryKeys.profile(id) });
   void client.invalidateQueries({ queryKey: queryKeys.home });
+  void client.invalidateQueries({ queryKey: ["ai", "weekly-highlights"] });
 }
 
 export function useUpdateProfileField(id: string) {

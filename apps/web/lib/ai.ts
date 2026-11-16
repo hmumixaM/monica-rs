@@ -224,8 +224,6 @@ export function useWeeklyHighlights() {
   return useQuery({
     queryKey: keys.weeklyHighlights,
     queryFn: () => fetchJson<{ enabled: boolean; week_start: string | null; people: WeeklyHighlight[] }>("/api/v1/ai/weekly-highlights"),
-    staleTime: 0,
-    gcTime: 0,
   });
 }
 

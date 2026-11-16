@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/v1/home", get(home))
+        .route("/api/v1/home/dates", get(home_dates))
         .route("/api/v1/insights", get(insights))
         .route("/api/v1/insights/calendar", get(calendar))
         .route("/api/v1/insights/calendar/day", get(day))
@@ -23,13 +24,24 @@ async fn home(
     read_pool: Option<axum::Extension<BackgroundReadPool>>,
 ) -> Result<Json<Value>> {
     let mut tx = snapshot_on(&s, &h, read_pool.map(|p| p.0.0)).await?;
-    // Only the partial first day needs exact timestamps; all full days read counts.
-    let value:Value=sqlx::query_scalar(r#"WITH cutoff AS(SELECT now()-interval '30 days' t),recent AS(
- SELECT d.conversation_id,sum(d.sent+d.received)::bigint n FROM crm.message_stat_counts d,cutoff WHERE d.scope='day:America/Chicago' AND d.period>((cutoff.t AT TIME ZONE 'America/Chicago')::date)::text GROUP BY d.conversation_id
- UNION ALL SELECT m.conversation_id,count(*) FROM crm.message_search m,cutoff WHERE NOT m.tombstone AND crm.message_stat_kind(m.direction,m.sender,m.account,m.message_type) IN('sent','received') AND m.occurred_at>=cutoff.t AND m.occurred_at<((cutoff.t AT TIME ZONE 'America/Chicago')::date+1)::timestamp AT TIME ZONE 'America/Chicago' GROUP BY m.conversation_id)
- SELECT jsonb_build_object('key_numbers',jsonb_build_object('contacts',(SELECT count(*) FROM crm.directory_profiles WHERE archived_at IS NULL AND profile_type='person'),'groups',(SELECT count(*) FROM crm.directory_profiles WHERE archived_at IS NULL AND profile_type='group'),'messages_30d',coalesce((SELECT sum(n) FROM recent),0),'active_contacts_30d',(SELECT count(DISTINCT c.profile_id) FROM recent r JOIN crm.conversations c ON c.id=r.conversation_id WHERE r.n>0 AND c.conversation_type='direct')))"#).fetch_one(&mut *tx).await?;
+    // Reads use the durable weekly snapshot; message history is worker-only.
+    let value:Value=sqlx::query_scalar(r#"WITH recent AS(
+ SELECT v.* FROM crm.weekly_message_statistics w CROSS JOIN LATERAL
+ jsonb_to_recordset(w.recent_conversations) v(conversation_id uuid,n bigint))
+ SELECT jsonb_build_object('statistics_updated_at',(SELECT refreshed_at FROM crm.weekly_message_statistics WHERE id),'key_numbers',jsonb_build_object('contacts',(SELECT count(*) FROM crm.directory_profiles WHERE archived_at IS NULL AND profile_type='person'),'groups',(SELECT count(*) FROM crm.directory_profiles WHERE archived_at IS NULL AND profile_type='group'),'messages_30d',coalesce((SELECT sum(n) FROM recent),0),'active_contacts_30d',(SELECT count(DISTINCT c.profile_id) FROM recent r JOIN crm.conversations c ON c.id=r.conversation_id WHERE r.n>0 AND c.conversation_type='direct')))"#).fetch_one(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(value))
+}
+async fn upcoming_dates(tx: &mut Transaction<'_, Postgres>) -> Result<Vec<Value>> {
+    // Restrict owners before hydrating their directory rows.
+    Ok(sqlx::query_scalar(r#"WITH upcoming AS MATERIALIZED (SELECT * FROM crm.profile_dates_presented WHERE (value->>'days_until')::int BETWEEN 0 AND 60)
+ SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'kind',d.kind,'label',d.value->'label','date',d.value->'next','days_until',d.value->'days_until','years',CASE WHEN (d.value->>'years_exact')::boolean THEN extract(year from (d.value->>'next')::date)::int-(d.value->>'year')::int END) FROM upcoming d JOIN crm.directory_profiles p ON p.id=d.profile_id AND p.archived_at IS NULL WHERE p.id=ANY(ARRAY(SELECT profile_id FROM upcoming)) ORDER BY (d.value->>'days_until')::int,p.display_name"#).fetch_all(&mut **tx).await?)
+}
+async fn home_dates(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    let mut tx = snapshot(&s, &h).await?;
+    let dates = upcoming_dates(&mut tx).await?;
+    tx.commit().await?;
+    Ok(Json(json!({"upcoming_dates":dates})))
 }
 #[derive(Deserialize)]
 struct Insight {
@@ -49,10 +61,10 @@ async fn insights(
         ));
     }
     let mut tx = snapshot_on(&s, &h, read_pool.map(|p| p.0.0)).await?;
-    let people:Vec<Value>=sqlx::query_scalar(r#"SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'last_contact_at',s.last_contact_at,'last_group_at',s.last_group_at,'direct_message_count',s.direct_message_count,'group_message_count',s.group_message_count,'calls',coalesce((SELECT sum(count) FROM crm.contact_days d WHERE d.profile_id=p.id AND d.kind='call'),0),'dormant',s.last_contact_at<now()-make_interval(days=>$1),'months',coalesce((SELECT jsonb_agg(jsonb_build_object('month',months.month,'sent',coalesce(m.sent,0),'received',coalesce(m.received,0)) ORDER BY months.month) FROM(SELECT to_char(month,'YYYY-MM') AS month FROM generate_series(date_trunc('month',now() AT TIME ZONE 'America/Chicago')-interval '11 months',date_trunc('month',now() AT TIME ZONE 'America/Chicago'),interval '1 month') month) months LEFT JOIN crm.page_profile_months m ON m.profile_id=p.id AND m.month=months.month),'[]'))
- FROM crm.page_contact_stats s JOIN crm.directory_profiles p ON p.id=s.profile_id AND p.archived_at IS NULL AND p.profile_type='person'
- WHERE p.id IN (SELECT profile_id FROM crm.page_contact_stats ORDER BY last_contact_at DESC NULLS LAST LIMIT 30)
- OR p.id IN(SELECT s.profile_id FROM crm.page_contact_stats s WHERE s.last_contact_at<now()-make_interval(days=>$1) ORDER BY s.direct_message_count+10*coalesce((SELECT sum(count) FROM crm.contact_days d WHERE d.profile_id=s.profile_id AND d.kind='call'),0) DESC,s.last_contact_at DESC LIMIT 60)"#).bind(threshold).fetch_all(&mut *tx).await?;
+    let people:Vec<Value>=sqlx::query_scalar(r#"SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'last_contact_at',s.last_contact_at,'last_group_at',s.last_group_at,'direct_message_count',s.direct_message_count,'group_message_count',s.group_message_count,'calls',coalesce((SELECT sum(count) FROM crm.contact_days d WHERE d.profile_id=p.id AND d.kind='call'),0),'dormant',s.last_contact_at<now()-make_interval(days=>$1),'months',coalesce((SELECT jsonb_agg(jsonb_build_object('month',months.month,'sent',coalesce(m.sent,0),'received',coalesce(m.received,0)) ORDER BY months.month) FROM(SELECT to_char(month,'YYYY-MM') AS month FROM generate_series(date_trunc('month',now() AT TIME ZONE 'America/Chicago')-interval '11 months',date_trunc('month',now() AT TIME ZONE 'America/Chicago'),interval '1 month') month) months LEFT JOIN crm.weekly_profile_months m ON m.profile_id=p.id AND m.month=months.month),'[]'))
+ FROM crm.weekly_contact_stats s JOIN crm.directory_profiles p ON p.id=s.profile_id AND p.archived_at IS NULL AND p.profile_type='person'
+ WHERE p.id IN (SELECT profile_id FROM crm.weekly_contact_stats ORDER BY last_contact_at DESC NULLS LAST LIMIT 30)
+ OR p.id IN(SELECT s.profile_id FROM crm.weekly_contact_stats s WHERE s.last_contact_at<now()-make_interval(days=>$1) ORDER BY s.direct_message_count+10*coalesce((SELECT sum(count) FROM crm.contact_days d WHERE d.profile_id=s.profile_id AND d.kind='call'),0) DESC,s.last_contact_at DESC LIMIT 60)"#).bind(threshold).fetch_all(&mut *tx).await?;
     let mut recent = people.clone();
     recent.sort_by(|a, b| {
         b["last_contact_at"]
@@ -73,16 +85,18 @@ async fn insights(
     for p in recent.iter_mut().chain(dormant.iter_mut()) {
         p.as_object_mut().unwrap().remove("dormant");
     }
-    // Select reminder owners before hydrating their visible directory rows.
-    let upcoming:Vec<Value>=sqlx::query_scalar(r#"WITH upcoming AS MATERIALIZED (SELECT * FROM crm.profile_dates_presented WHERE (value->>'days_until')::int BETWEEN 0 AND 60)
- SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'kind',d.kind,'label',d.value->'label','date',d.value->'next','days_until',d.value->'days_until','years',CASE WHEN (d.value->>'years_exact')::boolean THEN extract(year from (d.value->>'next')::date)::int-(d.value->>'year')::int END) FROM upcoming d JOIN crm.directory_profiles p ON p.id=d.profile_id AND p.archived_at IS NULL WHERE p.id=ANY(ARRAY(SELECT profile_id FROM upcoming)) ORDER BY (d.value->>'days_until')::int,p.display_name"#).fetch_all(&mut *tx).await?;
+    let upcoming = upcoming_dates(&mut tx).await?;
     let dates:Vec<Value>=sqlx::query_scalar("WITH d AS(SELECT d.*,make_date(extract(year from ((now() AT TIME ZONE 'America/Chicago')::date-7))::int,d.month,1)+d.day-1 AS date FROM crm.profile_dates d WHERE d.month IS NOT NULL AND d.day IS NOT NULL) SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'kind',d.kind,'label',d.label,'date',d.date,'days_ago',(now() AT TIME ZONE 'America/Chicago')::date-d.date) FROM d JOIN crm.directory_profiles p ON p.id=d.profile_id AND p.archived_at IS NULL WHERE d.date BETWEEN (now() AT TIME ZONE 'America/Chicago')::date-7 AND (now() AT TIME ZONE 'America/Chicago')::date-1 ORDER BY d.date DESC,p.display_name").fetch_all(&mut *tx).await?;
     let posters:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'posts',count(*) FILTER(WHERE e.kind='post'),'stories',count(*) FILTER(WHERE e.kind='story'),'latest_at',max(e.occurred_at),'providers',jsonb_agg(DISTINCT e.provider)) FROM crm.page_posts e JOIN crm.directory_profiles p ON p.id=e.profile_id AND p.archived_at IS NULL WHERE e.occurred_at>=now()-interval '14 days' GROUP BY p.id,p.display_name,p.avatar_media_id ORDER BY max(e.occurred_at) DESC LIMIT 60").fetch_all(&mut *tx).await?;
     let companies = organizations(&mut tx, "company").await?;
     let schools = organizations(&mut tx, "school").await?;
+    let statistics_updated_at: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT refreshed_at FROM crm.weekly_message_statistics WHERE id")
+            .fetch_optional(&mut *tx)
+            .await?;
     tx.commit().await?;
     Ok(Json(monica_core::pages::compact(
-        json!({"dormant_days":threshold,"dormant_contacts":dormant,"recent_contacts":recent,"upcoming_dates":upcoming,"recent_dates":dates,"recent_posters":posters,"top_companies":companies,"top_schools":schools}),
+        json!({"statistics_updated_at":statistics_updated_at,"dormant_days":threshold,"dormant_contacts":dormant,"recent_contacts":recent,"upcoming_dates":upcoming,"recent_dates":dates,"recent_posters":posters,"top_companies":companies,"top_schools":schools}),
     )))
 }
 async fn organizations(tx: &mut Transaction<'_, Postgres>, kind: &str) -> Result<Vec<Value>> {
@@ -113,8 +127,8 @@ async fn calendar(
             "year is out of range",
         ));
     }
-    let days:Vec<Value>=sqlx::query_scalar("WITH contacts AS(SELECT d.day,c.profile_id FROM crm.message_days_presented d JOIN crm.conversations c ON c.id=d.conversation_id WHERE c.conversation_type='direct' AND d.sent+d.received>0 AND d.day>=make_date($1,1,1) AND d.day<make_date($1+1,1,1) UNION SELECT day,profile_id FROM crm.contact_days WHERE kind='call' AND count>0 AND day>=make_date($1,1,1) AND day<make_date($1+1,1,1)) SELECT jsonb_build_object('date',c.day,'people',count(DISTINCT c.profile_id)) FROM contacts c JOIN crm.directory_profiles p ON p.id=c.profile_id AND p.archived_at IS NULL AND p.profile_type='person' GROUP BY c.day ORDER BY c.day").bind(year).fetch_all(&mut *tx).await?;
-    let first:Option<i32>=sqlx::query_scalar("SELECT extract(year from min(day))::int FROM(SELECT min(day) AS day FROM crm.message_days_presented WHERE sent+received>0 UNION ALL SELECT min(day) FROM crm.contact_days WHERE kind='call' AND count>0) days").fetch_one(&mut *tx).await?;
+    let days:Vec<Value>=sqlx::query_scalar("WITH contacts AS(SELECT d.day,c.profile_id FROM crm.weekly_message_days d JOIN crm.conversations c ON c.id=d.conversation_id WHERE c.conversation_type='direct' AND d.sent+d.received>0 AND d.day>=make_date($1,1,1) AND d.day<make_date($1+1,1,1) UNION SELECT day,profile_id FROM crm.contact_days WHERE kind='call' AND count>0 AND day>=make_date($1,1,1) AND day<make_date($1+1,1,1)) SELECT jsonb_build_object('date',c.day,'people',count(DISTINCT c.profile_id)) FROM contacts c JOIN crm.directory_profiles p ON p.id=c.profile_id AND p.archived_at IS NULL AND p.profile_type='person' GROUP BY c.day ORDER BY c.day").bind(year).fetch_all(&mut *tx).await?;
+    let first:Option<i32>=sqlx::query_scalar("SELECT extract(year from min(day))::int FROM(SELECT min(day) AS day FROM crm.weekly_message_days WHERE sent+received>0 UNION ALL SELECT min(day) FROM crm.contact_days WHERE kind='call' AND count>0) days").fetch_one(&mut *tx).await?;
     tx.commit().await?;
     let max = days
         .iter()
@@ -131,7 +145,7 @@ struct Day {
 }
 async fn day(State(s): State<AppState>, h: HeaderMap, Query(q): Query<Day>) -> Result<Json<Value>> {
     let mut tx = snapshot(&s, &h).await?;
-    let people:Vec<Value>=sqlx::query_scalar("WITH contacts AS(SELECT c.profile_id,d.sent+d.received messages,0::bigint calls FROM crm.message_days_presented d JOIN crm.conversations c ON c.id=d.conversation_id WHERE c.conversation_type='direct' AND d.day=$1::text::date AND d.sent+d.received>0 UNION ALL SELECT profile_id,0,count FROM crm.contact_days WHERE day=$1::text::date AND kind='call' AND count>0) SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'messages',sum(c.messages),'calls',sum(c.calls)) FROM contacts c JOIN crm.directory_profiles p ON p.id=c.profile_id AND p.archived_at IS NULL AND p.profile_type='person' GROUP BY p.id,p.display_name,p.avatar_media_id ORDER BY sum(c.calls) DESC,sum(c.messages) DESC,p.display_name").bind(q.day.to_string()).fetch_all(&mut *tx).await?;
+    let people:Vec<Value>=sqlx::query_scalar("WITH contacts AS(SELECT c.profile_id,d.sent+d.received messages,0::bigint calls FROM crm.weekly_message_days d JOIN crm.conversations c ON c.id=d.conversation_id WHERE c.conversation_type='direct' AND d.day=$1::text::date AND d.sent+d.received>0 UNION ALL SELECT profile_id,0,count FROM crm.contact_days WHERE day=$1::text::date AND kind='call' AND count>0) SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'messages',sum(c.messages),'calls',sum(c.calls)) FROM contacts c JOIN crm.directory_profiles p ON p.id=c.profile_id AND p.archived_at IS NULL AND p.profile_type='person' GROUP BY p.id,p.display_name,p.avatar_media_id ORDER BY sum(c.calls) DESC,sum(c.messages) DESC,p.display_name").bind(q.day.to_string()).fetch_all(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(json!({"date":q.day,"people":people})))
 }
@@ -156,8 +170,8 @@ async fn ribbon(State(s): State<AppState>, h: HeaderMap, Path(id): Path<Uuid>) -
 async fn orbit(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     let initial_version = super::cache::version(&s, "/api/v1/insights/orbit").await?;
     let mut tx = snapshot(&s, &h).await?;
-    let mut people:Vec<Value>=sqlx::query_scalar(r#"WITH m AS(SELECT profile_id,sum(sent+received) FILTER(WHERE month>=to_char(date_trunc('month',now() AT TIME ZONE 'America/Chicago')-interval '2 months','YYYY-MM')) short,sum(sent+received) long FROM crm.page_profile_months WHERE month>=to_char(date_trunc('month',now() AT TIME ZONE 'America/Chicago')-interval '11 months','YYYY-MM') GROUP BY profile_id), c AS(SELECT profile_id,sum(count) FILTER(WHERE day>=(date_trunc('month',now() AT TIME ZONE 'America/Chicago')-interval '2 months')::date) short,sum(count) long FROM crm.contact_days WHERE kind='call' AND day>=(date_trunc('month',now() AT TIME ZONE 'America/Chicago')-interval '11 months')::date GROUP BY profile_id)
- SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'last_contact_at',s.last_contact_at,'calls',coalesce(c.long,0),'messages',jsonb_build_object('3',coalesce(m.short,0),'12',coalesce(m.long,0)),'score_short',coalesce(m.short,0)+10*coalesce(c.short,0),'score_long',coalesce(m.long,0)+10*coalesce(c.long,0),'ring',jsonb_build_object('3',null,'12',null)) FROM crm.directory_profiles p LEFT JOIN m ON m.profile_id=p.id LEFT JOIN c ON c.profile_id=p.id LEFT JOIN crm.page_contact_stats s ON s.profile_id=p.id WHERE p.profile_type='person' AND p.archived_at IS NULL AND(coalesce(m.long,0)+coalesce(c.long,0)>0)"#).fetch_all(&mut *tx).await?;
+    let mut people:Vec<Value>=sqlx::query_scalar(r#"WITH m AS(SELECT profile_id,sum(sent+received) FILTER(WHERE month>=to_char(date_trunc('month',now() AT TIME ZONE 'America/Chicago')-interval '2 months','YYYY-MM')) short,sum(sent+received) long FROM crm.weekly_profile_months WHERE month>=to_char(date_trunc('month',now() AT TIME ZONE 'America/Chicago')-interval '11 months','YYYY-MM') GROUP BY profile_id), c AS(SELECT profile_id,sum(count) FILTER(WHERE day>=(date_trunc('month',now() AT TIME ZONE 'America/Chicago')-interval '2 months')::date) short,sum(count) long FROM crm.contact_days WHERE kind='call' AND day>=(date_trunc('month',now() AT TIME ZONE 'America/Chicago')-interval '11 months')::date GROUP BY profile_id)
+ SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'last_contact_at',s.last_contact_at,'calls',coalesce(c.long,0),'messages',jsonb_build_object('3',coalesce(m.short,0),'12',coalesce(m.long,0)),'score_short',coalesce(m.short,0)+10*coalesce(c.short,0),'score_long',coalesce(m.long,0)+10*coalesce(c.long,0),'ring',jsonb_build_object('3',null,'12',null)) FROM crm.directory_profiles p LEFT JOIN m ON m.profile_id=p.id LEFT JOIN c ON c.profile_id=p.id LEFT JOIN crm.weekly_contact_stats s ON s.profile_id=p.id WHERE p.profile_type='person' AND p.archived_at IS NULL AND(coalesce(m.long,0)+coalesce(c.long,0)>0)"#).fetch_all(&mut *tx).await?;
     for (key, window) in [("score_short", "3"), ("score_long", "12")] {
         let mut ranking: Vec<usize> = (0..people.len())
             .filter(|i| people[*i][key].as_i64().unwrap_or(0) > 0)
