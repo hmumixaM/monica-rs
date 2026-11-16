@@ -184,7 +184,8 @@ a.person:hover strong { text-decoration: underline; text-underline-offset: 3px; 
   .toolbar { gap: var(--space-2); }
   .toolbar h2 { flex-basis: 100%; }
   .sources { flex: 0 1 auto; }
-  .sources > button, .month { min-block-size: 44px; }
+  .sources[data-size="sm"] > button { min-block-size: 44px; min-inline-size: 44px; }
+  .month { min-block-size: 44px; }
   .detail { inline-size: 100vw; block-size: 100dvh; max-block-size: none; margin: 0; border-radius: 0; }
   .detail[open], .detail[open][data-photos] { display: block; overflow: auto; overscroll-behavior: contain; }
   .detail:not([data-photos]) { inline-size: 100vw; block-size: 100dvh; max-block-size: none; }

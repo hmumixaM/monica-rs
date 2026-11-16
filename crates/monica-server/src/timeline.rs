@@ -307,13 +307,32 @@ fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
                 .map(|u| (u, m))
         })
         .collect::<std::collections::BTreeMap<_, _>>();
+    let exact_ids = remote
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|item| {
+            ["source_url", "thumbnail_url"]
+                .into_iter()
+                .filter_map(|key| {
+                    item[key]
+                        .as_str()
+                        .and_then(|url| by_url.get(url))
+                        .map(|media| media["id"].to_string())
+                })
+        })
+        .collect::<std::collections::BTreeSet<_>>();
     // Imported archives can keep file paths instead of the original CDN URL.
     // The entity's numbered media slot still identifies the same attachment.
     // Additive history can contain several assets for a role: do not guess then.
     let by_role = |role: &str| {
         let mut matches = local.iter().filter(|m| m["role"].as_str() == Some(role));
         let first = matches.next()?;
-        matches.all(|m| m["id"] == first["id"]).then_some(first)
+        let source = first["source_url"].as_str().unwrap_or("");
+        (matches.all(|m| m["id"] == first["id"])
+            && !exact_ids.contains(&first["id"].to_string())
+            && (source.is_empty() || source.starts_with('/') || source.starts_with("file://")))
+        .then_some(first)
     };
     let mut result = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
@@ -332,6 +351,19 @@ fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
             .as_str()
             .map(str::to_owned)
             .unwrap_or_else(|| format!("media-{}", index + 1));
+        // Only the archived Instagram attachment identity permits positional
+        // recovery. A current CDN URL miss can be a newer, uncached revision.
+        let archived = ["source_url", "thumbnail_url"].into_iter().any(|key| {
+            item[key]
+                .as_str()
+                .is_some_and(|url| url.starts_with("archive://instagram/"))
+        });
+        let archive_role = |role: &str| {
+            archived
+                .then(|| by_role(role))
+                .flatten()
+                .filter(|media| !seen.contains(&media["id"].to_string()))
+        };
         let poster = item["thumbnail_url"]
             .as_str()
             .and_then(|u| by_url.get(u).copied())
@@ -343,11 +375,22 @@ fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
                     format!("{role}-poster"),
                 ]
                 .iter()
-                .find_map(|role| by_role(role))
+                .find_map(|role| archive_role(role))
+                .filter(|media| {
+                    media["media_type"]
+                        .as_str()
+                        .is_some_and(|kind| kind.starts_with("image"))
+                })
             });
         let local = url
             .and_then(|u| by_url.get(u).copied())
-            .or_else(|| by_role(&role))
+            .or_else(|| {
+                archive_role(&role).filter(|media| {
+                    let expected = item["media_type"].as_str().unwrap_or("").split('/').next();
+                    let actual = media["media_type"].as_str().unwrap_or("").split('/').next();
+                    expected == actual
+                })
+            })
             .or(poster);
         let mut resolved = item.clone();
         if let Some(local) = local {
@@ -355,8 +398,8 @@ fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
                 .as_object_mut()
                 .unwrap()
                 .extend(local.as_object().unwrap().clone());
-            // A null archive URL must not erase the original evidence URL.
-            if resolved["source_url"].is_null() {
+            // Keep the current record's evidence, including when a poster is used.
+            if item["source_url"].is_string() {
                 resolved["source_url"] = item["source_url"].clone();
             }
         }
@@ -496,6 +539,30 @@ mod tests {
         let merged = merge_media(&json!([remote[0]]), &ambiguous);
         assert!(merged[0]["id"].is_null());
         assert_eq!(merged.len(), 3);
+    }
+
+    #[test]
+    fn current_and_reordered_media_never_reuse_a_historical_slot() {
+        let a = json!({"source_url":"https://synthetic.invalid/A","media_type":"image"});
+        let b = json!({"source_url":"https://synthetic.invalid/B","media_type":"image"});
+        let cached = json!([{"id":"A","role":"media-2","source_url":"https://synthetic.invalid/A","media_type":"image/jpeg"}]);
+        let merged = merge_media(&json!([a, b]), &cached);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0]["id"], "A");
+        assert!(merged[1]["id"].is_null());
+        assert_eq!(merged[1]["source_url"], b["source_url"]);
+
+        let merged = merge_media(&json!([b, a]), &cached);
+        assert!(merged[0]["id"].is_null());
+        assert_eq!(merged[1]["id"], "A");
+        let old = json!([{"id":"old-video","role":"media-1","media_type":"video/mp4","source_url":"/data/old.mp4"}]);
+        let archived_image =
+            json!({"media_type":"image","source_url":"archive://instagram/photo/image"});
+        let merged = merge_media(&json!([archived_image]), &old);
+        assert_eq!(merged.len(), 2);
+        assert!(merged[0]["id"].is_null());
+        assert_eq!(merged[0]["source_url"], archived_image["source_url"]);
+        assert_eq!(merged[1]["id"], "old-video");
     }
 
     #[test]

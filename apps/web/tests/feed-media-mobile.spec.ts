@@ -28,10 +28,13 @@ async function feed(page: Page, media: FeedMedia[] = event.media) {
 }
 
 test('a stale source reference and failed thumbnail do not hide the registered original', async ({page}) => {
+  await page.setViewportSize({width: 390, height: 844});
   await feed(page, [{media_type: 'image', ready: false}, {...event.media[0], thumbnail_id: '00000000-0000-4000-8000-999999999999'}]);
   const image = page.locator('article [data-thumb] img');
   await expect(image).toHaveAttribute('src', `/api/v1/media/${ids[0]}`);
   await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  expect(await page.getByRole('group', {name: '动态来源'}).getByRole('button').evaluateAll(buttons =>
+    buttons.every(button => button.getBoundingClientRect().height >= 44))).toBeTruthy();
 });
 
 test('mobile photos and text never overlap and the close button stays reachable', async ({page}) => {
@@ -44,13 +47,16 @@ test('mobile photos and text never overlap and the close button stays reachable'
   const photos = dialog.getByAltText(/^动态照片/);
   await expect(photos).toHaveCount(3);
   await expect.poll(() => photos.evaluateAll(images => images.every(img => (img as HTMLImageElement).naturalWidth > 0))).toBeTruthy();
+  expect(await dialog.evaluate(d => d.scrollTop)).toBe(0);
+  await expect(dialog.getByRole('button', {name: '关闭动态详情'})).toBeInViewport();
   for (const [width, height] of [[390, 844], [320, 568], [667, 375]]) {
     await page.setViewportSize({width, height});
     const layout = await dialog.evaluate(d => {
       const rect = (e: Element) => {const r = e.getBoundingClientRect(); return {x: r.x, right: r.right, y: r.y, bottom: r.bottom};};
-      return {dialog: rect(d), images: [...d.querySelectorAll('img')].map(rect), body: rect(d.querySelector('p')!), overflow: d.scrollWidth - d.clientWidth};
+      return {dialog: rect(d), header: rect(d.querySelector('header')!), images: [...d.querySelectorAll('img')].map(rect), body: rect(d.querySelector('p')!), overflow: d.scrollWidth - d.clientWidth};
     });
     expect(layout.overflow).toBeLessThanOrEqual(1);
+    expect(layout.header.bottom).toBeLessThanOrEqual(layout.images[0].y);
     for (const [i, image] of layout.images.entries()) {
       expect(image.x).toBeGreaterThanOrEqual(layout.dialog.x);
       expect(image.right).toBeLessThanOrEqual(layout.dialog.right);
