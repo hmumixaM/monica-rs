@@ -68,6 +68,28 @@ class LiveImportContract(unittest.TestCase):
         # Never relax the production identity guard; this test uses another DB.
         self.consumer.guard = lambda: None
 
+    def test_recent_images_include_direct_and_group_but_exclude_old_messages(self):
+        recent = live.module('recent_images', 'nas-wechat-images.py')
+        self.db.execute('CREATE TABLE _sqlx_migrations(version bigint,success boolean)')
+        self.db.execute('INSERT INTO _sqlx_migrations VALUES(68,true)')
+        self.db.execute('UPDATE crm.wechat_image_control SET enabled=true,paused=false')
+        account, key = 'synthetic-self', 'a'*32
+        selected=[]
+        for kind, at in [('direct','2026-11-14'),('group','2026-11-15'),('group','2026-11-12')]:
+            cid, mid = uuid.uuid4(), uuid.uuid4()
+            self.db.execute("INSERT INTO crm.conversations(id,provider,account,external_id,conversation_type)VALUES(%s,'wechat',%s,%s,%s)",(cid,account,str(cid),kind))
+            self.db.execute("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,occurred_at,body,message_type)VALUES(%s,%s,'wechat',%s,%s,'peer',%s,%s,'3')",(mid,cid,account,str(mid),at,f'<msg><img md5="{key}"/></msg>'))
+            selected.append(mid)
+        state=Path(self.temp.name).resolve()/'recent-state';state.mkdir()
+        args=types.SimpleNamespace(account=account,source_owner=None,include_direct=True,since='2026-11-13T00:00:00Z',expected_database=self.db.info.dbname,expected_system_id=self.db.execute('SELECT system_identifier::text FROM pg_control_system()').fetchone()[0])
+        with closing(sqlite3.connect(':memory:'))as ledger:
+            item=recent.RecentImages(self.db,ledger,args,(self.args.source,self.args.media,state),{})
+            item.open();item.discover()
+            self.assertEqual({r[0]for r in self.db.execute('SELECT message_id FROM crm.wechat_group_images WHERE run_id=%s',(item.run_id,))},set(selected[:2]))
+            self.assertIsNotNone(self.db.execute(item.current_sql+' AND m.message_id=%s',(*item.query_args,selected[0])).fetchone())
+            self.assertIsNone(self.db.execute(item.current_sql+' AND m.message_id=%s',(*item.query_args,selected[2])).fetchone())
+            self.assertEqual(self.db.execute('SELECT count(*)FROM crm.message_search').fetchone()[0],3)
+
     def test_archived_media_url_restore_checks_bytes_and_replays_without_changes(self):
         binding = live.module('legacy_media_bindings', 'legacy-media-bindings.py')
         migration, mid = uuid.uuid4(), uuid.uuid4()
