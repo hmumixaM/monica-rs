@@ -119,6 +119,13 @@ jobs:
         working-directory: tools/migration-media
         env:
           CGO_ENABLED: '1'
+      - name: Recovered media publication and linking contract
+        run: |
+          (cd tools/migration-media && go build -mod=readonly -trimpath -ldflags "-X main.buildCommit=$GITHUB_SHA" -o "$RUNNER_TEMP/reviewed-media-codec" .)
+          uv run --with 'psycopg[binary]==3.2.12' --with Pillow python scripts/test-restore-verified-wechat-sources.py
+          uv run --with 'psycopg[binary]==3.2.12' --with Pillow python scripts/test-publish-image-corrections.py
+          MONICA_REVIEWED_CODEC="$RUNNER_TEMP/reviewed-media-codec" MONICA_REVIEWED_CODEC_COMMIT="$GITHUB_SHA" uv run --with 'psycopg[binary]==3.2.12' --with Pillow python scripts/test-redecode-known-image-snapshot.py
+          uv run --with 'psycopg[binary]==3.2.12' --with Pillow python scripts/test-wechat-media-link-recoveries.py
   optional-containers:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
