@@ -1,3 +1,5 @@
+#[path = "message_statistics.rs"]
+pub(crate) mod stats;
 use crate::auth::{ApiError, AppState, user};
 use axum::{
     Json, Router,
@@ -275,45 +277,29 @@ async fn months(
     Query(q): Query<Params>,
 ) -> Result<Json<Value>> {
     user(&s, &h).await?;
-    let mut rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('month',m.month,'sent',sum(sent),'received',sum(received),'total',sum(total),'first',min(first_message_at),'last',max(last_message_at),'snapshot_at',min(snapshot_at),'timezone',min(timezone)) FROM crm.source_chat_months m JOIN crm.source_account_links l ON l.account_id=m.account_id WHERE l.profile_id=$1 GROUP BY m.month ORDER BY m.month").bind(id).fetch_all(&s.pool).await?;
-    if rows.is_empty() {
-        let timezone = q.timezone.as_deref().unwrap_or("UTC");
-        if ["UTC", "America/Chicago"].contains(&timezone) {
-            let table = if timezone == "UTC" {
-                "message_months_utc"
-            } else {
-                "message_months"
-            };
-            rows=sqlx::query_scalar(&format!("SELECT jsonb_build_object('month',m.month,'sent',sum(m.sent),'received',sum(m.received),'total',sum(m.sent+m.received),'first',min(m.first_message_at),'last',max(m.last_message_at),'snapshot_at',NULL,'timezone',$2::text) FROM crm.{table} m JOIN crm.conversations c ON c.id=m.conversation_id WHERE c.profile_id=$1 GROUP BY m.month ORDER BY m.month")).bind(id).bind(timezone).fetch_all(&s.pool).await?;
-        } else {
-            let valid: bool =
-                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_timezone_names WHERE name=$1)")
-                    .bind(timezone)
-                    .fetch_one(&s.pool)
-                    .await?;
-            if !valid {
-                return Err(invalid());
-            }
-            rows=sqlx::query_scalar("SELECT jsonb_build_object('month',to_char(m.occurred_at AT TIME ZONE $2,'YYYY-MM'),'sent',count(*) FILTER(WHERE m.sender=m.account),'received',count(*) FILTER(WHERE m.sender<>m.account),'total',count(*),'first',min(m.occurred_at),'last',max(m.occurred_at),'snapshot_at',NULL,'timezone',$2::text) FROM crm.message_search m JOIN crm.conversations c ON c.id=m.conversation_id WHERE c.profile_id=$1 AND NOT m.tombstone GROUP BY to_char(m.occurred_at AT TIME ZONE $2,'YYYY-MM') ORDER BY to_char(m.occurred_at AT TIME ZONE $2,'YYYY-MM')").bind(id).bind(timezone).fetch_all(&s.pool).await?;
-        }
-    }
+    let timezone = q.timezone.as_deref().unwrap_or("America/Chicago");
+    let mut tx = s.pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        .execute(&mut *tx)
+        .await?;
+    let id = crate::pages::canonical(&mut tx, id).await?;
+    let rows = stats::rows(&mut tx, id, timezone).await?;
+    let time = stats::bounds(&mut tx, id).await?;
+    tx.commit().await?;
     let sum = |key: &str| {
         rows.iter()
             .map(|r| r[key].as_i64().unwrap_or(0))
             .sum::<i64>()
     };
-    let first = rows.iter().filter_map(|r| r["first"].as_str()).min();
-    let last = rows.iter().filter_map(|r| r["last"].as_str()).max();
-    let snapshot = rows.iter().filter_map(|r| r["snapshot_at"].as_str()).min();
-    let peak = rows.iter().reduce(|a, b| {
-        if b["total"].as_i64() > a["total"].as_i64() {
-            b
-        } else {
-            a
-        }
-    });
+    let peak = rows
+        .iter()
+        .filter(|r| r["total"].as_i64().unwrap_or(0) > 0)
+        .max_by_key(|r| r["total"].as_i64().unwrap_or(0));
     Ok(Json(
-        json!({"months":rows,"total":sum("total"),"sent":sum("sent"),"received":sum("received"),"first":first,"last":last,"snapshot_at":snapshot,"peak":peak,"timezone":rows.first().and_then(|r|r["timezone"].as_str()).unwrap_or("UTC"),"active_months":rows.iter().filter(|r|r["total"].as_i64().unwrap_or(0)>0).count()}),
+        json!({"months":rows,"total":sum("total"),"sent":sum("sent"),"received":sum("received"),
+      "system":sum("system"),"unknown":sum("unknown"),"records":sum("records"),"first":time["first"],"last":time["last"],
+      "snapshot_at":null,"count_basis":"imported_non_deleted_records","peak":peak,"timezone":timezone,
+      "active_months":rows.iter().filter(|r|r["total"].as_i64().unwrap_or(0)>0).count()}),
     ))
 }
 

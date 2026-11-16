@@ -95,7 +95,9 @@ async fn rebuild_avatar(tx: &mut Transaction<'_, Postgres>, profile: Uuid) -> Re
     .fetch_optional(&mut **tx)
     .await?;
     let manual:Option<Uuid>=sqlx::query_scalar("SELECT media_id FROM crm.media_slots WHERE entity_type='profile' AND entity_id=$1 AND role='avatar'").bind(profile).fetch_optional(&mut **tx).await?;
-    if manual.is_some() || current != previous {
+    let proven_source: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.media_links m WHERE m.entity_type='profile' AND m.entity_id=$1 AND m.media_id=$2 AND m.source_account_id IS NOT NULL AND m.role IN ('wechat_avatar','wechat_avatar_small','wechat_avatar_big','instagram_avatar','linkedin_avatar'))")
+        .bind(profile).bind(current).fetch_one(&mut **tx).await?;
+    if manual.is_some() || (current != previous && !proven_source) {
         return Ok(());
     }
     let selected:Option<(Uuid,Uuid)>=sqlx::query_as("SELECT m.media_id,l.account_id FROM crm.source_account_links l JOIN crm.media_slots m ON m.entity_type='source_account' AND m.entity_id=l.account_id JOIN crm.media_assets a ON a.id=m.media_id WHERE l.profile_id=$1 AND a.verified_at IS NOT NULL AND m.role IN ('wechat_avatar_small','wechat_avatar','wechat_avatar_big','instagram_avatar','linkedin_avatar') ORDER BY CASE m.role WHEN 'wechat_avatar_small' THEN 0 WHEN 'wechat_avatar' THEN 1 WHEN 'wechat_avatar_big' THEN 2 WHEN 'instagram_avatar' THEN 3 ELSE 4 END,l.account_id LIMIT 1").bind(profile).fetch_optional(&mut **tx).await?;
@@ -179,7 +181,8 @@ pub async fn set_links(
     for change in changes {
         if let Some(reason) = blocked.get(&change.account_id) {
             ensure!(
-                reason != "quarantined" && change.profile_id.is_none(),
+                reason != "quarantined"
+                    && (change.profile_id.is_none() || evidence["kind"] == "explicit-person-merge"),
                 "source account ownership blocked: {reason}"
             );
         }
@@ -249,7 +252,9 @@ pub async fn set_links(
     for profile in &profiles {
         rebuild_profile(tx, *profile).await?;
     }
-    reconcile_profiles(tx, &profiles, actor).await?;
+    if evidence["kind"] != "explicit-person-merge" {
+        reconcile_profiles(tx, &profiles, actor).await?;
+    }
     Ok(output)
 }
 

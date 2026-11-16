@@ -12,6 +12,7 @@ import { Failure, Loading, Muted, Panel, providerLabel } from "../ui/primitives"
 import { VirtualList } from "../ui/virtual-list";
 import { fieldLabel, formatDate, summarizeValue, visibleField } from "./fields";
 import styles from "./profile.module.css";
+import { AvatarHistory } from "./avatar-history";
 import type { Revision } from "./types";
 
 const PAGE_SIZE = 40;
@@ -74,6 +75,7 @@ export function HistoryView({ profileId }: { profileId: string }) {
       </article> }))} />
       {history.hasNextPage && <Button disabled={history.isFetching} onClick={() => void history.fetchNextPage()}>{history.isFetchingNextPage ? "正在读取…" : "读取更早的字段版本"}</Button>}
     </Panel>
+    <AvatarHistory profileId={profileId} />
     <StructuredHistory profileId={profileId} />
     {selected && <Dialog title={`恢复${fieldLabel(selected.field_key)}`} locked={restore.isPending} onClose={() => setSelected(null)}
       description={selected.field_key === "monica.custom_fields" ? "将恢复这个版本中的全部自定义字段。此操作会覆盖当前整组自定义字段，并保留历史版本。" : "将所选旧值设为当前手工值。后续来源同步不会自动覆盖这个手工值。"}>

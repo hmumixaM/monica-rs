@@ -358,7 +358,7 @@ mod tests {
             0
         );
         sqlx::query("INSERT INTO crm.conversations(id,provider,account,external_id,profile_id,conversation_type) VALUES($1,'wechat','self','peer',$2,'direct')").bind(conversation).bind(person).execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO crm.conversation_days(conversation_id,day,sent,received) VALUES($1,(now() AT TIME ZONE 'America/Chicago')::date,0,12)").bind(conversation).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,occurred_at,body,direction) SELECT gen_random_uuid(),$1,'wechat','self',n::text,'peer',now(),'Synthetic','received' FROM generate_series(1,12) n").bind(conversation).execute(&pool).await.unwrap();
         let old = home(&router, true).await;
         assert_eq!(old.headers()["x-monica-aggregate-stale"], "true");
         assert_eq!(value(old).await["key_numbers"]["messages_30d"], 0);

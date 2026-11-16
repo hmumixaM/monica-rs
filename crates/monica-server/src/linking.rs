@@ -63,6 +63,9 @@ fn failure(e: anyhow::Error) -> ApiError {
 pub fn routes() -> Router<AppState> {
     Router::new()
         .merge(graph::routes())
+        .route("/api/v1/profiles/{id}/merge-preview", get(merge_preview))
+        .route("/api/v1/profiles/{id}/merge", post(merge_person))
+        .route("/api/v1/profiles/{id}/avatar-history", get(avatar_history))
         .route("/api/v1/source-accounts", get(accounts))
         .route("/api/v1/source-accounts/{id}/link", put(link))
         .route("/api/v1/link-review", get(review))
@@ -801,4 +804,54 @@ mod tests {
             0
         );
     }
+}
+
+#[derive(Deserialize)]
+struct MergeTarget {
+    target_id: Uuid,
+}
+async fn merge_preview(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+    Query(q): Query<MergeTarget>,
+) -> Result<Json<Value>> {
+    user(&s, &h).await?;
+    let mut tx = s.pool.begin().await?;
+    let value = monica_core::profile_merge::preview(&mut tx, id, q.target_id)
+        .await
+        .map_err(failure)?;
+    tx.commit().await?;
+    Ok(Json(value))
+}
+async fn merge_person(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(q): Json<monica_core::profile_merge::Request>,
+) -> Result<Json<Value>> {
+    let (actor, _) = user(&s, &h).await?;
+    Ok(Json(
+        monica_core::profile_merge::apply(&s.pool, id, &q, Some(actor))
+            .await
+            .map_err(failure)?,
+    ))
+}
+#[derive(Default, Deserialize)]
+struct AvatarPage {
+    before: Option<i64>,
+}
+async fn avatar_history(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+    Query(q): Query<AvatarPage>,
+) -> Result<Json<Value>> {
+    user(&s, &h).await?;
+    let id = linking::resolve_profile(&s.pool, id)
+        .await
+        .map_err(failure)?;
+    let rows:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(o)||jsonb_build_object('provider',a.provider,'time_meaning','observation_only') FROM crm.avatar_observations o JOIN crm.source_accounts a ON a.id=o.account_id JOIN crm.source_account_links l ON l.account_id=o.account_id WHERE l.profile_id=$1 AND ($2::bigint IS NULL OR o.sequence<$2) ORDER BY o.sequence DESC LIMIT 40")
+        .bind(id).bind(q.before).fetch_all(&s.pool).await?;
+    Ok(Json(json!(rows)))
 }

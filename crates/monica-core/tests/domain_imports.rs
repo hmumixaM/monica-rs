@@ -1307,3 +1307,104 @@ async fn notebook_owner_corrections_move_memory_and_keep_message_direction(pool:
     assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM crm.memory_inputs WHERE profile_id=$1 AND source_kind IN ('chat','social')").bind(first).fetch_one(&pool).await.unwrap(),0);
     assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM crm.memory_inputs WHERE profile_id=$1 AND source_kind IN ('chat','social')").bind(second).fetch_one(&pool).await.unwrap(),2);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn avatar_history_tracks_bytes_and_preserves_manual_choice(pool: PgPool) {
+    let person = profile(&pool, "Avatar person").await;
+    let account = Uuid::new_v4();
+    let old = Uuid::new_v4();
+    let new = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'linkedin','avatar-peer','person','Avatar peer')").bind(account).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.source_account_links(account_id,profile_id) VALUES($1,$2)")
+        .bind(account)
+        .bind(person)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (id, digit) in [(old, 'a'), (new, 'b')] {
+        sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,verified_at) VALUES($1,$2,'image/jpeg',1,'synthetic',now())").bind(id).bind(digit.to_string().repeat(64)).execute(&pool).await.unwrap();
+    }
+    monica_core::media::set_slot(
+        &pool,
+        "source_account",
+        account,
+        "linkedin_avatar",
+        old,
+        Some(account),
+    )
+    .await
+    .unwrap();
+    linking::refresh_account(&pool, account).await.unwrap();
+    monica_core::media::set_slot(
+        &pool,
+        "source_account",
+        account,
+        "linkedin_avatar",
+        new,
+        Some(account),
+    )
+    .await
+    .unwrap();
+    monica_core::media::set_slot(
+        &pool,
+        "source_account",
+        account,
+        "linkedin_avatar",
+        new,
+        Some(account),
+    )
+    .await
+    .unwrap();
+    linking::refresh_account(&pool, account).await.unwrap();
+    let observed: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM crm.avatar_observations WHERE account_id=$1")
+            .bind(account)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(observed, 2);
+    let selected: Option<Uuid> =
+        sqlx::query_scalar("SELECT avatar_media_id FROM crm.profiles WHERE id=$1")
+            .bind(person)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(selected, Some(new));
+    let mut tx = pool.begin().await.unwrap();
+    monica_core::ai::memory::profile_facts(&mut tx, person)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let input: Value = sqlx::query_scalar(
+        "SELECT payload FROM crm.memory_inputs WHERE profile_id=$1 AND source_kind='profile'",
+    )
+    .bind(person)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(input["avatar_observations"].as_array().unwrap().len(), 2);
+    monica_core::media::set_slot(&pool, "profile", person, "avatar", old, None)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE crm.profiles SET avatar_media_id=$2 WHERE id=$1")
+        .bind(person)
+        .bind(old)
+        .execute(&pool)
+        .await
+        .unwrap();
+    linking::refresh_account(&pool, account).await.unwrap();
+    let pinned: Option<Uuid> =
+        sqlx::query_scalar("SELECT avatar_media_id FROM crm.profiles WHERE id=$1")
+            .bind(person)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(pinned, Some(old));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM crm.ai_jobs")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+}

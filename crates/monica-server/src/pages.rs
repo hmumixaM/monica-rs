@@ -45,7 +45,7 @@ async fn snapshot_on(
         .await?;
     Ok(tx)
 }
-async fn canonical(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result<Uuid> {
+pub(crate) async fn canonical(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result<Uuid> {
     sqlx::query_scalar("WITH RECURSIVE chain(id) AS(SELECT $1::uuid UNION SELECT r.new_profile_id FROM crm.profile_redirects r JOIN chain c ON c.id=r.old_profile_id) SELECT p.id FROM chain c JOIN crm.profiles p ON p.id=c.id WHERE p.archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM crm.profile_redirects r WHERE r.old_profile_id=p.id)").bind(id).fetch_optional(&mut **tx).await?.ok_or(ApiError(StatusCode::NOT_FOUND,"profile not found"))
 }
 // Conditional caching is applied by the route layer before any page SQL.
