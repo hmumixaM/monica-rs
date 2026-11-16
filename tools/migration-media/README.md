@@ -14,6 +14,9 @@ Image credentials, when needed, are process environment values only. Never put
 them in a command argument, a manifest or a log. The helper removes those
 variables before spawning any image-conversion subprocess.
 
+WXGF conversion requires FFmpeg. An unavailable executable produces a fixed
+conversion failure, preserving the raw input for recovery.
+
 Returned errors exit nonzero and write one JSON record to stderr with `error_code`
 and `codec_commit`. The fixed codes distinguish image conversion, WXGF
 conversion, decoded image validation and voice conversion. Other failures use

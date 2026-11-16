@@ -11,8 +11,6 @@ import sqlite3,uuid
 import psycopg
 # SSD guard only: actual worker owns the shared inode until exit.
 import fcntl as _ssd_fcntl
-_ssd_copy_lock = open('/copy.lock', 'r')
-_ssd_fcntl.flock(_ssd_copy_lock, _ssd_fcntl.LOCK_EX | _ssd_fcntl.LOCK_NB)
 
 spec=importlib.util.spec_from_file_location('legacy',Path.cwd()/'scripts/legacy-chatlog-import.py')
 legacy=importlib.util.module_from_spec(spec);spec.loader.exec_module(legacy)
@@ -35,6 +33,22 @@ def asset_file(root,asset):
     if path.resolve()!=path or not path.is_file() or path.stat().st_size!=asset['byte_length']:raise ValueError('copied runtime file differs')
     # The completed copier already hashed every published immutable CAS file.
     # Reuse its receipt and check presence/size instead of rereading 32 GB.
+def proven_source_paths(index,tables,key,kind,digest,candidates,path,raw_sha,asset):
+    if path is not None:
+        if path not in candidates:raise ValueError('copied media source is not an indexed candidate')
+        return [path]
+    if not re.fullmatch('[0-9a-f]{64}',raw_sha or ''):raise ValueError('invalid recovery raw digest')
+    original=[key,kind,digest,None,None,None,'source_missing']
+    if 'verified_source_recoveries' in tables:
+        proof=index.execute('SELECT original_row,asset,raw_sha256,index_sha256 FROM copied.verified_source_recoveries WHERE source_key=?',(key,)).fetchone()
+        if proof and json.loads(proof[0])==original and json.loads(proof[1])==asset and proof[2]==raw_sha and proof[3]==EXPECTED:
+            return candidates
+    if kind=='image' and 'image_correction_receipts' in tables:
+        proof=index.execute('SELECT category,original_row,asset,source_raw_sha256,input_sha256,codec_commit,manifest_sha256,frames FROM copied.image_correction_receipts WHERE source_key=?',(key,)).fetchone()
+        if proof and proof[0]=='source_missing' and json.loads(proof[1])==original and json.loads(proof[2])==asset and proof[3]==raw_sha and all(re.fullmatch('[0-9a-f]{64}',v or '')for v in(proof[3],proof[4],proof[6]))and re.fullmatch('[0-9a-f]{40}',proof[5]or '')and proof[7]>0:
+            return candidates
+    raise ValueError('ready external recovery lacks its matching publication receipt')
+
 def prepare_media_keys(index,state,identity):
     # Old Chatlog resolves both hardlink.md5 and file_name prefixes. Build a
     # disk-backed lookup only for files proven ready by the completed copier.
@@ -44,21 +58,30 @@ def prepare_media_keys(index,state,identity):
         if candidate.resolve()!=candidate:raise ValueError('media key lookup alias')
     index.execute('ATTACH DATABASE ? AS media_keys',(str(path),))
     index.execute('PRAGMA media_keys.cache_size=-4096')
-    index.executescript('CREATE TABLE IF NOT EXISTS media_keys.metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);CREATE TABLE IF NOT EXISTS media_keys.keys(kind TEXT,md5 TEXT,source_key TEXT,PRIMARY KEY(kind,md5,source_key)) WITHOUT ROWID;')
+    index.executescript('CREATE TABLE IF NOT EXISTS media_keys.metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);CREATE TABLE IF NOT EXISTS media_keys.keys(kind TEXT,md5 TEXT,source_key TEXT,PRIMARY KEY(kind,md5,source_key)) WITHOUT ROWID;CREATE TABLE IF NOT EXISTS media_keys.names(source_key TEXT PRIMARY KEY,file_name TEXT);')
     expected={'snapshot':identity,'input_sha256':EXPECTED,'format':'1'}
     prior=dict(index.execute('SELECT * FROM media_keys.metadata'))
     if prior and prior!=expected:raise ValueError('media lookup belongs to another snapshot')
     if not prior and index.execute('SELECT 1 FROM media_keys.keys LIMIT 1').fetchone():raise ValueError('media lookup has no source identity')
+    tables={r[0]for r in index.execute("SELECT name FROM copied.sqlite_master WHERE type='table'")}
     with index:
         index.executemany('INSERT OR IGNORE INTO media_keys.metadata VALUES(?,?)',expected.items())
         index.execute('DELETE FROM media_keys.keys')
-        for kind,digest,key,encoded,path in index.execute("SELECT f.kind,f.md5,f.source_key,f.candidates,a.source_path FROM files f JOIN copied.assets a USING(source_key) WHERE a.status='ready'"):
-            if path not in json.loads(encoded):raise ValueError('copied media source is not an indexed candidate')
+        index.execute('DELETE FROM media_keys.names')
+        for kind,digest,key,encoded,path,raw_sha,encoded_asset,saved_md5 in index.execute("SELECT f.kind,f.md5,f.source_key,f.candidates,a.source_path,a.raw_sha256,a.asset,a.md5 FROM files f JOIN copied.assets a USING(source_key) WHERE a.status='ready'"):
+            if saved_md5!=digest:raise ValueError('copied media digest differs from index')
+            candidates=json.loads(encoded)
+            if not isinstance(candidates,list)or any(not isinstance(p,str)or not p for p in candidates):raise ValueError('invalid indexed candidate list')
+            paths=proven_source_paths(index,tables,key,kind,digest,candidates,path,raw_sha,json.loads(encoded_asset))
+            index.execute('INSERT INTO media_keys.names VALUES(?,?)',(key,Path(paths[0]).name if paths else None))
             values={(kind,digest,key)}
-            match=re.fullmatch(r'([0-9a-fA-F]{32})(?:[._].*)?',Path(path).name)
-            if kind in ('image','video') and match:values.add((kind,match.group(1).lower(),key))
+            for source_path in paths:
+                match=re.fullmatch(r'([0-9a-fA-F]{32})(?:[._].*)?',Path(source_path).name)
+                if kind in ('image','video')and match:values.add((kind,match.group(1).lower(),key))
             index.executemany('INSERT OR IGNORE INTO media_keys.keys VALUES(?,?,?)',values)
 def main():
+    _ssd_copy_lock = open('/copy.lock', 'r')
+    _ssd_fcntl.flock(_ssd_copy_lock, _ssd_fcntl.LOCK_EX | _ssd_fcntl.LOCK_NB)
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ['index','assets','manifest','media','state']:
         parser.add_argument('--'+name,type=Path,required=True)
@@ -89,23 +112,22 @@ def main():
         if not db.execute("SELECT 1 FROM crm.legacy_chatlog_snapshots WHERE id=%s AND status IN ('converted','verified')",(snapshot,)).fetchone():raise ValueError('complete Chatlog conversion is required')
         if not db.execute("SELECT pg_try_advisory_lock(hashtextextended('monica-offline-chatlog',0))").fetchone()[0]:raise ValueError('another offline media operation is active')
         legacy.bind_state(db,args.state,snapshot)
+        index.execute('ATTACH DATABASE ? AS copied',(args.assets.as_uri()+'?mode=ro&immutable=1',))
+        prepare_media_keys(index,args.state,identity)
         registered=0
         for group in batches(files.execute("SELECT source_key,kind,source_path,asset FROM assets WHERE status='ready' ORDER BY source_key")):
             for source_key,kind,path,encoded in group:asset_file(args.media,json.loads(encoded))
             with db.transaction():
                 for source_key,kind,path,encoded in group:
                     asset=json.loads(encoded);provenance=str(snapshot)+':file:'+source_key
-                    file_name=Path(path).name if kind!='image' else 'image.'+asset['media_type'].split('/')[-1].replace('jpeg','jpg')
+                    file_name=index.execute('SELECT file_name FROM media_keys.names WHERE source_key=?',(source_key,)).fetchone()[0] if kind!='image' else 'image.'+asset['media_type'].split('/')[-1].replace('jpeg','jpg')
                     db.execute("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,file_name,width,height,source_type,source_record_id,verified_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,'wechat',%s,now()) ON CONFLICT(sha256) DO NOTHING",(uuid.uuid5(legacy.NS,'chatlog-media:'+asset['sha256']),asset['sha256'],asset['media_type'],asset['byte_length'],asset['object_path'],file_name,asset.get('width'),asset.get('height'),provenance))
                     saved=db.execute('SELECT id,byte_length FROM crm.media_assets WHERE sha256=%s',(asset['sha256'],)).fetchone()
                     if not saved or saved[1]!=asset['byte_length']:raise ValueError('registered media differs from its copied file')
                     db.execute("INSERT INTO crm.media_provenance(media_id,source,source_record_id) VALUES(%s,'wechat',%s) ON CONFLICT DO NOTHING",(saved[0],provenance))
                     registered+=1
             print(json.dumps({'phase':'indexed_file_assets','registered_records':registered}),flush=True)
-        # Index and copied-state sources stay read-only. The fixed ATTACH URI
-        # is data, never an interpolated SQL identifier or a write destination.
-        index.execute('ATTACH DATABASE ? AS copied',(args.assets.as_uri()+'?mode=ro&immutable=1',))
-        prepare_media_keys(index,args.state,identity)
+        # The derived lookup was validated before registering any assets.
         linked=pending=missing_current=0
         previous=None;selected=None
         for group in batches(index.execute('SELECT source_key,kind,md5,chat,create_time,server_id,local_id,message_type FROM refs ORDER BY kind,md5,source_key')):

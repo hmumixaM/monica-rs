@@ -120,11 +120,22 @@ func transform(data []byte, kind string) ([]byte, string, error) {
 		out, err := silk.Silk2MP3(data)
 		return out, "audio/mpeg", conversionFailure("voice_conversion_failed", err)
 	case "image":
+		// The inherited no-FFmpeg fallback scans compressed WXGF bytes for
+		// signatures and can publish a random BM suffix as a BMP. This codec
+		// requires real WXGF conversion; unavailable FFmpeg must remain a failure.
+		dat2img.FFmpegMode = true
 		typeName := http.DetectContentType(data)
 		if strings.HasPrefix(typeName, "image/") {
 			return data, typeName, nil
 		}
-		out, ext, err := dat2img.Dat2Image(data)
+		// V3 WXGF and BMP share the same XOR relationship between their
+		// first two bytes. Prefer the four-byte WXGF signature over BMP.
+		out, matchedWXGF := decodeXORWXGF(data)
+		ext := "wxgf"
+		var err error
+		if !matchedWXGF {
+			out, ext, err = dat2img.Dat2Image(data)
+		}
 		if err != nil || !validDecodedImage(out, ext) {
 			if len(data) >= 6 && (bytes.Equal(data[:6], dat2img.V4Format1.Header) || bytes.Equal(data[:6], dat2img.V4Format2.Header)) {
 				out, ext, err = decodeV4Fallback(data)
@@ -138,7 +149,7 @@ func transform(data []byte, kind string) ([]byte, string, error) {
 			return nil, "", conversionFailure("image_conversion_failed", err)
 		}
 		if ext == "wxgf" {
-			out, ext, err = dat2img.Wxam2pic(out)
+			out, ext, err = convertWXGF(out)
 			if err != nil {
 				return nil, "", conversionFailure("wxgf_conversion_failed", err)
 			}
