@@ -159,7 +159,7 @@ class Consumer:
 
     def guard(self):
         row = self.db.execute("SELECT system_identifier::text,current_database(),(SELECT oid FROM pg_database WHERE datname=current_database()),(SELECT max(version) FROM _sqlx_migrations WHERE success) FROM pg_control_system()").fetchone()
-        if tuple(row[:3]) != ('7707886811981668386', 'monica_rust', 16384) or row[3] not in (86,87):
+        if tuple(row[:3]) != ('7707886811981668386', 'monica_rust', 16384) or row[3] not in (86,87,88):
             raise ValueError('isolated Rust target identity changed')
         if not (self.args.media.parent / '.monica-rs-ssd-target').read_bytes() == b'monica-rs-ssd-target-v1\n':
             raise ValueError('isolated SSD marker changed')

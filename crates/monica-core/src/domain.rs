@@ -299,6 +299,16 @@ pub async fn project(tx: &mut Transaction<'_, Postgres>, lease: &Lease) -> Resul
                 .bind(lease.object).bind(post).bind(s).bind(&object_external).bind(&kind).bind(account).bind(profile).bind(&external).bind(name).bind(&occurred).bind(&payload).bind(payload.get("is_deleted").and_then(Value::as_bool).unwrap_or(false)).execute(&mut **tx).await?;
         }
         "post" | "story" => {
+            let _: Option<Uuid> =
+                sqlx::query_scalar("SELECT crm.adopt_legacy_timeline_identity($1,$2,$3,$4,$5,$6)")
+                    .bind(s)
+                    .bind(&kind)
+                    .bind(&object_external)
+                    .bind(account)
+                    .bind(profile)
+                    .bind(lease.object)
+                    .fetch_one(&mut **tx)
+                    .await?;
             let applied: Option<Uuid> = sqlx::query_scalar("INSERT INTO crm.timeline_events(id,provider,object_id,source_account_id,profile_id,event_type,external_id,occurred_at,expires_at,content,content_hash,status,version) VALUES($1,$2,$1,$3,$4,$5,$6,$7::timestamptz,$8::timestamptz,$9,$10,$11,$12) ON CONFLICT(provider,object_id) DO UPDATE SET profile_id=excluded.profile_id,occurred_at=excluded.occurred_at,expires_at=excluded.expires_at,content=excluded.content,content_hash=excluded.content_hash,status=excluded.status,version=excluded.version,last_seen_at=now() WHERE crm.timeline_events.version<excluded.version RETURNING id")
                 .bind(lease.object).bind(s).bind(account).bind(profile).bind(&kind).bind(&object_external).bind(&occurred)
                 .bind(payload.get("expires_at").and_then(Value::as_str)).bind(&payload).bind(row.get::<String,_>("hash"))

@@ -60,7 +60,7 @@ def shared_link(obj):
     """Extract the shared destination, never confuse its cover with the post."""
     from urllib.parse import urlsplit
     content = obj.find('ContentObject')
-    if content is None or content.findtext('type') != '3':
+    if content is None or content.findtext('type') not in ('3', '4', '5'):
         return None
     url = (content.findtext('contentUrl') or '').strip()
     try:
@@ -69,7 +69,10 @@ def shared_link(obj):
             return None
     except ValueError:
         return None
-    return {'url': url, 'title': (content.findtext('title') or '').strip(), 'description': (content.findtext('description') or '').strip(), 'source_name': (obj.findtext('sourceNickName') or '').strip()}
+    result = {'url': url, 'title': (content.findtext('title') or '').strip(), 'description': (content.findtext('description') or '').strip(), 'source_name': (obj.findtext('sourceNickName') or '').strip()}
+    if content.findtext('type') in ('4', '5'):
+        result['kind'] = {'4':'music','5':'video'}[content.findtext('type')]
+    return result
 
 def finder_media(obj):
     """Keep Channels metadata and queue only its poster, never an unverified video."""
@@ -150,6 +153,12 @@ def moments_media(obj: ET.Element) -> list[dict[str, Any]]:
             duration_ms = None
         url_element = media.find('url')
         media_rows.append({'role': f'media-{index + 1}', 'source_media_id': media.findtext('id'), 'source_md5': url_element.attrib.get('md5') if url_element is not None else None, 'media_type': 'video' if media_type in {'6', '15'} else 'image', 'source_url': source_url or None, 'thumbnail_url': thumbnail_url or None, 'width': width, 'height': height, 'byte_length': total_size, 'duration_ms': duration_ms, 'description': media.findtext('description') or None})
+    parent_type = obj.findtext('ContentObject/type')
+    if parent_type in ('5', '54'):
+        for item in media_rows:
+            if item['media_type'] == 'image':
+                item['source_media_type'] = 'video'
+                item['source_kind'] = 'wechat_channels' if parent_type == '54' else 'wechat_video_share'
     return media_rows
 
 def moments_interactions(root_node: ET.Element, post_id: str) -> list[dict[str, Any]]:

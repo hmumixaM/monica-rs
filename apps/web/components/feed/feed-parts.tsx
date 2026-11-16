@@ -29,11 +29,13 @@ export function VideoCover({ media }: { media?: FeedMedia }) {
   useEffect(() => setFailed(false), [poster]);
   const hasPoster = !!poster && !failed;
   const channels = media?.source_kind === "wechat_channels";
+  const shared = media?.source_kind === "wechat_video_share";
+  const coverOnly = !media?.id || !!media.media_type?.startsWith("image");
   return <span className={styles.video} data-poster={hasPoster ? "" : undefined}
     style={hasPoster && media?.width && media?.height ? { aspectRatio: `${media.width}/${media.height}` } : undefined}>
     {hasPoster && <img src={poster} width={640} height={480} alt="视频缩略图" loading="lazy" onError={() => setFailed(true)} />}
     <span className={styles.play}><Play size={26} fill="currentColor" aria-hidden="true" /></span>
-    <span className={styles.videoLabel}><strong>{channels ? "视频号" : "视频"}</strong><small>{channels ? "视频封面" : "点击查看"}</small></span>
+    <span className={styles.videoLabel}><strong>{channels ? "视频号" : shared ? "视频分享" : "视频"}</strong><small>{coverOnly ? "视频封面" : "点击查看"}</small></span>
   </span>;
 }
 
@@ -42,7 +44,7 @@ export function SharedLinkCard({ link, media }: { link: SharedLink; media?: Feed
   if (!url || !["http:", "https:"].includes(url.protocol) || url.username || url.password) return null;
   return <a className={styles.sharedLink} href={url.href} target="_blank" rel="noopener noreferrer">
     {media?.id ? <span className={styles.sharedCover}><FeedImage media={media} alt="" /></span> : <span className={styles.sharedIcon}><ArrowUpRight size={20} /></span>}
-    <span><strong>{link.title || url.hostname}</strong>{link.description && <small>{link.description}</small>}<small>{link.source_name || url.hostname}</small></span>
+    <span><strong>{link.title || url.hostname}</strong>{link.description && <small>{link.description}</small>}<small>{link.kind === "video" ? "视频分享 · " : link.kind === "music" ? "音乐分享 · " : ""}{link.source_name || url.hostname}</small></span>
   </a>;
 }
 
