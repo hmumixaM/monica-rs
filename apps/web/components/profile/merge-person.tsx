@@ -10,7 +10,7 @@ import { Failure, Muted } from "../ui/primitives";
 type Person = { id: string; display_name: string; generation: number };
 type Preview = { source: Person; target: Person; counts: Record<string, number>; conflicts: string[]; can_merge: boolean };
 const labels: Record<string, string> = { accounts: "来源账号", fields: "当前字段", confirmed_faces: "已确认人脸", suggested_faces: "人脸建议", media_links: "媒体关联", dates: "重要日期" };
-const conflicts: Record<string, string> = { manual_fields: "人工字段", birthday: "生日", face_decisions: "人脸确认与拒绝", summary: "人工简介", structured_fields: "结构化经历", link_decisions: "账号关联决定", relationship_values: "关系备注或时间" };
+const conflicts: Record<string, string> = { group_memberships: "群成员身份或入退群时间", reconnect_decisions: "稍后联系决定", suggestion_decisions: "资料建议决定", manual_fields: "人工字段", birthday: "生日", face_decisions: "人脸确认与拒绝", summary: "人工简介", structured_fields: "结构化经历", link_decisions: "账号关联决定", relationship_values: "关系备注或时间" };
 
 export function MergePerson({ sourceId, onClose, onMerged }: { sourceId: string; onClose: () => void; onMerged: (id: string) => void }) {
   const [query, setQuery] = useState("");

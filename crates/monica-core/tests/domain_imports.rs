@@ -1408,3 +1408,68 @@ async fn avatar_history_tracks_bytes_and_preserves_manual_choice(pool: PgPool) {
         0
     );
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn proven_legacy_avatar_history_and_current_slot_override_aliases(pool: PgPool) {
+    let person = profile(&pool, "Legacy avatar").await;
+    let account = Uuid::new_v4();
+    let old = Uuid::new_v4();
+    let new = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'wechat','legacy-avatar','person','Legacy')").bind(account).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.source_account_links(account_id,profile_id) VALUES($1,$2)")
+        .bind(account)
+        .bind(person)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (id, key, url, at) in [
+        (
+            old,
+            'd',
+            "https://example.invalid/old",
+            "2026-10-01T12:00:00Z",
+        ),
+        (
+            new,
+            'e',
+            "https://example.invalid/new",
+            "2026-10-20T12:00:00Z",
+        ),
+    ] {
+        sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,source_type,source_record_id,verified_at) VALUES($1,$2,'image/jpeg',1,'synthetic','wechat',$3,now())").bind(id).bind(key.to_string().repeat(64)).bind(url).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('source_account',$1,$2,'wechat_avatar')").bind(account).bind(id).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,source_account_id,field_key,value,content_hash,source_type,operation,observed_at) VALUES(gen_random_uuid(),$1,$2,'wechat.avatar_url',$3,'synthetic','wechat','import',$4::text::timestamptz)").bind(person).bind(account).bind(json!(url)).bind(at).execute(&pool).await.unwrap();
+    }
+    sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES('profile',$1,$2,'wechat_avatar')").bind(person).bind(old).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE crm.profiles SET avatar_media_id=$2 WHERE id=$1")
+        .bind(person)
+        .bind(old)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Legacy person link is newer than the source observation, but not current.
+    sqlx::query("INSERT INTO crm.media_slots(entity_type,entity_id,role,media_id,source_observed_at) VALUES('source_account',$1,'wechat_avatar_small',$2,'2026-10-20')").bind(account).bind(new).execute(&pool).await.unwrap();
+    let selected:Vec<Uuid>=sqlx::query_scalar("SELECT media_id FROM crm.profile_source_media WHERE profile_id=$1 AND role='wechat_avatar'").bind(person).fetch_all(&pool).await.unwrap();
+    assert_eq!(selected, vec![new]);
+    linking::refresh_account(&pool, account).await.unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, Option<Uuid>>(
+            "SELECT avatar_media_id FROM crm.profiles WHERE id=$1"
+        )
+        .bind(person)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        Some(new)
+    );
+    sqlx::query("SELECT crm.backfill_avatar_observations()")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("SELECT crm.backfill_avatar_observations()")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let changes:Vec<(Option<Uuid>,Uuid)>=sqlx::query_as("SELECT previous_media_id,media_id FROM crm.avatar_observations WHERE account_id=$1 AND revision_id IS NOT NULL ORDER BY observed_at").bind(account).fetch_all(&pool).await.unwrap();
+    assert_eq!(changes, vec![(None, old), (Some(old), new)]);
+}

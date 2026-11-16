@@ -39,3 +39,12 @@ CREATE FUNCTION crm.profile_aliases(requested uuid) RETURNS SETOF uuid LANGUAGE 
  WHERE cardinality(a.seen)<32 AND NOT r.old_profile_id=ANY(a.seen)) SELECT id FROM aliases
 $$;
 CREATE INDEX profile_redirect_target ON crm.profile_redirects(new_profile_id,old_profile_id);
+
+CREATE TRIGGER canonical_person BEFORE INSERT OR UPDATE ON crm.field_current FOR EACH ROW EXECUTE FUNCTION crm.normalize_profile_reference('profile_id');
+CREATE TRIGGER canonical_person BEFORE INSERT OR UPDATE ON crm.notebook_structured_current FOR EACH ROW EXECUTE FUNCTION crm.normalize_profile_reference('profile_id');
+CREATE TRIGGER canonical_person BEFORE INSERT OR UPDATE ON crm.notebook_objects FOR EACH ROW EXECUTE FUNCTION crm.normalize_profile_reference('profile_id');
+CREATE TRIGGER canonical_person BEFORE INSERT OR UPDATE ON crm.timeline_events FOR EACH ROW EXECUTE FUNCTION crm.normalize_profile_reference('profile_id');
+CREATE TRIGGER canonical_person BEFORE INSERT OR UPDATE ON crm.conversations FOR EACH ROW EXECUTE FUNCTION crm.normalize_profile_reference('profile_id');
+CREATE TRIGGER canonical_person BEFORE INSERT OR UPDATE ON crm.contact_events FOR EACH ROW EXECUTE FUNCTION crm.normalize_profile_reference('profile_id');
+CREATE TRIGGER canonical_person BEFORE INSERT OR UPDATE ON crm.identities FOR EACH ROW EXECUTE FUNCTION crm.normalize_profile_reference('profile_id');
+CREATE TRIGGER canonical_person BEFORE INSERT OR UPDATE ON crm.connection_import_bindings FOR EACH ROW EXECUTE FUNCTION crm.normalize_profile_reference('profile_id','sender_profile_id');

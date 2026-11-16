@@ -43,6 +43,18 @@ pub async fn preview(
     let mut conflicts = Vec::<String>::new();
     for (name, sql) in [
         (
+            "group_memberships",
+            "SELECT EXISTS(SELECT 1 FROM crm.group_memberships a JOIN crm.group_memberships b ON b.group_profile_id=a.group_profile_id AND b.person_profile_id=$2 WHERE a.person_profile_id=$1 AND (a.role,a.joined_at,a.left_at) IS DISTINCT FROM (b.role,b.joined_at,b.left_at))",
+        ),
+        (
+            "reconnect_decisions",
+            "SELECT EXISTS(SELECT 1 FROM crm.ai_reconnect_decisions a JOIN crm.ai_reconnect_decisions b ON b.profile_id=$2 WHERE a.profile_id=$1 AND (a.action,a.until_at) IS DISTINCT FROM (b.action,b.until_at))",
+        ),
+        (
+            "suggestion_decisions",
+            "SELECT EXISTS(SELECT 1 FROM crm.profile_suggestion_decisions a JOIN crm.profile_suggestion_decisions b ON b.profile_id=$2 AND b.fingerprint=a.fingerprint WHERE a.profile_id=$1 AND (a.kind,a.decision,a.applied) IS DISTINCT FROM (b.kind,b.decision,b.applied))",
+        ),
+        (
             "structured_fields",
             "SELECT EXISTS(SELECT 1 FROM crm.notebook_structured_current a JOIN crm.notebook_structured_current b ON b.profile_id=$2 AND b.fact_type=a.fact_type AND b.fact_key=a.fact_key JOIN crm.source_structured_revisions ar ON ar.id=a.revision_id JOIN crm.source_structured_revisions br ON br.id=b.revision_id WHERE a.profile_id=$1 AND ar.value IS DISTINCT FROM br.value)",
         ),
@@ -52,11 +64,11 @@ pub async fn preview(
         ),
         (
             "relationship_values",
-            "SELECT EXISTS(SELECT 1 FROM crm.relationship_edges a JOIN crm.relationship_edges b ON b.id<>a.id AND b.from_profile_id=CASE WHEN a.from_profile_id=$1 THEN $2 ELSE a.from_profile_id END AND b.to_profile_id=CASE WHEN a.to_profile_id=$1 THEN $2 ELSE a.to_profile_id END AND b.relationship_type=a.relationship_type WHERE (a.from_profile_id=$1 OR a.to_profile_id=$1) AND a.evidence_kind='relationship' AND b.evidence_kind='relationship' AND (a.note,a.valid_from,a.valid_to) IS DISTINCT FROM (b.note,b.valid_from,b.valid_to))",
+            "SELECT EXISTS(SELECT 1 FROM crm.relationship_edges a JOIN crm.relationship_edges b ON b.id<>a.id AND b.from_profile_id=CASE WHEN a.from_profile_id=$1 THEN $2 ELSE a.from_profile_id END AND b.to_profile_id=CASE WHEN a.to_profile_id=$1 THEN $2 ELSE a.to_profile_id END AND b.relationship_type=a.relationship_type WHERE (a.from_profile_id=$1 OR a.to_profile_id=$1) AND a.evidence_kind='relationship' AND NOT a.legacy_source_owned AND NOT EXISTS(SELECT 1 FROM crm.legacy_relationship_owners o WHERE o.edge_id=a.id) AND b.evidence_kind='relationship' AND NOT b.legacy_source_owned AND NOT EXISTS(SELECT 1 FROM crm.legacy_relationship_owners o WHERE o.edge_id=b.id) AND (a.note,a.valid_from,a.valid_to) IS DISTINCT FROM (b.note,b.valid_from,b.valid_to))",
         ),
         (
             "manual_fields",
-            "SELECT EXISTS(SELECT 1 FROM crm.field_current a JOIN crm.field_revisions ar ON ar.id=a.revision_id JOIN crm.field_current b ON b.profile_id=$2 AND b.field_key=a.field_key JOIN crm.field_revisions br ON br.id=b.revision_id WHERE a.profile_id=$1 AND a.field_key<>'monica.name' AND ar.source_type IN ('manual','monica') AND br.source_type IN ('manual','monica') AND ar.value IS DISTINCT FROM br.value)",
+            "SELECT EXISTS(SELECT 1 FROM crm.field_current a JOIN crm.field_revisions ar ON ar.id=a.revision_id JOIN crm.field_current b ON b.profile_id=$2 AND b.field_key=a.field_key JOIN crm.field_revisions br ON br.id=b.revision_id WHERE a.profile_id=$1 AND a.field_key NOT IN ('monica.name','display_name') AND ar.source_type IN ('manual','monica') AND br.source_type IN ('manual','monica') AND ar.value IS DISTINCT FROM br.value)",
         ),
         (
             "birthday",
@@ -155,6 +167,8 @@ pub async fn apply(
         ("tag_membership_removals", "profile_id=$1"),
         ("group_memberships", "person_profile_id=$1"),
         ("person_identifiers", "profile_id=$1"),
+        ("ai_reconnect_decisions", "profile_id=$1"),
+        ("profile_suggestion_decisions", "profile_id=$1"),
         ("platform_link_decisions", "profile_id=$1"),
         (
             "faces",
@@ -193,10 +207,12 @@ pub async fn apply(
         .await?;
     }
     // Keep source revisions immutable. Current pointers may refer to their IDs.
-    sqlx::query("INSERT INTO crm.field_current SELECT $2,field_key,revision_id FROM crm.field_current WHERE profile_id=$1 ON CONFLICT(profile_id,field_key) DO UPDATE SET revision_id=excluded.revision_id WHERE field_current.field_key<>'monica.name' AND EXISTS(SELECT 1 FROM crm.field_revisions a JOIN crm.field_revisions b ON b.id=field_current.revision_id WHERE a.id=excluded.revision_id AND a.source_type IN ('manual','monica') AND b.source_type NOT IN ('manual','monica'))").bind(source).bind(target).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO crm.field_current SELECT $2,field_key,revision_id FROM crm.field_current WHERE profile_id=$1 AND field_key NOT IN ('monica.name','display_name') ON CONFLICT(profile_id,field_key) DO UPDATE SET revision_id=excluded.revision_id WHERE field_current.field_key NOT IN ('monica.name','display_name') AND EXISTS(SELECT 1 FROM crm.field_revisions a JOIN crm.field_revisions b ON b.id=field_current.revision_id WHERE a.id=excluded.revision_id AND a.source_type IN ('manual','monica') AND b.source_type NOT IN ('manual','monica'))").bind(source).bind(target).execute(&mut *tx).await?;
     // PK duplicates with identical membership meaning collapse. Original values
     // remain in the immutable merge receipt, and revision/audit tables are untouched.
     for sql in [
+        "INSERT INTO crm.ai_reconnect_decisions SELECT $2,action,until_at,created_at FROM crm.ai_reconnect_decisions WHERE profile_id=$1 ON CONFLICT DO NOTHING",
+        "INSERT INTO crm.profile_suggestion_decisions SELECT $2,fingerprint,kind,decision,applied,created_at FROM crm.profile_suggestion_decisions WHERE profile_id=$1 ON CONFLICT DO NOTHING",
         "INSERT INTO crm.notebook_structured_current SELECT $2,fact_type,fact_key,revision_id FROM crm.notebook_structured_current WHERE profile_id=$1 ON CONFLICT DO NOTHING",
         "INSERT INTO crm.platform_link_decisions SELECT account_id,$2,status,evidence,actor_user_id,updated_at FROM crm.platform_link_decisions WHERE profile_id=$1 ON CONFLICT DO NOTHING",
         "INSERT INTO crm.tag_memberships SELECT tag_id,$2,source_type FROM crm.tag_memberships WHERE profile_id=$1 ON CONFLICT DO NOTHING",
@@ -214,6 +230,8 @@ pub async fn apply(
             .await?;
     }
     for table in [
+        "ai_reconnect_decisions",
+        "profile_suggestion_decisions",
         "field_current",
         "notebook_structured_current",
         "platform_link_decisions",
@@ -236,6 +254,8 @@ pub async fn apply(
     // Same birthdays/dates deduplicate; any different birthday was rejected above.
     sqlx::query("DELETE FROM crm.profile_dates a USING crm.profile_dates b WHERE a.profile_id=$1 AND b.profile_id=$2 AND a.kind=b.kind AND (a.kind='birthday' OR (coalesce(a.label,''),a.date_precision,coalesce(a.year,0),coalesce(a.month,0),coalesce(a.day,0))=(coalesce(b.label,''),b.date_precision,coalesce(b.year,0),coalesce(b.month,0),coalesce(b.day,0)))").bind(source).bind(target).execute(&mut *tx).await?;
     for (table, column) in [
+        ("connection_import_bindings", "profile_id"),
+        ("connection_import_bindings", "sender_profile_id"),
         ("notebook_objects", "profile_id"),
         ("identities", "profile_id"),
         ("timeline_events", "profile_id"),
@@ -265,11 +285,11 @@ pub async fn apply(
         .bind(source)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("UPDATE crm.relationship_edges SET evidence_kind='merged_self' WHERE evidence_kind='relationship' AND ((from_profile_id=$1 AND to_profile_id=$2) OR (from_profile_id=$2 AND to_profile_id=$1))")
+    sqlx::query("UPDATE crm.relationship_edges SET evidence_kind='merged_self' WHERE NOT legacy_source_owned AND NOT EXISTS(SELECT 1 FROM crm.legacy_relationship_owners o WHERE o.edge_id=relationship_edges.id) AND evidence_kind='relationship' AND ((from_profile_id=$1 AND to_profile_id=$2) OR (from_profile_id=$2 AND to_profile_id=$1))")
         .bind(source).bind(target).execute(&mut *tx).await?;
-    sqlx::query("UPDATE crm.relationship_edges a SET evidence_kind='merged_duplicate' FROM crm.relationship_edges b WHERE a.evidence_kind='relationship' AND b.evidence_kind='relationship' AND a.id<>b.id AND (a.from_profile_id=$1 OR a.to_profile_id=$1) AND b.from_profile_id=CASE WHEN a.from_profile_id=$1 THEN $2 ELSE a.from_profile_id END AND b.to_profile_id=CASE WHEN a.to_profile_id=$1 THEN $2 ELSE a.to_profile_id END AND a.relationship_type=b.relationship_type")
+    sqlx::query("UPDATE crm.relationship_edges a SET evidence_kind='merged_duplicate' FROM crm.relationship_edges b WHERE a.evidence_kind='relationship' AND NOT a.legacy_source_owned AND NOT EXISTS(SELECT 1 FROM crm.legacy_relationship_owners o WHERE o.edge_id=a.id) AND b.evidence_kind='relationship' AND NOT b.legacy_source_owned AND NOT EXISTS(SELECT 1 FROM crm.legacy_relationship_owners o WHERE o.edge_id=b.id) AND a.id<>b.id AND (a.from_profile_id=$1 OR a.to_profile_id=$1) AND b.from_profile_id=CASE WHEN a.from_profile_id=$1 THEN $2 ELSE a.from_profile_id END AND b.to_profile_id=CASE WHEN a.to_profile_id=$1 THEN $2 ELSE a.to_profile_id END AND a.relationship_type=b.relationship_type")
         .bind(source).bind(target).execute(&mut *tx).await?;
-    sqlx::query("UPDATE crm.relationship_edges SET from_profile_id=CASE WHEN from_profile_id=$1 THEN $2 ELSE from_profile_id END,to_profile_id=CASE WHEN to_profile_id=$1 THEN $2 ELSE to_profile_id END WHERE evidence_kind='relationship' AND (from_profile_id=$1 OR to_profile_id=$1)")
+    sqlx::query("UPDATE crm.relationship_edges SET from_profile_id=CASE WHEN from_profile_id=$1 THEN $2 ELSE from_profile_id END,to_profile_id=CASE WHEN to_profile_id=$1 THEN $2 ELSE to_profile_id END WHERE NOT legacy_source_owned AND NOT EXISTS(SELECT 1 FROM crm.legacy_relationship_owners o WHERE o.edge_id=relationship_edges.id) AND evidence_kind='relationship' AND (from_profile_id=$1 OR to_profile_id=$1)")
         .bind(source).bind(target).execute(&mut *tx).await?;
     // Preserve per-source relationship decisions and immutable revisions; the
     // existing presented view retains account ownership and hides collapsed edges.

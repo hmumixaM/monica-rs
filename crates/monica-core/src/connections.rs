@@ -320,7 +320,7 @@ pub async fn pending_bounded(
     max_bytes: i64,
 ) -> Result<Vec<Revision>> {
     let s = provider.schema();
-    let rows=sqlx::query(&format!("WITH candidates AS MATERIALIZED(SELECT o.sequence,r.external_id,r.revision,r.content_hash,r.observed_at,p.byte_length FROM {s}.connection_outbox o JOIN {s}.connection_revision_refs r USING(connection_id,external_id,revision) JOIN {s}.connection_payloads p USING(content_hash) WHERE o.connection_id=$1 AND o.delivered_at IS NULL ORDER BY o.sequence LIMIT $2),sized AS MATERIALIZED(SELECT *,sum(byte_length) OVER(ORDER BY sequence) total,row_number() OVER(ORDER BY sequence) position FROM candidates),chosen AS MATERIALIZED(SELECT * FROM sized WHERE total<=$3 OR position=1) SELECT c.*,c.observed_at::text observed,p.payload,to_jsonb(b) binding FROM chosen c JOIN {s}.connection_payloads p USING(content_hash) LEFT JOIN crm.connection_import_bindings b ON b.connection_id=$1 AND b.external_id=c.external_id AND b.revision=c.revision ORDER BY c.sequence")).bind(cid).bind(limit.clamp(1,1000)).bind(max_bytes.max(1)).fetch_all(&mut **tx).await?;
+    let rows=sqlx::query(&format!("WITH candidates AS MATERIALIZED(SELECT o.sequence,r.external_id,r.revision,r.content_hash,r.observed_at,p.byte_length FROM {s}.connection_outbox o JOIN {s}.connection_revision_refs r USING(connection_id,external_id,revision) JOIN {s}.connection_payloads p USING(content_hash) WHERE o.connection_id=$1 AND o.delivered_at IS NULL ORDER BY o.sequence LIMIT $2),sized AS MATERIALIZED(SELECT *,sum(byte_length) OVER(ORDER BY sequence) total,row_number() OVER(ORDER BY sequence) position FROM candidates),chosen AS MATERIALIZED(SELECT * FROM sized WHERE total<=$3 OR position=1) SELECT c.*,c.observed_at::text observed,p.payload,CASE WHEN b.connection_id IS NULL THEN NULL ELSE to_jsonb(b)||jsonb_build_object('profile_id',crm.canonical_profile(b.profile_id),'sender_profile_id',crm.canonical_profile(b.sender_profile_id)) END binding FROM chosen c JOIN {s}.connection_payloads p USING(content_hash) LEFT JOIN crm.connection_import_bindings b ON b.connection_id=$1 AND b.external_id=c.external_id AND b.revision=c.revision ORDER BY c.sequence")).bind(cid).bind(limit.clamp(1,1000)).bind(max_bytes.max(1)).fetch_all(&mut **tx).await?;
     Ok(rows
         .into_iter()
         .map(|r| Revision {
@@ -971,7 +971,7 @@ pub async fn relink_pending(pool: &PgPool, limit: i64) -> Result<usize> {
             continue;
         }
         let provider = Provider::parse(provider)?;
-        let r=sqlx::query(&format!("SELECT r.*,r.updated_at::text observed,to_jsonb(b) binding FROM {}.connection_records r LEFT JOIN crm.connection_import_bindings b USING(connection_id,external_id,revision) WHERE r.connection_id=$1 AND r.external_id=$2",provider.schema())).bind(cid).bind(external).fetch_optional(&mut *tx).await?;
+        let r=sqlx::query(&format!("SELECT r.*,r.updated_at::text observed,CASE WHEN b.connection_id IS NULL THEN NULL ELSE to_jsonb(b)||jsonb_build_object('profile_id',crm.canonical_profile(b.profile_id),'sender_profile_id',crm.canonical_profile(b.sender_profile_id)) END binding FROM {}.connection_records r LEFT JOIN crm.connection_import_bindings b USING(connection_id,external_id,revision) WHERE r.connection_id=$1 AND r.external_id=$2",provider.schema())).bind(cid).bind(external).fetch_optional(&mut *tx).await?;
         if let Some(r) = r {
             project_revision(
                 &mut tx,

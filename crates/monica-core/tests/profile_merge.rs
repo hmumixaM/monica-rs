@@ -162,3 +162,190 @@ async fn merge_rejects_manual_conflicts_and_changed_versions_without_partial_wri
             == true
     );
 }
+
+async fn import_notebook(pool: &PgPool, stream: &str, record: serde_json::Value) {
+    use monica_core::{identity, imports};
+    let batch:imports::Batch=serde_json::from_value(serde_json::json!({"source":"monica","stream":stream,"batch_id":Uuid::new_v4(),"idempotency_key":Uuid::new_v4(),"observed_at":"2026-11-15T12:00:00Z","records":[record]})).unwrap();
+    let hash = identity::observation_hash(&serde_json::to_value(&batch).unwrap());
+    let mut tx = pool.begin().await.unwrap();
+    let id = imports::receive(&mut tx, &batch, &hash).await.unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(
+        imports::resume(pool, id).await.unwrap()["status"],
+        "complete"
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn merged_identity_survives_changed_imports_names_and_manual_suppression(pool: PgPool) {
+    use serde_json::json;
+    let source = person(&pool).await;
+    let target = person(&pool).await;
+    for (id, name) in [(source, "Earlier name"), (target, "Chosen name")] {
+        let revision = Uuid::new_v4();
+        sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,field_key,value,content_hash,source_type,operation) VALUES($1,$2,'display_name',$3,repeat('c',64),'manual','edit')").bind(revision).bind(id).bind(json!(name)).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.field_current VALUES($1,'display_name',$2)")
+            .bind(id)
+            .bind(revision)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE crm.profiles SET display_name=$2 WHERE id=$1")
+            .bind(id)
+            .bind(name)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    import_notebook(&pool,"profiles",json!({"external_id":"stable-notebook","profile_id":source,"content":{"fields":{"monica.note":"before"}}})).await;
+    sqlx::query("INSERT INTO crm.ai_reconnect_decisions(profile_id,action,until_at) VALUES($1,'snooze',now()+interval '30 days')").bind(source).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.profile_suggestion_decisions(profile_id,fingerprint,kind,decision) VALUES($1,'synthetic-fingerprint','job','ignored')").bind(source).execute(&pool).await.unwrap();
+    let input = request(&pool, source, target).await;
+    profile_merge::apply(&pool, source, &input, None)
+        .await
+        .unwrap();
+    import_notebook(&pool,"profiles",json!({"external_id":"stable-notebook","profile_id":source,"content":{"fields":{"monica.note":"after"}}})).await;
+    import_notebook(&pool,"messages",json!({"external_id":"after-merge-message","profile_id":source,"sender_profile_id":source,"occurred_at":"2026-11-15T13:00:00Z","content":{"body":"New message","conversation_id":"stable-thread"}})).await;
+    let note:serde_json::Value=sqlx::query_scalar("SELECT r.value FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1 AND c.field_key='monica.note'").bind(target).fetch_one(&pool).await.unwrap();
+    assert_eq!(note, "after");
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM crm.field_current WHERE profile_id=$1")
+            .bind(source)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT display_name FROM crm.profiles WHERE id=$1")
+            .bind(target)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "Chosen name"
+    );
+    let message:(Uuid,Uuid,String)=sqlx::query_as("SELECT c.profile_id,m.sender_profile_id,m.direction FROM crm.message_search m JOIN crm.conversations c ON c.id=m.conversation_id").fetch_one(&pool).await.unwrap();
+    assert_eq!(message, (target, target, "received".into()));
+    assert!(sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM crm.ai_reconnect_decisions WHERE profile_id=$1 AND until_at>now()) AND EXISTS(SELECT 1 FROM crm.profile_suggestion_decisions WHERE profile_id=$1 AND fingerprint='synthetic-fingerprint' AND decision='ignored')").bind(target).fetch_one(&pool).await.unwrap());
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM crm.ai_jobs")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn merge_blocks_different_manual_group_and_reconnect_decisions(pool: PgPool) {
+    let source = person(&pool).await;
+    let target = person(&pool).await;
+    let group = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'group','Synthetic group')").bind(group).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.group_memberships(group_profile_id,person_profile_id,role,left_at) VALUES($1,$2,'owner',NULL),($1,$3,'member','2020-01-01')").bind(group).bind(source).bind(target).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.ai_reconnect_decisions(profile_id,action) VALUES($1,'dismiss'),($2,'contacted')").bind(source).bind(target).execute(&pool).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let preview = profile_merge::preview(&mut tx, source, target)
+        .await
+        .unwrap();
+    tx.rollback().await.unwrap();
+    assert!(
+        preview["conflicts"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("group_memberships"))
+    );
+    assert!(
+        preview["conflicts"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("reconnect_decisions"))
+    );
+    let input = request(&pool, source, target).await;
+    assert!(
+        profile_merge::apply(&pool, source, &input, None)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM crm.group_memberships")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        2
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM crm.profile_redirects")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn source_relationship_reappears_after_account_correction_following_merge(pool: PgPool) {
+    let source = person(&pool).await;
+    let target = person(&pool).await;
+    let corrected = person(&pool).await;
+    let a = Uuid::new_v4();
+    let b = Uuid::new_v4();
+    let edge = Uuid::new_v4();
+    for (id, person) in [(a, source), (b, target)] {
+        sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'instagram',$1::text,'person','Synthetic')").bind(id).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.source_account_links(account_id,profile_id) VALUES($1,$2)")
+            .bind(id)
+            .bind(person)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    sqlx::query("INSERT INTO crm.relationship_edges(id,from_profile_id,to_profile_id,relationship_type,source_type,legacy_source_owned) VALUES($1,$2,$3,'friend','instagram',true)").bind(edge).bind(source).bind(target).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.legacy_relationship_owners VALUES($1,$2,$3)")
+        .bind(edge)
+        .bind(a)
+        .bind(b)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let input = request(&pool, source, target).await;
+    profile_merge::apply(&pool, source, &input, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM crm.presented_relationship_edges")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    linking::set_link(
+        &pool,
+        linking::LinkChange {
+            account_id: a,
+            expected_profile_id: Some(target),
+            profile_id: Some(corrected),
+        },
+        None,
+    )
+    .await
+    .unwrap();
+    let pair: (Uuid, Uuid) = sqlx::query_as(
+        "SELECT from_profile_id,to_profile_id FROM crm.presented_relationship_edges WHERE id=$1",
+    )
+    .bind(edge)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(pair, (corrected, target));
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT evidence_kind FROM crm.relationship_edges WHERE id=$1"
+        )
+        .bind(edge)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        "relationship"
+    );
+}
