@@ -85,7 +85,8 @@ def message_with_frozen_row(candidates,local_id,server_id,at,message_type):
         if type(value)is int:return value
         if isinstance(value,str)and re.fullmatch('-?[0-9]+',value):return int(value)
         raise ValueError('frozen message identity is not an integer')
-    expected=(integer(local_id),integer(server_id or 0),integer(at),integer(message_type))
+    def server(value):return 0 if value is None else integer(value)
+    expected=(integer(local_id),server(server_id),integer(at),integer(message_type))
     matched=set()
     for mid,original,projected in candidates:
         for raw in(original,projected):
@@ -93,7 +94,7 @@ def message_with_frozen_row(candidates,local_id,server_id,at,message_type):
             try:
                 values=[raw[k]for k in('local_id','server_id','create_time','local_type')]
                 if any(isinstance(v,bool)for v in values):continue
-                actual=(integer(values[0]),integer(values[1]or 0),integer(values[2]),integer(values[3])&0xffffffff)
+                actual=(integer(values[0]),server(values[1]),integer(values[2]),integer(values[3]))
             except(TypeError,ValueError):continue
             if actual==expected:matched.add(mid)
     if len(matched)!=1:raise ValueError('ambiguous message media association; frozen source evidence is not unique')

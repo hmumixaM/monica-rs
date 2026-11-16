@@ -53,5 +53,10 @@ class RecoveryLinkContract(unittest.TestCase):
         with self.assertRaises(ValueError):linker.message_with_frozen_row(candidates,115,2842852990818986645,1636266057,'3')
         with self.assertRaises(ValueError):linker.message_with_frozen_row([*candidates,('another-proven-message',source,None)],114,2842852990818986645,1636266057,'3')
         with self.assertRaises(ValueError):linker.message_with_frozen_row([('fractional',{**source,'local_id':114.5},None)],114,2842852990818986645,1636266057,'3')
+        for invalid in(0.0,'',[],{}):
+            with self.assertRaises(ValueError):linker.message_with_frozen_row([('invalid-server',{**source,'server_id':invalid},None)],114,0,1636266057,'3')
+        packed=(6<<32)|49
+        self.assertEqual(linker.message_with_frozen_row([('file-proof',{**source,'local_type':packed},None)],114,2842852990818986645,1636266057,str(packed)),'file-proof')
+        with self.assertRaises(ValueError):linker.message_with_frozen_row([('different-subtype',{**source,'local_type':(19<<32)|49},None)],114,2842852990818986645,1636266057,str(packed))
 
 if __name__=='__main__':unittest.main()
