@@ -68,7 +68,7 @@ fn dependencies(path: &str) -> (&'static [&'static str], bool) {
                 "profile",
                 "organization",
                 "tag",
-                "messages",
+                "weekly-statistics",
                 "contacts",
                 "interactions",
                 "posts",
@@ -91,7 +91,13 @@ fn dependencies(path: &str) -> (&'static [&'static str], bool) {
             true,
         ),
         "/api/v1/insights/calendar" | "/api/v1/insights/calendar/day" => (
-            &["profile", "calendar", "contacts", "messages", "media"],
+            &[
+                "profile",
+                "calendar",
+                "contacts",
+                "weekly-statistics",
+                "media",
+            ],
             true,
         ),
         _ if path.ends_with("/locations") => (&["profile", "posts"], false),
@@ -386,6 +392,10 @@ mod tests {
             value(home(&router, true).await).await["key_numbers"]["messages_30d"],
             12
         );
+        sqlx::query("UPDATE crm.ai_settings SET enabled=true")
+            .execute(&pool)
+            .await
+            .unwrap();
         // A cold HTTP response must still read persisted statistics, even when
         // message-history and live counter scans cannot proceed.
         let mut locked = pool.begin().await.unwrap();
@@ -397,6 +407,10 @@ mod tests {
             "/api/v1/home?cold=1",
             "/api/v1/insights?dormant_days=90",
             "/api/v1/home/dates",
+            "/api/v1/reconnect",
+            "/api/v1/insights/calendar",
+            "/api/v1/insights/calendar/day?day=2026-11-16",
+            "/api/v1/insights/orbit",
         ] {
             let request = HttpRequest::builder()
                 .uri(path)
@@ -412,6 +426,43 @@ mod tests {
             assert_eq!(response.status(), StatusCode::OK, "{path}");
         }
         locked.rollback().await.unwrap();
+        let target = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Target')",
+        )
+        .bind(target)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE crm.conversations SET profile_id=$2 WHERE id=$1")
+            .bind(conversation)
+            .bind(target)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT direct_message_count FROM crm.weekly_contact_stats WHERE profile_id=$1"
+            )
+            .bind(target)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            12
+        );
+        assert_eq!(sqlx::query_scalar::<_, i64>("SELECT sum(sent+received)::bigint FROM crm.weekly_profile_months WHERE profile_id=$1")
+            .bind(target).fetch_one(&pool).await.unwrap(), 12);
+        sqlx::query("UPDATE crm.conversations SET profile_id=$2 WHERE id=$1")
+            .bind(conversation)
+            .bind(person)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE crm.profiles SET archived_at=now() WHERE id=$1")
+            .bind(target)
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query("UPDATE crm.profiles SET archived_at=now() WHERE id=$1")
             .bind(person)
             .execute(&pool)

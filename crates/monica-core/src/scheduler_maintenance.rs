@@ -11,7 +11,7 @@ pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
     let mut mode = shared.mode.subscribe();
     let mut housekeeping_at = Instant::now();
     let mut monitor_at = Instant::now() - Duration::from_secs(5);
-    let mut statistics_at = Instant::now() - Duration::from_secs(300);
+    let mut statistics_at = Instant::now() - Duration::from_secs(24 * 3600);
     loop {
         let current = *mode.borrow_and_update();
         match current {
@@ -43,9 +43,13 @@ pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
                 crate::import_monitor::refresh(&shared.background).await?;
                 monitor_at = Instant::now();
             }
-            if statistics_at.elapsed() >= Duration::from_secs(300) {
-                crate::pages::refresh_message_statistics(&shared.background).await?;
+            // The durable function rebuilds at most once per calendar week.
+            if statistics_at.elapsed() >= Duration::from_secs(24 * 3600) {
                 statistics_at = Instant::now();
+                if let Err(error) = crate::pages::refresh_message_statistics(&shared.background).await {
+                    shared.failed.fetch_add(1, Ordering::Relaxed);
+                    tracing::warn!(%error, "weekly statistics refresh failed; previous snapshot retained");
+                }
             }
             let importing: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.import_batches WHERE status IN ('received','running') AND retry_after<=clock_timestamp())")
                 .fetch_one(&shared.background).await?;

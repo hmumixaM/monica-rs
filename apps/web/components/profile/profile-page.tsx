@@ -78,6 +78,7 @@ export function ProfileView({ profileId }: { profileId: string }) {
   const groupCount = profile.linked_group_count ?? 0;
   const refresh = () => {
     void client.invalidateQueries({ queryKey: queryKeys.profile(profileId) });
+    void client.invalidateQueries({ queryKey: ["ai", "weekly-highlights"] });
     setEditing(false);
   };
   const select = (id: string) => {

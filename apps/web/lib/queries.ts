@@ -219,6 +219,7 @@ export function useServerSearch(q: string) {
 function invalidateProfile(client: ReturnType<typeof useQueryClient>, id: string) {
   void client.invalidateQueries({ queryKey: queryKeys.profile(id) });
   void client.invalidateQueries({ queryKey: queryKeys.home });
+  void client.invalidateQueries({ queryKey: ["ai", "weekly-highlights"] });
 }
 
 export function useUpdateProfileField(id: string) {

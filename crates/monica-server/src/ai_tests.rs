@@ -4,6 +4,74 @@ use axum::{
     http::Request,
 };
 use tower::ServiceExt;
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn home_highlights_read_latest_saved_week_and_respect_visibility(pool: sqlx::PgPool) {
+    let root = tempfile::tempdir().unwrap();
+    let state = AppState::new(
+        pool.clone(),
+        "synthetic-session-signing-key-1234567890",
+        "http://testserver".into(),
+        root.path().into(),
+    )
+    .await
+    .unwrap();
+    let actor = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.app_users(id,email,password_hash) VALUES($1,'highlights@example.invalid','unused')").bind(actor).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 day')").bind(Uuid::new_v4()).bind(actor).bind(monica_core::identity::bytes_hash(b"synthetic-ai-session")).execute(&pool).await.unwrap();
+    let app = crate::auth::routes(state);
+    let route = "/api/v1/ai/weekly-highlights";
+    let week = ai::previous_week_for(&pool).await.unwrap() - chrono::Duration::days(7);
+    sqlx::query("UPDATE crm.ai_settings SET enabled=true")
+        .execute(&pool)
+        .await
+        .unwrap();
+    for n in 0..10 {
+        let person = Uuid::new_v4();
+        let job = Uuid::new_v4();
+        let subject = format!("{person}:{week}");
+        sqlx::query(
+            "INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person',$2)",
+        )
+        .bind(person)
+        .bind(format!("Saved person {n}"))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO crm.ai_jobs(id,kind,subject,model,input_hash,input,source_versions,privacy,status) VALUES($1,'ai.person_week',$2,'fake','fixture','{}','{}','{\"policy\":{\"include_private_notes\":false,\"include_messages\":false}}','complete')").bind(job).bind(&subject).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.ai_outputs(kind,subject,output,model,input_hash,source_versions,job_id) VALUES('ai.person_week',$1,'{}','fake','fixture','{}',$2)").bind(subject).bind(job).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.person_weekly_updates(profile_id,week_start,output,input_hash) VALUES($1,$2,'{\"summary\":\"Saved summary\",\"sources\":[\"large evidence\"]}','fixture')").bind(person).bind(week).execute(&pool).await.unwrap();
+    }
+    let saved = response(&app, "GET", route, Value::Null, StatusCode::OK).await;
+    assert_eq!(saved["week_start"], week.to_string());
+    assert_eq!(saved["people"].as_array().unwrap().len(), 8);
+    assert!(
+        saved["people"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p["summary"] == "Saved summary" && p.get("sources").is_none())
+    );
+    assert!(saved.get("weeks").is_none());
+    sqlx::query("UPDATE crm.ai_settings SET include_messages=true")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let hidden = response(&app, "GET", route, Value::Null, StatusCode::OK).await;
+    assert!(hidden["people"].as_array().unwrap().is_empty());
+    assert!(hidden["week_start"].is_null());
+    let unauthenticated = app
+        .oneshot(
+            Request::builder()
+                .uri(route)
+                .header("host", "testserver")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(unauthenticated.status(), StatusCode::UNAUTHORIZED);
+}
 fn request(method: &str, path: &str, value: Value) -> Request<Body> {
     Request::builder()
         .method(method)

@@ -573,23 +573,25 @@ async fn weekly(
     ))
 }
 async fn highlights(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
-    let mut result = weekly(
-        State(s),
-        h,
-        Query(WeekQuery {
-            week: None,
-            after: None,
-            limit: Some(8),
-        }),
-    )
-    .await?
-    .0;
-    result
-        .as_object_mut()
-        .expect("weekly object")
-        .remove("weeks");
-    result.as_object_mut().unwrap().remove("total");
-    result.as_object_mut().unwrap().remove("next_cursor");
+    user(&s, &h).await?;
+    if !enabled(&s).await? {
+        return Ok(Json(json!({"enabled":false,"week_start":null,"people":[]})));
+    }
+    let requested = ai::previous_week_for(&s.pool).await.map_err(service)?;
+    // Home needs eight saved summaries, not the full weekly index, source
+    // evidence, population count and pagination contract of the archive page.
+    let result: Value = sqlx::query_scalar(r#"WITH chosen AS MATERIALIZED(
+ SELECT w.week_start FROM crm.person_weekly_updates w JOIN crm.profiles p ON p.id=w.profile_id
+ WHERE w.week_start<=$1 AND p.archived_at IS NULL AND p.profile_type='person'
+ AND EXISTS(SELECT 1 FROM crm.ai_visible_outputs o WHERE o.kind='ai.person_week' AND o.subject=w.profile_id::text||':'||w.week_start::text AND o.input_hash=w.input_hash)
+ ORDER BY w.week_start DESC,w.profile_id LIMIT 1),people AS(
+ SELECT p.id,p.display_name,p.avatar_media_id,w.week_start,w.output->>'summary' summary
+ FROM chosen c JOIN crm.person_weekly_updates w ON w.week_start=c.week_start JOIN crm.profiles p ON p.id=w.profile_id
+ WHERE p.archived_at IS NULL AND p.profile_type='person'
+ AND EXISTS(SELECT 1 FROM crm.ai_visible_outputs o WHERE o.kind='ai.person_week' AND o.subject=w.profile_id::text||':'||w.week_start::text AND o.input_hash=w.input_hash)
+ ORDER BY p.id LIMIT 8)
+ SELECT jsonb_build_object('enabled',true,'week_start',(SELECT week_start FROM chosen),'people',coalesce((SELECT jsonb_agg(jsonb_build_object('profile_id',id,'name',display_name,'avatar_media_id',avatar_media_id,'week_start',week_start,'summary',summary) ORDER BY id) FROM people),'[]'::jsonb))"#)
+        .bind(requested).fetch_one(&s.pool).await?;
     Ok(Json(result))
 }
 async fn reconnect(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
@@ -597,7 +599,7 @@ async fn reconnect(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value
     if !enabled(&s).await? {
         return Ok(Json(json!({"enabled":false,"people":[]})));
     }
-    let people:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'last_contact_at',c.last_contact_at,'suggestion',o.output) FROM crm.profiles p JOIN crm.page_contact_stats c ON c.profile_id=p.id LEFT JOIN crm.ai_visible_outputs o ON o.kind='ai.reconnect_one' AND o.subject=p.id::text WHERE p.archived_at IS NULL AND p.profile_type='person' AND c.last_contact_at<now()-interval '90 days' AND NOT EXISTS(SELECT 1 FROM crm.ai_reconnect_decisions d WHERE d.profile_id=p.id AND (d.until_at IS NULL OR d.until_at>now())) ORDER BY c.last_contact_at DESC,p.id LIMIT 12").fetch_all(&s.pool).await?;
+    let people:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'last_contact_at',c.last_contact_at,'suggestion',o.output) FROM crm.profiles p JOIN crm.weekly_contact_stats c ON c.profile_id=p.id LEFT JOIN crm.ai_visible_outputs o ON o.kind='ai.reconnect_one' AND o.subject=p.id::text WHERE p.archived_at IS NULL AND p.profile_type='person' AND c.last_contact_at<now()-interval '90 days' AND NOT EXISTS(SELECT 1 FROM crm.ai_reconnect_decisions d WHERE d.profile_id=p.id AND (d.until_at IS NULL OR d.until_at>now())) ORDER BY c.last_contact_at DESC,p.id LIMIT 12").fetch_all(&s.pool).await?;
     Ok(Json(json!({"enabled":true,"people":people})))
 }
 #[derive(Deserialize)]
