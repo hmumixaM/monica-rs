@@ -67,7 +67,7 @@ def frame(source, external, slot, cache_root=None, source_tid=None, destination=
         original = media.findtext('url') or media.findtext('thumb') or ''
         def cdn(value):
             host = urlsplit(value).hostname or ''
-            return host in ('mmsns.c2c.wechat.com', 'mmsns.hk.wechat.com', 'snsvideo.c2c.wechat.com', 'snsvideo.hk.wechat.com', 'qpic.cn', 'qlogo.cn') or host.endswith(('.qpic.cn', '.qlogo.cn', '.video.qq.com'))
+            return host in ('mmsns.c2c.wechat.com', 'mmsns.hk.wechat.com', 'snsvideo.c2c.wechat.com', 'snsvideo.hk.wechat.com', 'wxapp.tc.qq.com', 'vweixinthumb.tc.qq.com', 'qpic.cn', 'qlogo.cn') or host.endswith(('.qpic.cn', '.qlogo.cn', '.video.qq.com'))
         # Shared articles carry their webpage in <url> and the actual image in
         # <thumb>. Keep the source slot identity; fetch its real cover bytes.
         selected = thumb if thumbnail else url if url is not None and url.text and cdn(url.text) else thumb
