@@ -24,7 +24,7 @@ export type EventDetail = {
 /** What the model read off the post's images: one line for the post, and text and content per image. */
 export type MediaReading = {
   summary: string;
-  items: { index: number; kind: "photo" | "video"; category: string; text: string; description: string }[];
+  items: { index: number; media_id?: string; kind: "photo" | "video"; category?: string; text?: string; description?: string; status?: "complete" | "pending" | "unavailable" }[];
 };
 
 export const FEED_SOURCES: Record<string, string> = { all: "全部", wechat: "微信", instagram: "Instagram", linkedin: "LinkedIn", manual: "活动" };

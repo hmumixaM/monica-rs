@@ -8,10 +8,10 @@ from pathlib import Path
 import re
 
 
-def link_existing(db, media_root, event_id, role, source_url):
+def link_existing(db, media_root, event_id, role, source_url, media_kind="image"):
     """Reuse the unique verified file already bound to this exact URL."""
     from psycopg.types.json import Jsonb
-    assets=db.execute("SELECT DISTINCT a.id,a.sha256,a.byte_length FROM crm.media_provenance p JOIN crm.media_assets a ON a.id=p.media_id WHERE p.source_url=%s AND a.media_type LIKE 'image/%%'",(source_url,)).fetchall()
+    assets=db.execute("SELECT DISTINCT a.id,a.sha256,a.byte_length FROM crm.media_provenance p JOIN crm.media_assets a ON a.id=p.media_id WHERE p.source_url=%s AND a.media_type LIKE %s",(source_url,media_kind+'/%')).fetchall()
     if len(assets)!=1:return False
     mid,sha,size=assets[0]
     if not re.fullmatch('[0-9a-f]{64}',sha):raise ValueError('sns_asset_digest_invalid')
@@ -25,7 +25,7 @@ def link_existing(db, media_root, event_id, role, source_url):
     if digest.hexdigest()!=sha:raise ValueError('sns_cas_digest_mismatch')
     with db.transaction():
         row=db.execute("SELECT content,source_account_id FROM crm.timeline_events WHERE id=%s AND provider='wechat' FOR UPDATE",(event_id,)).fetchone()
-        if not row or not any(m.get('role')==role and m.get('source_url')==source_url for m in row[0].get('media',[])):
+        if not row or not any((m.get('role')==role and m.get('source_url')==source_url)or(m.get('role')+'-poster'==role and m.get('thumbnail_url')==source_url) for m in row[0].get('media',[])):
             raise ValueError('sns_source_revision_changed')
         if not db.execute("SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))",('media-slot:social_post:'+str(event_id)+':'+role,)).fetchone()[0]:
             raise BlockingIOError('sns_slot_busy')

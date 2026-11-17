@@ -223,6 +223,7 @@ async fn detail(
         } else {
             "social_story"
         },
+        &row["media"],
     )
     .await?;
     row["legacy_version_count"]=json!(sqlx::query_scalar::<_,i64>("SELECT (SELECT count(*) FROM crm.legacy_social_versions WHERE event_id IN(SELECT $1::uuid UNION SELECT alias_id FROM crm.timeline_event_aliases WHERE event_id=$1))+(SELECT count(*) FROM crm.legacy_chatlog_versions WHERE entity_type='post' AND entity_id IN(SELECT $1::uuid UNION SELECT alias_id FROM crm.timeline_event_aliases WHERE event_id=$1))").bind(id).fetch_one(&s.pool).await?);
@@ -534,52 +535,102 @@ async fn resolve_mentions(pool: &sqlx::PgPool, rows: &mut [Value]) -> Result<()>
     Ok(())
 }
 
-async fn reading(pool: &sqlx::PgPool, id: Uuid, kind: &str) -> Result<Value> {
-    let mut result:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('summary',summary,'items',items,'model',model,'generated_at',generated_at) FROM crm.media_readings WHERE entity_id=$1 AND entity_type=$2").bind(id).bind(kind).fetch_optional(pool).await?;
-    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('media_id',r.media_id,'text',r.text,'description',r.description,'category',r.category,'summary',r.summary,'model',r.model,'generated_at',r.generated_at) FROM crm.media_links l JOIN crm.image_ocr_readings r ON r.media_id=l.media_id WHERE l.entity_id=$1 AND l.entity_type=$2 AND (r.status='complete' OR r.generated_at IS NOT NULL) AND (coalesce(btrim(r.text),'')<>'' OR coalesce(btrim(r.description),'')<>'') ORDER BY l.role").bind(id).bind(kind).fetch_all(pool).await?;
-    // A separate query selects only the JSON column; all available OCR items are
-    // useful even while the higher-level event summary is still pending.
-    if rows.is_empty() {
-        return Ok(result.unwrap_or(Value::Null));
+async fn reading(pool: &sqlx::PgPool, id: Uuid, kind: &str, media: &Value) -> Result<Value> {
+    let media = media.as_array().map(Vec::as_slice).unwrap_or_default();
+    if media.is_empty() {
+        return Ok(Value::Null);
     }
-    let result=result.get_or_insert_with(||json!({"summary":"","items":[],"model":rows[0]["model"],"generated_at":rows[0]["generated_at"]}));
-    let mut summaries = Vec::new();
-    for row in rows {
-        let summary = row["summary"]
-            .as_str()
-            .filter(|s| !s.is_empty())
-            .or(row["description"].as_str())
-            .unwrap_or("");
-        if !summary.is_empty() && !summaries.contains(&summary.to_owned()) {
-            summaries.push(summary.to_owned());
-        }
-        let items = result["items"].as_array_mut().unwrap();
-        if let Some(item) = items
-            .iter_mut()
-            .find(|item| item["media_id"] == row["media_id"])
-        {
-            item["text"] = row["text"].clone();
-            if row["description"].as_str().is_some_and(|s| !s.is_empty()) {
-                item["description"] = row["description"].clone();
-                item["category"] = row["category"].clone();
+    let saved:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('summary',summary,'items',items,'model',model,'generated_at',generated_at) FROM crm.media_readings WHERE entity_id=$1 AND entity_type=$2").bind(id).bind(kind).fetch_optional(pool).await?;
+    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('media_id',r.media_id,'status',r.status,'text',r.text,'description',r.description,'category',r.category,'summary',r.summary,'model',r.model,'generated_at',r.generated_at) FROM crm.media_links l JOIN crm.image_ocr_readings r ON r.media_id=l.media_id WHERE l.entity_id=$1 AND l.entity_type=$2 AND (r.status='complete' OR r.generated_at IS NOT NULL) ORDER BY l.role").bind(id).bind(kind).fetch_all(pool).await?;
+    Ok(ordered_reading(media, saved.as_ref(), &rows))
+}
+
+fn ordered_reading(media: &[Value], saved: Option<&Value>, rows: &[Value]) -> Value {
+    let historical = saved
+        .and_then(|r| r["items"].as_array())
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let items = media
+        .iter()
+        .enumerate()
+        .map(|(index, image)| {
+            // Next stores media_id per image. New model results used id instead;
+            // both refer to the actual image UUID, never to the partial OCR rank.
+            let ocr = image["id"].as_str().and_then(|id| {
+                rows.iter().find(|r| {
+                    r["media_id"] == id
+                        || (image["thumbnail_id"].is_string()
+                            && r["media_id"] == image["thumbnail_id"])
+                })
+            });
+            let legacy = image["id"].as_str().and_then(|id| {
+                historical
+                    .iter()
+                    .find(|r| r["media_id"] == id || r["id"] == id)
+            });
+            let mut item = legacy.cloned().unwrap_or_else(|| json!({}));
+            if let Some(ocr) = ocr {
+                for key in ["description", "text", "category", "summary"] {
+                    if ocr[key].as_str().is_some_and(|value| !value.is_empty()) {
+                        item[key] = ocr[key].clone();
+                    }
+                }
+                item["status"] = ocr["status"].clone();
             }
-        } else {
-            items.push(json!({"index":items.len()+1,"media_id":row["media_id"],"kind":"photo","category":row["category"].as_str().filter(|s|!s.is_empty()).unwrap_or("文字识别"),"description":row["description"],"text":row["text"]}));
-        }
-    }
-    if result["summary"].as_str().is_none_or(|s| s.is_empty()) {
-        result["summary"] = json!(summaries.join("；").chars().take(60).collect::<String>());
-    }
-    result["items"]
-        .as_array_mut()
-        .unwrap()
-        .sort_by_key(|i| i["index"].as_u64().unwrap_or(0));
-    Ok(result.clone())
+            item["index"] = json!(index + 1);
+            item["media_id"] = image["id"].clone();
+            item["kind"] = json!(if image["media_type"]
+                .as_str()
+                .is_some_and(|s| s.contains("video"))
+            {
+                "video"
+            } else {
+                "photo"
+            });
+            item["status"] = json!(if image["ready"] == false {
+                "unavailable"
+            } else if item["status"] == "complete"
+                || item["description"].as_str().is_some_and(|s| !s.is_empty())
+                || item["text"].as_str().is_some_and(|s| !s.is_empty())
+            {
+                "complete"
+            } else {
+                "pending"
+            });
+            item
+        })
+        .collect::<Vec<_>>();
+    json!({"summary":saved.map(|r|r["summary"].clone()).unwrap_or(Value::Null),"items":items})
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn image_readings_follow_original_media_ids_even_with_partial_or_legacy_results() {
+        let media = vec![
+            json!({"id":"city","ready":true}),
+            json!({"id":"menu","ready":true}),
+            json!({"id":"tea","ready":true}),
+            json!({"ready":false}),
+        ];
+        let saved =
+            json!({"items":[{"index":1,"media_id":"menu","description":"旧 Next 菜单文字"}]});
+        let rows = vec![
+            json!({"media_id":"tea","description":"茶壶"}),
+            json!({"media_id":"city","description":"城市"}),
+        ];
+        let result = ordered_reading(&media, Some(&saved), &rows);
+        assert_eq!(result["items"][0]["description"], "城市");
+        assert_eq!(result["items"][1]["description"], "旧 Next 菜单文字");
+        assert_eq!(result["items"][2]["description"], "茶壶");
+        assert_eq!(result["items"][2]["index"], 3);
+        assert_eq!(result["items"][3]["status"], "unavailable");
+        let partial = ordered_reading(&media, None, &rows[..1]);
+        assert_eq!(partial["items"][0]["status"], "pending");
+        assert_eq!(partial["items"][2]["description"], "茶壶");
+        assert_eq!(partial["items"][2]["index"], 3);
+    }
     #[tokio::test]
     async fn availability_checks_real_cas_bytes_and_rechecks_after_removal() {
         let folder = tempfile::tempdir().unwrap();

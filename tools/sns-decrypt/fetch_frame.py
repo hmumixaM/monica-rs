@@ -21,7 +21,7 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def frame(source, external, slot, cache_root=None, source_tid=None):
+def frame(source, external, slot, cache_root=None, source_tid=None, destination=None, thumbnail=False, source_media_id=None, source_kind=None):
     source = Path(source)
     if source.resolve(strict=True) != source or not external.isdigit() or not 1 <= slot <= 100:
         raise ValueError('invalid source selection')
@@ -37,15 +37,40 @@ def frame(source, external, slot, cache_root=None, source_tid=None):
         obj = root if root.tag == 'TimelineObject' else root.find('TimelineObject')
         if obj is None or obj.findtext('id') != external:
             raise ValueError('source identity mismatch')
-        media = obj.findall('ContentObject/mediaList/media')[slot - 1]
+        regular = obj.findall('ContentObject/mediaList/media')
+        finder = obj.find('ContentObject/finderFeed')
+        finder_rows = finder.findall('mediaList/media') if finder is not None else []
+        if source_kind == 'wechat_channels':
+            if finder is None or finder.findtext('objectId') != source_media_id:
+                raise ValueError('source Channels identity mismatch')
+            original_cover = finder_rows[slot - 1]
+            media = ET.Element('media')
+            ET.SubElement(media, 'id').text = source_media_id
+            cover = original_cover.find('coverUrl')
+            if cover is None or not cover.text:
+                cover = original_cover.find('thumbUrl')
+            if cover is None or not cover.text:
+                raise ValueError('source Channels cover unavailable')
+            node = ET.SubElement(media, 'thumb', **cover.attrib)
+            node.text = cover.text
+        elif source_media_id is not None:
+            matches = [m for m in regular if m.findtext('id') == source_media_id]
+            if len(matches) == 1:
+                media = matches[0]
+            else:
+                media = regular[slot - len(finder_rows) - 1]
+                if media.findtext('id') != source_media_id:
+                    raise ValueError('source media identity mismatch')
+        else:
+            media = regular[slot - 1]
         url, thumb = media.find('url'), media.find('thumb')
         original = media.findtext('url') or media.findtext('thumb') or ''
         def cdn(value):
             host = urlsplit(value).hostname or ''
-            return host in ('mmsns.c2c.wechat.com', 'mmsns.hk.wechat.com', 'qpic.cn', 'qlogo.cn') or host.endswith(('.qpic.cn', '.qlogo.cn'))
+            return host in ('mmsns.c2c.wechat.com', 'mmsns.hk.wechat.com', 'snsvideo.c2c.wechat.com', 'snsvideo.hk.wechat.com', 'qpic.cn', 'qlogo.cn') or host.endswith(('.qpic.cn', '.qlogo.cn', '.video.qq.com'))
         # Shared articles carry their webpage in <url> and the actual image in
         # <thumb>. Keep the source slot identity; fetch its real cover bytes.
-        selected = url if url is not None and url.text and cdn(url.text) else thumb
+        selected = thumb if thumbnail else url if url is not None and url.text and cdn(url.text) else thumb
         fetch_url = selected.text if selected is not None else ''
         attrs = ({**(thumb.attrib if thumb is not None else {}), **url.attrib}
                  if selected is url and url is not None else
@@ -56,17 +81,22 @@ def frame(source, external, slot, cache_root=None, source_tid=None):
             enc = root.find('.//enc')
         if (not seed or seed == '0') and enc is not None:
             seed = enc.get('key', '')
-        if media.findtext('type') in ('6', '15'):
-            raise ValueError('video requires its own codec')
-        fetch = (fetch_url or '').replace('http://', 'https://', 1).replace('/150?', '/0?')
+        native_video = media.findtext('type') in ('6', '15')
+        video = native_video and not thumbnail
+        if video and destination is None:
+            raise ValueError('video requires a streaming destination')
+        if video and selected is not url:
+            raise ValueError('native video source unavailable')
+        fetch = (fetch_url or '') if native_video or source_kind == 'wechat_channels' else (fetch_url or '').replace('http://', 'https://', 1)
+        fetch = fetch.replace('/150?', '/0?')
         if fetch.endswith('/150'):
             fetch = fetch[:-4] + '/0'
         if token and 'token=' not in fetch:
             fetch += ('&' if '?' in fetch else '?') + 'token=' + quote_plus(token) + '&idx=1'
         parsed = urlsplit(fetch)
-        if (parsed.scheme != 'https' or not parsed.hostname or
+        if (parsed.scheme not in (('http', 'https') if native_video or source_kind == 'wechat_channels' else ('https',)) or not parsed.hostname or
                 not cdn(fetch) or
-                parsed.username or parsed.password or parsed.port not in (None, 443)):
+                parsed.username or parsed.password or parsed.port not in (None, 80 if parsed.scheme == 'http' else 443)):
             raise ValueError('source is outside WeChat media CDN')
         # Existing cache identity is exactly the pinned Chatlog URL|seed rule.
         cache = Path(cache_root) if cache_root is not None else source.parent.parent.parent / '.chatlog_sns_cache'
@@ -82,24 +112,36 @@ def frame(source, external, slot, cache_root=None, source_tid=None):
         candidate = next((path for url in cache_urls for key in cache_seeds
                           if (path := cache / (hashlib.md5((url + '|' + key).encode()).hexdigest() + '.bin')).is_file()
                           and not path.is_symlink()), None)
+        limit = 512 * 1024 * 1024 if video else 32 * 1024 * 1024
+        cached = candidate is not None
         if candidate is not None:
-            if candidate.stat().st_size > 32 * 1024 * 1024:
+            if candidate.stat().st_size > limit:
                 raise ValueError('cached object too large')
-            data = candidate.read_bytes()
-            cached = True
+            stream = candidate.open('rb')
         else:
             request = Request(fetch, headers={'User-Agent': 'MicroMessenger Client', 'Accept': '*/*'})
-            with build_opener(NoRedirect()).open(request, timeout=20) as response:
-                data = response.read(32 * 1024 * 1024 + 1)
-            cached = False
-        if not 0 < len(data) <= 32 * 1024 * 1024:
-            raise ValueError('invalid object size')
-        return dict(seed=seed, size=len(data), external_id=external, slot=slot,
-                    source_url=original.replace('http://', 'https://', 1),
+            stream = build_opener(NoRedirect()).open(request, timeout=20)
+        digest = hashlib.sha256()
+        total = 0
+        data = bytearray() if destination is None else None
+        with stream:
+            output = Path(destination).open('wb') if destination is not None else None
+            try:
+                for block in iter(lambda: stream.read(1024 * 1024), b''):
+                    total += len(block)
+                    if total > limit:raise ValueError('object too large')
+                    digest.update(block)
+                    if output is not None:output.write(block)
+                    else:data.extend(block)
+            finally:
+                if output is not None:output.close()
+        if total == 0:raise ValueError('empty media object')
+        return dict(seed=seed, size=total, external_id=external, slot=slot,
+                    source_url=(media.findtext('thumb') if thumbnail else original).replace('http://', 'https://', 1),
                     source_md5=url.attrib.get('md5') if url is not None else None,
                     source_media_id=media.findtext('id'),
                     raw_xml_sha256=hashlib.sha256(row[0].encode() if isinstance(row[0], str) else row[0]).hexdigest(),
-                    downloaded_sha256=hashlib.sha256(data).hexdigest(), cached=cached), data
+                    downloaded_sha256=digest.hexdigest(), cached=cached), bytes(data) if data is not None else None
 
 
 def main():

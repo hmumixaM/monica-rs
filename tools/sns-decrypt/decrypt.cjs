@@ -112,4 +112,5 @@ async function main() {
  }
  throw Error('image');
 }
-main().catch(()=>{process.stderr.write('sns_decode_failed\n');process.exit(1)});
+module.exports = { initWasm, getRawKeystream };
+if (require.main === module) main().catch(()=>{process.stderr.write('sns_decode_failed\n');process.exit(1)});

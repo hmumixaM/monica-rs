@@ -60,6 +60,76 @@ async fn person(pool: &PgPool) -> Uuid {
     sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Synthetic AI Contact')").bind(id).execute(pool).await.unwrap();
     id
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn post_media_requires_real_image_evidence_and_preserves_the_image_role(pool: PgPool) {
+    person(&pool).await;
+    let post = Uuid::new_v4();
+    let image = Uuid::new_v4();
+    let old_image = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,event_type,external_id,content,content_hash,version)VALUES($1,'wechat',$1,'post','no-photo','{\"text\":\"This caption is not image OCR\"}','fixture',1)").bind(post).execute(&pool).await.unwrap();
+    let error = ai::enqueue(&pool, "ai.post_media", &post.to_string())
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), "post has no image evidence");
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*)FROM crm.ai_jobs WHERE kind='ai.post_media'")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path)VALUES($1,repeat('a',64),'image/png',4,'unused-fixture')").bind(image).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role)VALUES('social_post',$1,$2,'media-3')").bind(post).bind(image).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.image_ocr_readings(media_id,status,description,text,model,generated_at)VALUES($1,'complete','Teapots','Menu words','fixture',now())").bind(image).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path)VALUES($1,repeat('b',64),'image/png',4,'unused-fixture')").bind(old_image).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role)VALUES('social_post',$1,$2,'media-1')").bind(post).bind(old_image).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.media_readings(entity_id,entity_type,status,items)VALUES($1,'social_post','complete',$2)").bind(post).bind(json!([{"index":1,"media_id":old_image,"description":"Saved Next city image"}])).execute(&pool).await.unwrap();
+    let job = ai::enqueue(&pool, "ai.post_media", &post.to_string())
+        .await
+        .unwrap();
+    let input: serde_json::Value = sqlx::query_scalar("SELECT input FROM crm.ai_jobs WHERE id=$1")
+        .bind(job)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(input["evidence"].as_array().unwrap().len(), 1);
+    assert_eq!(input["evidence"][0]["id"], image.to_string());
+    assert_eq!(input["evidence"][0]["role"], "media-3");
+    assert!(
+        ai::run_one(
+            &pool,
+            &FakeProvider {
+                output: json!({"summary":"两张图片", "items":[]})
+            }
+        )
+        .await
+        .unwrap()
+    );
+    let saved: serde_json::Value = sqlx::query_scalar(
+        "SELECT items FROM crm.media_readings WHERE entity_id=$1 AND entity_type='social_post'",
+    )
+    .bind(post)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(saved.as_array().unwrap().len(), 2);
+    assert!(
+        saved
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["media_id"] == old_image.to_string()
+                && item["description"] == "Saved Next city image")
+    );
+    assert!(
+        saved
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["media_id"] == image.to_string() && item["text"] == "Menu words")
+    );
+}
 #[sqlx::test(migrations = "../../migrations")]
 async fn input_dedupe_privacy_and_stale_output_fencing(pool: PgPool) {
     let id = person(&pool).await;

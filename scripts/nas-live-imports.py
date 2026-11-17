@@ -457,6 +457,14 @@ class Consumer:
                     if STOP:return
                     self.import_sns_event(source,post[0])
                 with self.journal:self.journal.execute("INSERT INTO consumer_state VALUES('sns-media-bootstrap-v1',?)",(self.args.since,))
+            if getattr(self.args,'sns_runtime',None) and not self.journal.execute("SELECT 1 FROM consumer_state WHERE key='sns-native-video-bootstrap-v1'").fetchone():
+                # One release catch-up for native videos and Channels posters
+                # acknowledged by the former photo-only pipeline.
+                posts=self.db.execute("SELECT e.id FROM crm.timeline_events e WHERE e.provider='wechat' AND e.event_type='post' AND e.occurred_at>=%s AND EXISTS(SELECT 1 FROM jsonb_array_elements(coalesce(e.content->'media','[]'))m WHERE m->>'media_type'='video') ORDER BY e.occurred_at,e.id",(self.args.since,)).fetchall()
+                for post in posts:
+                    if STOP:return
+                    self.import_sns_event(source,post[0])
+                with self.journal:self.journal.execute("INSERT INTO consumer_state VALUES('sns-native-video-bootstrap-v1',?)",(self.args.since,))
             manifest = dict(format=1,own_id=own,files=[],kind='continuous_business_pages',source='existing-chatlog-export')
             importer = self.legacy.Importer(self.db,manifest)
             importer.on_message_changed = self.changed_message_media
@@ -503,8 +511,8 @@ class Consumer:
     def import_sns_event(self, source, event_id):
         runtime=getattr(self.args,'sns_runtime',None)
         if runtime is None:
-            if self.db.execute("SELECT 1 FROM crm.timeline_events e CROSS JOIN LATERAL jsonb_array_elements(coalesce(e.content->'media','[]'))m WHERE e.id=%s AND m->>'media_type'='image' LIMIT 1",(event_id,)).fetchone():
-                raise ValueError('SNS image runtime must be configured')
+            if self.db.execute("SELECT 1 FROM crm.timeline_events e CROSS JOIN LATERAL jsonb_array_elements(coalesce(e.content->'media','[]'))m WHERE e.id=%s AND m->>'media_type' IN('image','video') LIMIT 1",(event_id,)).fetchone():
+                raise ValueError('SNS media runtime must be configured')
             return
         images=module('sns_event_images','sns-media-import.py')
         result=images.import_event(self.db,source/'sns/sns.db',self.args.media,self.state/'sns-media',runtime,getattr(self.args,'sns_cache',None),event_id)

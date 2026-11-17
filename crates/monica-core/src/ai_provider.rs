@@ -101,10 +101,10 @@ impl OpenAiProvider {
             }
             "ai.community" => "Return label (2-40 characters) and reason.",
             "ai.image_ocr" => {
-                "Read the provided image. Return summary, description, category, text. Preserve visible text exactly; do not guess identity."
+                "只识别当前提供的这一张图片。返回 summary、description、category、text。summary 用简短中文，最多40字；description 用中文描述可见内容，最多25字；text 照抄图片里的有意义原文，保留换行，不翻译，不包含水印、App按钮和相机参数，没有就留空。不要猜人名、身份、关系、地点、年龄或情绪。"
             }
             "ai.post_media" => {
-                "Return summary and items [{id,description,text,category}] for the supplied image evidence IDs."
+                "只使用所提供的逐图片识别证据。返回简短中文 summary（最多40字）及 items [{id,description,text,category}]。每个图片ID对应一项，保留原图顺序，不把配文当作图片识别，不合并不同图片的描述；text保留图片原文字，不翻译。"
             }
             "ai.reconnect_one" => "Return reason, opener and sources [evidence ID].",
             "ai.digest" => {

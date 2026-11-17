@@ -66,7 +66,7 @@ test('mobile photos and text never overlap and the close button stays reachable'
     await page.setViewportSize({width, height});
     const layout = await dialog.evaluate(d => {
       const rect = (e: Element) => {const r = e.getBoundingClientRect(); return {x: r.x, right: r.right, y: r.y, bottom: r.bottom};};
-      return {dialog: rect(d), header: rect(d.querySelector('header')!), images: [...d.querySelectorAll('img')].map(rect), body: rect(d.querySelector('p')!), overflow: d.scrollWidth - d.clientWidth};
+      return {dialog: rect(d), header: rect(d.querySelector('header')!), images: [...d.querySelectorAll('img')].map(rect), body: rect(d.querySelector('[data-post-body]')!), overflow: d.scrollWidth - d.clientWidth};
     });
     expect(layout.overflow).toBeLessThanOrEqual(1);
     expect(layout.header.bottom).toBeLessThanOrEqual(layout.images[0].y);
@@ -86,7 +86,7 @@ test('mobile photos and text never overlap and the close button stays reachable'
   await page.locator('article [data-thumb]').click();
   const desktop = await dialog.evaluate(d => {
     const photo = d.querySelector('img')!.getBoundingClientRect();
-    const text = d.querySelector('p')!.getBoundingClientRect();
+    const text = d.querySelector('[data-post-body]')!.getBoundingClientRect();
     return {photoRight: photo.right, textLeft: text.left};
   });
   expect(desktop.textLeft).toBeGreaterThanOrEqual(desktop.photoRight);
@@ -155,4 +155,26 @@ test('a shared video keeps its cover label and opens the original video link', a
   media[0] = {media_type:'image',source_media_type:'video',source_kind:'wechat_video_share',ready:false};
   await page.reload();
   await expect(page.locator('article')).toContainText('视频封面 · 暂时无法读取');
+});
+
+test('partial OCR stays under its own image instead of being renumbered as the first image', async ({page}) => {
+  await feed(page);
+  await page.route(`**/api/v1/timeline/${event.id}`, route => route.fulfill({json: {
+    ...event, content: {caption: event.summary},
+    media_reading: {summary: '旧的整条摘要不应冒充第一张图片识别', items: [
+      {index: 1, media_id: ids[0], kind: 'photo', status: 'pending'},
+      {index: 2, media_id: ids[1], kind: 'photo', status: 'pending'},
+      {index: 3, media_id: ids[2], kind: 'photo', status: 'complete', description: '两只青花茶壶', text: '菜单\n茶 25'},
+    ]},
+  }}));
+  await page.locator('article [data-thumb]').click();
+  const dialog=page.getByRole('dialog',{name:'动态详情'});
+  const figures=dialog.locator('figure');
+  await expect(figures).toHaveCount(3);
+  await expect(figures.nth(0)).toContainText('这张图片尚未完成识别');
+  await expect(figures.nth(0)).not.toContainText('茶壶');
+  await expect(figures.nth(2)).toContainText('图片 3 · 图片识别');
+  await expect(figures.nth(2)).toContainText('两只青花茶壶');
+  await expect(figures.nth(2)).toContainText('菜单\n茶 25');
+  await expect(dialog.getByText('旧的整条摘要不应冒充第一张图片识别')).toHaveCount(0);
 });
