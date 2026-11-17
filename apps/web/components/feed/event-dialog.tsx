@@ -60,22 +60,25 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
       <IconButton label="关闭动态详情" onClick={close}><X size={18} /></IconButton>
     </header>
     {hasPhotos && <div className={styles.detailPhotos}>
-      {photoMedia.map((item, index) => item.ready !== false && localMediaUrl(item.id)
-        ? <a href={localMediaUrl(item.id)} target="_blank" rel="noreferrer" aria-label={`查看原图 ${index + 1}`} key={item.id}>
+      {photoMedia.map((item, index) => <figure key={item.id || index} className={styles.detailPhoto}>
+        {item.ready !== false && localMediaUrl(item.id)
+        ? <a href={localMediaUrl(item.id)} target="_blank" rel="noreferrer" aria-label={`查看原图 ${index + 1}`}>
           {item.media_type?.includes("video")
             ? <video controls preload="metadata" src={localMediaUrl(item.id)} poster={localMediaUrl(item.thumbnail_id)} data-zoom-target={index === 0 ? "" : undefined} />
             : <FeedImage media={item} original alt={`动态照片 ${index + 1}`} zoomTarget={index === 0} />}
         </a>
-        : <span key={index}><Unavailable>{`${isVideo(item) ? "视频" : "动态照片"} ${index + 1} · 暂时无法读取`}</Unavailable></span>)}
+        : <span><Unavailable>{`${isVideo(item) ? "视频" : "动态照片"} ${index + 1} · 暂时无法读取`}</Unavailable></span>}
+        <figcaption><MediaReadingItem item={detail?.media_reading?.items.find(reading => !!item.id && reading.media_id === item.id)} index={index + 1} unavailable={item.ready === false} /></figcaption>
+      </figure>)}
     </div>}
     <div className={styles.detailText}>
       {link && <SharedLinkCard link={link} media={media[0]} />}
-      {body && <p className={styles.body}>{body}</p>}
+      {body && <p className={styles.body} data-post-body>{body}</p>}
       <ChannelsInfo media={media[0]} />
       {hasPhotos && <PhotoPeople mediaIds={availableMedia(media).flatMap((item) => !isVideo(item) && item.id && localMediaUrl(item.id) ? [item.id] : [])} />}
       <EventAnnotations metadata={metadata} detailed />
       <InstagramPostDetails post={metadata?.post} content={detail?.content} />
-      {detail?.media_reading && <MediaReadingNote reading={detail.media_reading} />}
+      {!hasPhotos && detail?.media_reading && <MediaReadingNote reading={detail.media_reading} />}
       {!!detail?.legacy_version_count && <LegacyVersions eventId={event.id} count={detail.legacy_version_count} />}
       {!!detail?.participants?.length && <div className={styles.participants}>{detail.participants.map((person) =>
         <Link key={person.id} href={`/profiles/${person.id}`}>{person.display_name}</Link>)}</div>}
@@ -130,9 +133,15 @@ function LegacyVersions({eventId,count}:{eventId:string;count:number}) {
 function MediaReadingNote({ reading }: { reading: MediaReading }) {
   return <details className={styles.reading}>
     <summary>图片识别</summary>
-    <p>{reading.summary}</p>
-    <ol>{reading.items.map((item) => <li key={item.index}>
-      <span>{item.category}</span>{item.description}{item.text && <q>{item.text}</q>}
-    </li>)}</ol>
+    {reading.items.map((item) => <MediaReadingItem key={item.media_id || item.index} item={item} index={item.index} unavailable={item.status === "unavailable"} />)}
   </details>;
+}
+
+function MediaReadingItem({item,index,unavailable}:{item?:MediaReading["items"][number];index:number;unavailable:boolean}) {
+  const recognized = item?.status === "complete" || !!(item?.description || item?.text);
+  return <section className={styles.photoReading} aria-label={`图片 ${index} 识别`}>
+    <strong>图片 {index}{recognized && " · 图片识别"}</strong>
+    {recognized ? <><p>{!item?.description && !item?.text && "已识别，未发现可识别文字"}{item?.category && <span>{item.category} · </span>}{item?.description}</p>{item?.text && <p className={styles.ocrText}>{item.text}</p>}</>
+      : <p>{unavailable ? "原图暂时无法读取，尚无对应识别结果" : "这张图片尚未完成识别"}</p>}
+  </section>;
 }

@@ -53,7 +53,7 @@ export function SocialFeed({ profileId, preview, sticky = false, title }: { prof
   useEffect(() => { setLocalProvider(search.get("provider") || "all"); }, [search]);
   const [selected, setSelected] = useState<{ event: FeedEvent; origin: HTMLElement | null } | null>(null);
   const [deepLinkError, setDeepLinkError] = useState('');
-  const pageSize = preview ?? 12;
+  const pageSize = preview ?? 24;
   const feed = useInfiniteQuery({
     queryKey: ['feed', profileId, provider, month, pageSize],
     initialPageParam: undefined as string | undefined,

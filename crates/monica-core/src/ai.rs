@@ -197,7 +197,8 @@ pub async fn snapshot(
                 .await?;
             let id: Uuid = subject.parse()?;
             let post:Value=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'kind',event_type,'text',coalesce(content->>'text',content->>'caption',''),'version',version) FROM crm.timeline_events WHERE id=$1 AND status='active'").bind(id).fetch_optional(&mut **tx).await?.context("unknown post")?;
-            let readings:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',r.media_id,'kind','image','text',r.text,'description',r.description,'summary',r.summary,'version',r.input_hash) FROM crm.media_links l JOIN crm.image_ocr_readings r ON r.media_id=l.media_id WHERE l.entity_id=$1 AND r.status='complete' ORDER BY l.media_id LIMIT 20").bind(id).fetch_all(&mut **tx).await?;
+            let readings:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',r.media_id,'kind','image','role',l.role,'text',r.text,'description',r.description,'category',r.category,'summary',r.summary,'version',r.input_hash) FROM crm.media_links l JOIN crm.media_assets a ON a.id=l.media_id JOIN crm.image_ocr_readings r ON r.media_id=l.media_id WHERE l.entity_id=$1 AND l.entity_type=CASE WHEN $2='story' THEN 'social_story' ELSE 'social_post' END AND a.media_type LIKE 'image/%' AND r.status='complete' AND (coalesce(btrim(r.text),'')<>'' OR coalesce(btrim(r.description),'')<>'') ORDER BY l.role,l.media_id LIMIT 20").bind(id).bind(post["kind"].as_str().unwrap_or("post")).fetch_all(&mut **tx).await?;
+            ensure!(!readings.is_empty(), "post has no image evidence");
             input["post"] = post;
             input["evidence"] = json!(readings);
         }
@@ -409,14 +410,13 @@ pub fn validate_output(lease: &Lease, output: Value) -> Result<Value> {
             .as_array()
             .map(Vec::as_slice)
             .unwrap_or_default();
-        let items = output["items"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter(|item| item["id"].is_string() && evidence.iter().any(|e| e["id"] == item["id"]))
-            .take(20)
-            .cloned()
-            .collect::<Vec<_>>();
+        ensure!(!evidence.is_empty(), "post has no image evidence");
+        // The model only summarizes saved observations. Per-image text and
+        // IDs remain the actual OCR evidence, including partially ready posts.
+        let items = evidence.iter().map(|item| json!({
+            "id":item["id"],"media_id":item["id"],"role":item["role"],"kind":"photo",
+            "description":item["description"],"text":item["text"],"category":item["category"]
+        })).collect::<Vec<_>>();
         return Ok(json!({"summary":summary,"items":items}));
     }
     let mut items = Vec::new();
@@ -619,7 +619,7 @@ pub async fn finish(pool: &PgPool, lease: &Lease, output: Value) -> Result<bool>
             sqlx::query("UPDATE crm.image_ocr_readings SET status='complete',summary=$3,description=$4,category=$5,text=$6,model=$7,generated_at=now(),error=NULL WHERE media_id=$1 AND job_id=$2").bind(lease.subject.parse::<Uuid>()?).bind(lease.id).bind(output["summary"].as_str()).bind(output["description"].as_str()).bind(output["category"].as_str()).bind(output["text"].as_str()).bind(&lease.model).execute(&mut *tx).await?;
         }
         "ai.post_media" => {
-            sqlx::query("INSERT INTO crm.media_readings(entity_id,entity_type,status,summary,items,model,generated_at,input_hash,job_id) VALUES($1,$2,'complete',$3,$4,$5,now(),$6,$7) ON CONFLICT(entity_id,entity_type) DO UPDATE SET status='complete',summary=excluded.summary,items=excluded.items,model=excluded.model,generated_at=now(),input_hash=excluded.input_hash,job_id=excluded.job_id").bind(lease.subject.parse::<Uuid>()?).bind(if lease.input["post"]["kind"]=="story"{"social_story"}else{"social_post"}).bind(output["summary"].as_str()).bind(&output["items"]).bind(&lease.model).bind(&lease.input_hash).bind(lease.id).execute(&mut *tx).await?;
+            sqlx::query("INSERT INTO crm.media_readings(entity_id,entity_type,status,summary,items,model,generated_at,input_hash,job_id) VALUES($1,$2,'complete',$3,$4,$5,now(),$6,$7) ON CONFLICT(entity_id,entity_type) DO UPDATE SET status='complete',summary=excluded.summary,items=excluded.items||coalesce((SELECT jsonb_agg(old_item)FROM jsonb_array_elements(crm.media_readings.items)old_item WHERE coalesce(old_item->>'media_id',old_item->>'id')IS NOT NULL AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(excluded.items)new_item WHERE coalesce(new_item->>'media_id',new_item->>'id')=coalesce(old_item->>'media_id',old_item->>'id'))AND EXISTS(SELECT 1 FROM crm.media_links l WHERE l.entity_type=excluded.entity_type AND l.entity_id=excluded.entity_id AND l.media_id::text=coalesce(old_item->>'media_id',old_item->>'id'))),'[]'::jsonb),model=excluded.model,generated_at=now(),input_hash=excluded.input_hash,job_id=excluded.job_id").bind(lease.subject.parse::<Uuid>()?).bind(if lease.input["post"]["kind"]=="story"{"social_story"}else{"social_post"}).bind(output["summary"].as_str()).bind(&output["items"]).bind(&lease.model).bind(&lease.input_hash).bind(lease.id).execute(&mut *tx).await?;
         }
         _ => {}
     }
@@ -657,6 +657,11 @@ pub async fn run_with_media<P: provider::Provider>(
     let Some(lease) = claim(pool).await? else {
         return Ok(false);
     };
+    if lease.kind == "ai.post_media" && lease.input["evidence"].as_array().is_none_or(Vec::is_empty)
+    {
+        cancel(pool, lease.id).await?;
+        return Ok(true);
+    }
     if lease.privacy["provider"].as_str() != Some(provider.name()) {
         fail(pool, &lease, "provider configuration unavailable").await?;
         return Ok(true);
@@ -1005,8 +1010,8 @@ pub async fn dispatch_one(pool: &PgPool) -> Result<bool> {
     let (child,subjects):(String,Vec<String>)=match kind.as_str(){
         "ai.digest"=>{let week=period.parse::<NaiveDate>()?-chrono::Duration::days(7);(kind.clone(),if cursor.is_none(){vec![week.to_string()]}else{vec![]})},
         "ai.community_names"=>("ai.community".into(),sqlx::query_scalar("SELECT community_id FROM crm.ai_community_inputs WHERE ($1::text IS NULL OR community_id>$1) ORDER BY community_id LIMIT 25").bind(&cursor).fetch_all(pool).await?),
-        "ai.image_ocr"=>(kind.clone(),sqlx::query_scalar("SELECT m.id::text FROM crm.media_assets m CROSS JOIN crm.image_ocr_settings o WHERE o.id AND o.enabled AND m.media_type LIKE 'image/%' AND ($1::text IS NULL OR m.id>$1::text::uuid) AND crm.ai_ocr_media_allowed(m.id,o.include_chat) AND NOT EXISTS(SELECT 1 FROM crm.image_ocr_readings r WHERE r.media_id=m.id AND r.status='complete' AND r.model=o.model) ORDER BY m.id LIMIT 25").bind(&cursor).fetch_all(pool).await?),
-        "ai.post_media"=>(kind.clone(),sqlx::query_scalar("SELECT id::text FROM crm.timeline_events WHERE status='active' AND ($1::text IS NULL OR id::text>$1) ORDER BY id::text LIMIT 25").bind(&cursor).fetch_all(pool).await?),
+        "ai.image_ocr"=>(kind.clone(),sqlx::query_scalar("SELECT m.id::text FROM crm.media_assets m CROSS JOIN crm.image_ocr_settings o WHERE o.id AND o.enabled AND m.media_type LIKE 'image/%' AND ($1::text IS NULL OR m.id>$1::text::uuid) AND crm.ai_ocr_media_allowed(m.id,o.include_chat) AND NOT EXISTS(SELECT 1 FROM crm.image_ocr_readings r WHERE r.media_id=m.id AND (r.status='complete' OR(r.generated_at IS NOT NULL AND(coalesce(btrim(r.text),'')<>'' OR coalesce(btrim(r.description),'')<>''))) AND r.model=o.model) ORDER BY m.id LIMIT 25").bind(&cursor).fetch_all(pool).await?),
+        "ai.post_media"=>(kind.clone(),sqlx::query_scalar("SELECT e.id::text FROM crm.timeline_events e WHERE e.status='active' AND ($1::text IS NULL OR e.id::text>$1) AND EXISTS(SELECT 1 FROM crm.media_links l JOIN crm.media_assets a ON a.id=l.media_id JOIN crm.image_ocr_readings r ON r.media_id=l.media_id WHERE l.entity_id=e.id AND l.entity_type=CASE WHEN e.event_type='story' THEN 'social_story' ELSE 'social_post' END AND a.media_type LIKE 'image/%' AND r.status='complete' AND (coalesce(btrim(r.text),'')<>'' OR coalesce(btrim(r.description),'')<>'')) ORDER BY e.id::text LIMIT 25").bind(&cursor).fetch_all(pool).await?),
         _=>{let child=if kind=="ai.person_weeks"{"ai.person_week"}else if kind=="ai.reconnect"{"ai.reconnect_one"}else{"ai.profile"};let ids:Vec<String>=sqlx::query_scalar("SELECT id::text FROM crm.profiles WHERE profile_type='person' AND archived_at IS NULL AND ($1::text IS NULL OR id::text>$1) ORDER BY id::text LIMIT 25").bind(cursor.as_ref().map(|c|c.split(':').next().unwrap_or(c))).fetch_all(pool).await?;let week=if kind=="ai.person_weeks"{Some(period.parse::<NaiveDate>()?-chrono::Duration::days(7))}else{None};(child.into(),ids.into_iter().map(|id|week.map_or(id.clone(),|week|format!("{id}:{week}"))).collect())}
     };
     let mut errors = 0i64;
