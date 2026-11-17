@@ -81,10 +81,10 @@ async fn post_media_requires_real_image_evidence_and_preserves_the_image_role(po
     );
     sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path)VALUES($1,repeat('a',64),'image/png',4,'unused-fixture')").bind(image).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role)VALUES('social_post',$1,$2,'media-3')").bind(post).bind(image).execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO crm.image_ocr_readings(media_id,status,description,text,model,generated_at)VALUES($1,'complete','Teapots','Menu words','fixture',now())").bind(image).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.image_ocr_readings(media_id,status,description,text,model,generated_at)VALUES($1,'complete','Teapots','','fixture',now())").bind(image).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path)VALUES($1,repeat('b',64),'image/png',4,'unused-fixture')").bind(old_image).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role)VALUES('social_post',$1,$2,'media-1')").bind(post).bind(old_image).execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO crm.media_readings(entity_id,entity_type,status,items)VALUES($1,'social_post','complete',$2)").bind(post).bind(json!([{"index":1,"media_id":old_image,"description":"Saved Next city image"}])).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.media_readings(entity_id,entity_type,status,items)VALUES($1,'social_post','complete',$2)").bind(post).bind(json!([{"index":1,"media_id":old_image,"description":"Saved Next city image"},{"index":3,"media_id":image,"description":"Saved Next teapots","text":"Menu words"}])).execute(&pool).await.unwrap();
     let job = ai::enqueue(&pool, "ai.post_media", &post.to_string())
         .await
         .unwrap();
@@ -127,7 +127,7 @@ async fn post_media_requires_real_image_evidence_and_preserves_the_image_role(po
             .as_array()
             .unwrap()
             .iter()
-            .any(|item| item["media_id"] == image.to_string() && item["text"] == "Menu words")
+            .any(|item| item["media_id"] == image.to_string() && item["text"] == "Menu words" && item["description"] == "Teapots")
     );
 }
 #[sqlx::test(migrations = "../../migrations")]
