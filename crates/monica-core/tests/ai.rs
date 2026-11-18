@@ -757,6 +757,15 @@ async fn configured_roles_drive_memory_and_preserve_profile_field_evidence(pool:
 async fn loopback_model_response(
     output: serde_json::Value,
 ) -> (String, tokio::task::JoinHandle<()>) {
+    loopback_model_response_gated(output, None).await
+}
+async fn loopback_model_response_gated(
+    output: serde_json::Value,
+    gate: Option<(
+        tokio::sync::oneshot::Sender<()>,
+        tokio::sync::oneshot::Receiver<()>,
+    )>,
+) -> (String, tokio::task::JoinHandle<()>) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -789,6 +798,10 @@ async fn loopback_model_response(
         assert!(request.starts_with("POST /v1/chat/completions"));
         assert!(request.contains("Bearer synthetic-only-key"));
         assert!(request.contains("json_object"));
+        if let Some((started, release)) = gate {
+            let _ = started.send(());
+            let _ = release.await;
+        }
         let body = json!({"choices":[{"message":{"content":output.to_string()}}]}).to_string();
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -806,6 +819,89 @@ async fn openai_transport_against_loopback_fake() {
     let output = client.complete(&lease("ai.profile")).await.unwrap();
     assert_eq!(output["summary"], "Loopback only");
     service.await.unwrap();
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn dispatch_prepares_new_work_while_model_execution_is_busy(pool: PgPool) {
+    use sqlx::ConnectOptions;
+    use std::time::Duration;
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let (base, service) = loopback_model_response_gated(
+        json!({"label":"Synthetic community","reason":"Fixture"}),
+        Some((started_tx, release_rx)),
+    )
+    .await;
+    let cipher = monica_core::credentials::CredentialCipher::new(
+        "synthetic-installation-secret-at-least-32",
+    )
+    .unwrap();
+    let encrypted = cipher
+        .encrypt(&json!({"api_key":"synthetic-only-key"}))
+        .unwrap();
+    sqlx::query("UPDATE crm.ai_settings SET enabled=true,execution_enabled=true,provider='openai',base_url=$1,credential_ciphertext=$2")
+        .bind(base).bind(encrypted).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.ai_community_inputs(community_id,input,version_hash)VALUES('running','{}','v1'),('requested','{}','v1')")
+        .execute(&pool).await.unwrap();
+    let first = ai::enqueue(&pool, "ai.community", "running").await.unwrap();
+    let db = monica_core::resources::DatabasePools::connect(
+        pool.connect_options().to_url_lossy().as_str(),
+        Default::default(),
+    )
+    .await
+    .unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let budget =
+        monica_core::resources::ResourceBudget::new(monica_core::resources::ResourceLimits::nas())
+            .unwrap();
+    let scheduler = monica_core::scheduler::Scheduler::start_with_sources(
+        db.background.clone(),
+        db.control.clone(),
+        budget.clone(),
+        Default::default(),
+        root.path().to_path_buf(),
+        cipher,
+    )
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), started_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(budget.status().background_network_available, 0);
+    ai::enqueue_dispatch(&pool, "ai.community_names", "2026-11-18", true)
+        .await
+        .unwrap();
+    let prepared = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let job: Option<Uuid> = sqlx::query_scalar("SELECT id FROM crm.ai_jobs WHERE kind='ai.community' AND subject='requested' AND status='queued'")
+                .fetch_optional(&pool).await.unwrap();
+            if let Some(job) = job { return job; }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await;
+    if let Ok(job) = &prepared {
+        ai::cancel(&pool, *job).await.unwrap();
+    }
+    let _ = release_tx.send(());
+    service.await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while sqlx::query_scalar::<_, String>("SELECT status FROM crm.ai_jobs WHERE id=$1")
+            .bind(first)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+            != "complete"
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    scheduler.pause().await.unwrap();
+    scheduler.shutdown().await.unwrap();
+    db.close().await;
+    prepared.expect("new work must be prepared while the model permit is occupied");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
