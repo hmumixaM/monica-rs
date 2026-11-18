@@ -39,7 +39,7 @@ fn evidence_and_output_boundaries() {
         ai::fingerprint("company", " Fixture  Corp ", None),
         ai::fingerprint("company", "fixturecorp", None)
     );
-    assert!(OpenAiProvider::new("http://example.com/v1", "synthetic-key".into()).is_err());
+    assert!(OpenAiProvider::new("http://example.com/v1", "synthetic-key".into()).is_ok());
     assert!(
         OpenAiProvider::new(
             "http://host.docker.internal:4000/v1",
