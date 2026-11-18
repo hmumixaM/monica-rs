@@ -1,6 +1,5 @@
 """Publish verified source media through the normal import/storage contract."""
 from dataclasses import dataclass
-import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -10,7 +9,7 @@ import subprocess
 import uuid
 
 from .files import atomic_json, canonical, checksum
-from .media_store import MARKER, MediaStore
+from .media_store import MediaStore
 
 
 @dataclass(frozen=True)
@@ -59,7 +58,6 @@ def publish(db, request: Publication):
         canonical(path, directory=True)
     require(not any(a == b or a in b.parents or b in a.parents for a, b in
                     ((request.stage, request.media), (request.state, request.media), (request.stage, request.state))))
-    require((request.media / '.monica-rust-migration-media').read_text() == MARKER)
     manifest = request.stage / 'manifest.json'
     require(checksum(manifest) == request.manifest_sha256)
     rows = json.loads(manifest.read_text())['rows']

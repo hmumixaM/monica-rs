@@ -3,7 +3,6 @@ pub mod shell;
 pub mod supervisor;
 
 #[cfg(any(feature = "desktop", test))]
-#[cfg(any(feature = "desktop", test))]
 mod background;
 
 #[cfg(target_os = "macos")]
