@@ -68,7 +68,7 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
             : <FeedImage media={item} original alt={`动态照片 ${index + 1}`} zoomTarget={index === 0} />}
         </a>
         : <span><Unavailable>{`${isVideo(item) ? "视频" : "动态照片"} ${index + 1} · 暂时无法读取`}</Unavailable></span>}
-        <figcaption><MediaReadingItem item={detail?.media_reading?.items.find(reading => !!item.id && reading.media_id === item.id)} index={index + 1} unavailable={item.ready === false} /></figcaption>
+        <figcaption>图片 {index + 1}</figcaption>
       </figure>)}
     </div>}
     <div className={styles.detailText}>
@@ -78,7 +78,7 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
       {hasPhotos && <PhotoPeople mediaIds={availableMedia(media).flatMap((item) => !isVideo(item) && item.id && localMediaUrl(item.id) ? [item.id] : [])} />}
       <EventAnnotations metadata={metadata} detailed />
       <InstagramPostDetails post={metadata?.post} content={detail?.content} />
-      {!hasPhotos && detail?.media_reading && <MediaReadingNote reading={detail.media_reading} />}
+      {detail?.media_reading && <MediaReadingNote reading={detail.media_reading} />}
       {!!detail?.legacy_version_count && <LegacyVersions eventId={event.id} count={detail.legacy_version_count} />}
       {!!detail?.participants?.length && <div className={styles.participants}>{detail.participants.map((person) =>
         <Link key={person.id} href={`/profiles/${person.id}`}>{person.display_name}</Link>)}</div>}
@@ -131,8 +131,9 @@ function LegacyVersions({eventId,count}:{eventId:string;count:number}) {
 
 /** Keep the recognition entry next to the post or Story's own information. */
 function MediaReadingNote({ reading }: { reading: MediaReading }) {
-  return <details className={styles.reading}>
+  return <details className={styles.reading} open>
     <summary>图片识别</summary>
+    {reading.summary && <p>{reading.summary}</p>}
     {reading.items.map((item) => <MediaReadingItem key={item.media_id || item.index} item={item} index={item.index} unavailable={item.status === "unavailable"} />)}
   </details>;
 }

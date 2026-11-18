@@ -157,7 +157,7 @@ test('a shared video keeps its cover label and opens the original video link', a
   await expect(page.locator('article')).toContainText('视频封面 · 暂时无法读取');
 });
 
-test('partial OCR stays under its own image instead of being renumbered as the first image', async ({page}) => {
+test('Next-style reading lists one paragraph for each actual image, including pending images', async ({page}) => {
   await feed(page);
   await page.route(`**/api/v1/timeline/${event.id}`, route => route.fulfill({json: {
     ...event, content: {caption: event.summary},
@@ -171,10 +171,13 @@ test('partial OCR stays under its own image instead of being renumbered as the f
   const dialog=page.getByRole('dialog',{name:'动态详情'});
   const figures=dialog.locator('figure');
   await expect(figures).toHaveCount(3);
-  await expect(figures.nth(0)).toContainText('这张图片尚未完成识别');
-  await expect(figures.nth(0)).not.toContainText('茶壶');
-  await expect(figures.nth(2)).toContainText('图片 3 · 图片识别');
-  await expect(figures.nth(2)).toContainText('两只青花茶壶');
-  await expect(figures.nth(2)).toContainText('菜单\n茶 25');
-  await expect(dialog.getByText('旧的整条摘要不应冒充第一张图片识别')).toHaveCount(0);
+  const first=dialog.getByRole('region',{name:'图片 1 识别'});
+  const third=dialog.getByRole('region',{name:'图片 3 识别'});
+  await expect(first).toContainText('这张图片尚未完成识别');
+  await expect(first).not.toContainText('茶壶');
+  await expect(third).toContainText('图片 3 · 图片识别');
+  await expect(third).toContainText('两只青花茶壶');
+  await expect(third).toContainText('菜单\n茶 25');
+  await expect(first).not.toContainText('旧的整条摘要');
+  await expect(dialog.getByText('旧的整条摘要不应冒充第一张图片识别')).toBeVisible();
 });
