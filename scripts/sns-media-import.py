@@ -12,7 +12,8 @@ import os
 from pathlib import Path
 import struct
 import subprocess
-from types import SimpleNamespace
+from monica_imports.sns_publication import DatabaseTarget, Publication, publish
+from monica_imports.source_media import link_existing
 
 
 def module(name, path):
@@ -31,8 +32,6 @@ def atomic(path, value):
 def import_event(db, source, media, state, runtime, cache, event_id):
     scripts=Path(__file__).resolve().parent
     fetch=module('sns_source_frame',scripts.parent/'tools/sns-decrypt/fetch_frame.py')
-    publisher=module('sns_verified_publisher',scripts/'publish-sns-verified-images.py')
-    bindings=module('sns_url_bindings',scripts/'sns-media-bindings.py')
     state=Path(state);state.mkdir(parents=True,exist_ok=True)
     assert state.resolve()==state and media.resolve()==media and source.resolve()==source
     row=db.execute("SELECT external_id,content FROM crm.timeline_events WHERE id=%s AND provider='wechat'",(event_id,)).fetchone()
@@ -56,7 +55,6 @@ def import_event(db, source, media, state, runtime, cache, event_id):
     # do not trigger filesystem checks or downloads of finished photos.
     pending=[(key,photo)for key,photo in identities if saved.get(key,{}).get('status')not in('ready','failed','source_only')]
     if not pending:return dict(ready=0,failed=sum(saved.get(key,{}).get('status')=='failed'for key,_ in identities))
-    bindings.repair_event(db,media,event_id)
     staged=[];failed=0;ready=0
     stage=event_state/'stage';objects=stage/'objects';receipt=event_state/'receipt'
     objects.mkdir(parents=True,exist_ok=True);receipt.mkdir(exist_ok=True)
@@ -65,7 +63,7 @@ def import_event(db, source, media, state, runtime, cache, event_id):
             saved[key]=dict(status='source_only',code='source_has_cover_only');atomic(ledger,saved);continue
         if saved.get(key,{}).get('status')=='downloaded':
             staged.append((key,saved[key]['row']));continue
-        if bindings.link_existing(db,media,event_id,photo['role'],photo.get('source_url'),photo['media_type']):
+        if link_existing(db,media,event_id,photo['role'],photo.get('source_url'),photo['media_type']):
             saved[key]=dict(status='ready');ready+=1;atomic(ledger,saved);continue
         role=photo['role'];slot=photo.get('_slot')or int(role.removeprefix('media-'))
         try:
@@ -95,12 +93,14 @@ def import_event(db, source, media, state, runtime, cache, event_id):
         atomic(ledger,saved)
     if staged:
         manifest=stage/'manifest.json';atomic(manifest,dict(rows=[row for _,row in staged]))
-        schema=db.execute('SELECT max(version)FROM _sqlx_migrations WHERE success').fetchone()[0]
-        if schema not in(86,87,88):raise ValueError('sns_schema_changed')
-        args=SimpleNamespace(stage=stage,media=media,state=receipt,validator=runtime/'validate',manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest(),expected_records=len(staged),expected_system_id='7707886811981668386',expected_schema=schema,runtime=runtime)
+        request = Publication(
+            stage=stage, media=media, state=receipt, validator=runtime/'validate',
+            manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest(),
+            expected_records=len(staged), target=DatabaseTarget.read(db), runtime=runtime,
+        )
         # Lock contention or uncertain publication leaves decoded rows pending.
         # The caller does not ACK this source page until publication succeeds.
-        publisher.publish(db,args)
+        publish(db, request)
         for key,_ in staged:saved[key]=dict(status='ready');ready+=1
         atomic(ledger,saved)
     return dict(ready=ready,failed=sum(saved.get(key,{}).get('status')=='failed'for key,_ in identities))

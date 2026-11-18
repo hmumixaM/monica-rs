@@ -27,6 +27,8 @@ from urllib.parse import quote, urlsplit
 import uuid
 
 import psycopg
+from monica_imports.sqlite_snapshot import publish_snapshot, source_signature
+from monica_imports.sns_publication import DatabaseTarget
 
 STOP = False
 NAMESPACE = uuid.UUID('534b6268-97a1-4d99-a086-f8c9e3955815')
@@ -111,27 +113,6 @@ def failure_code(error):
     return type(error).__name__
 
 
-def backup_with_progress(source,target,report,stall_seconds=120):
-    advanced=time.monotonic();last_report=0;previous=None
-    def progress(status,remaining,total):
-        nonlocal advanced,last_report,previous
-        now=time.monotonic()
-        if STOP:raise InterruptedError('Chatlog backup cancelled')
-        if status in(sqlite3.SQLITE_OK,sqlite3.SQLITE_DONE)and(previous is None or remaining<previous):advanced=now
-        if now-advanced>=stall_seconds:raise TimeoutError('Chatlog backup made no progress')
-        if now-last_report>=5:
-            report(status,remaining,total);last_report=now
-        previous=remaining
-    # Pin one read snapshot. Read-only WAL connections can otherwise restart
-    # each incremental backup step even when source business bytes are stable.
-    source.execute('PRAGMA query_only=ON')
-    source.execute('BEGIN')
-    try:
-        source.execute('PRAGMA schema_version').fetchone()
-        source.backup(target,pages=128,sleep=0.05,progress=progress)
-    finally:
-        source.rollback()
-
 
 class Consumer:
     def __init__(self, args, db):
@@ -143,7 +124,6 @@ class Consumer:
         self.journal = sqlite3.connect(self.state / 'consumer.sqlite')
         self.journal.execute('CREATE TABLE IF NOT EXISTS delivered(provider TEXT,stream TEXT,external_id TEXT,account TEXT,digest TEXT,receipt TEXT,PRIMARY KEY(provider,stream,external_id,account))')
         self.journal.execute('CREATE TABLE IF NOT EXISTS source_files(path TEXT PRIMARY KEY,signature TEXT)')
-        self.journal.execute('CREATE TABLE IF NOT EXISTS consumer_state(key TEXT PRIMARY KEY,value TEXT)')
         self.last_path = None
         self.last_input_time = None
         self.last_input = None
@@ -158,8 +138,9 @@ class Consumer:
         self.provider_status = {}
 
     def guard(self):
-        row = self.db.execute("SELECT system_identifier::text,current_database(),(SELECT oid FROM pg_database WHERE datname=current_database()),(SELECT max(version) FROM _sqlx_migrations WHERE success) FROM pg_control_system()").fetchone()
-        if tuple(row[:3]) != ('7707886811981668386', 'monica_rust', 16384) or row[3] not in (86,87,88):
+        expected = DatabaseTarget(self.args.expected_system_id, self.args.expected_database, self.args.expected_database_oid)
+        version = self.db.execute('SELECT max(version) FROM _sqlx_migrations WHERE success').fetchone()[0]
+        if DatabaseTarget.read(self.db) != expected or version is None or version < 88:
             raise ValueError('isolated Rust target identity changed')
         if not (self.args.media.parent / '.monica-rs-ssd-target').read_bytes() == b'monica-rs-ssd-target-v1\n':
             raise ValueError('isolated SSD marker changed')
@@ -409,33 +390,27 @@ class Consumer:
             if path.resolve() != path:
                 raise ValueError('Chatlog source alias')
             rel = path.relative_to(root).as_posix()
-            state = [signature(path),*[signature(Path(str(path)+s)) if Path(str(path)+s).exists() else None for s in ('-wal','-journal')]]
-            prior = self.journal.execute('SELECT signature FROM source_files WHERE path=?',(rel,)).fetchone()
+            state = source_signature(path)
+            prior = self.journal.execute('SELECT signature FROM source_files WHERE path=?', (rel,)).fetchone()
             if prior and json.loads(prior[0]) == state and (destination/rel).is_file():
                 continue
             target = destination/rel
-            target.parent.mkdir(parents=True,exist_ok=True)
-            fd, name = tempfile.mkstemp(prefix='.backup-',dir=target.parent)
-            os.close(fd)
-            try:
-                self.progress('chatlog_consistent_backup',file=rel)
-                with closing(sqlite3.connect('file:'+quote(str(path))+'?mode=ro',uri=True,timeout=2)) as source, closing(sqlite3.connect(name)) as backup:
-                    backup_with_progress(source,backup,lambda status,remaining,total:self.progress('chatlog_consistent_backup',file=rel,sqlite_status=status,remaining_pages=remaining,total_pages=total))
-                    backup.execute('PRAGMA journal_mode=DELETE')
-                    if backup.execute('PRAGMA quick_check').fetchall() != [('ok',)]:
-                        raise ValueError('Chatlog consistent backup failed integrity check')
-                with open(name,'rb') as output:
-                    os.fsync(output.fileno())
-                os.replace(name,target)
-                directory = os.open(target.parent,os.O_RDONLY|os.O_DIRECTORY)
-                try:
-                    os.fsync(directory)
-                finally:
-                    os.close(directory)
-                with self.journal:
-                    self.journal.execute('INSERT OR REPLACE INTO source_files VALUES(?,?)',(rel,canonical(state).decode()))
-            finally:
-                Path(name).unlink(missing_ok=True)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            self.progress('chatlog_consistent_backup', file=rel)
+            last_report = time.monotonic()
+            def report(status, remaining, total):
+                nonlocal last_report
+                now = time.monotonic()
+                if not remaining or now - last_report >= 5:
+                    self.progress('chatlog_consistent_backup', file=rel, sqlite_status=status,
+                                  remaining_pages=remaining, total_pages=total)
+                    last_report = now
+            captured = publish_snapshot(
+                path, target, cancelled=lambda: STOP,
+                progress=report,
+            )
+            with self.journal:
+                self.journal.execute('INSERT OR REPLACE INTO source_files VALUES(?,?)', (rel, canonical(captured).decode()))
         return destination
 
     def wechat(self):
@@ -449,22 +424,6 @@ class Consumer:
         if not own or not self.db.execute("SELECT 1 FROM crm.legacy_chatlog_snapshots WHERE own_id=%s AND status IN ('converted','verified') LIMIT 1",(own,)).fetchone():
             raise ValueError('verified existing WeChat owner required')
         with self.chatlog_control():
-            if getattr(self.args,'sns_runtime',None) and not self.journal.execute("SELECT 1 FROM consumer_state WHERE key='sns-media-bootstrap-v1'").fetchone():
-                # One explicit catch-up for pages acknowledged before photos
-                # were part of SNS import. No recurring missing-image scan.
-                posts=self.db.execute("SELECT e.id FROM crm.timeline_events e WHERE e.provider='wechat' AND e.event_type='post' AND e.occurred_at>=%s AND EXISTS(SELECT 1 FROM jsonb_array_elements(coalesce(e.content->'media','[]'))m WHERE m->>'media_type'='image' AND NOT EXISTS(SELECT 1 FROM crm.media_links l WHERE l.entity_type='social_post' AND l.entity_id=e.id AND l.role=m->>'role')) ORDER BY e.occurred_at,e.id",(self.args.since,)).fetchall()
-                for post in posts:
-                    if STOP:return
-                    self.import_sns_event(source,post[0])
-                with self.journal:self.journal.execute("INSERT INTO consumer_state VALUES('sns-media-bootstrap-v1',?)",(self.args.since,))
-            if getattr(self.args,'sns_runtime',None) and not self.journal.execute("SELECT 1 FROM consumer_state WHERE key='sns-native-video-bootstrap-v1'").fetchone():
-                # One release catch-up for native videos and Channels posters
-                # acknowledged by the former photo-only pipeline.
-                posts=self.db.execute("SELECT e.id FROM crm.timeline_events e WHERE e.provider='wechat' AND e.event_type='post' AND e.occurred_at>=%s AND EXISTS(SELECT 1 FROM jsonb_array_elements(coalesce(e.content->'media','[]'))m WHERE m->>'media_type'='video') ORDER BY e.occurred_at,e.id",(self.args.since,)).fetchall()
-                for post in posts:
-                    if STOP:return
-                    self.import_sns_event(source,post[0])
-                with self.journal:self.journal.execute("INSERT INTO consumer_state VALUES('sns-native-video-bootstrap-v1',?)",(self.args.since,))
             manifest = dict(format=1,own_id=own,files=[],kind='continuous_business_pages',source='existing-chatlog-export')
             importer = self.legacy.Importer(self.db,manifest)
             importer.on_message_changed = self.changed_message_media
@@ -556,6 +515,9 @@ def main():
     parser.add_argument('--linkedin-connection',type=uuid.UUID)
     parser.add_argument('--state',type=Path,required=True)
     parser.add_argument('--media',type=Path,required=True)
+    parser.add_argument('--expected-system-id',required=True)
+    parser.add_argument('--expected-database',default='monica_rust')
+    parser.add_argument('--expected-database-oid',required=True)
     parser.add_argument('--sns-runtime',type=Path)
     parser.add_argument('--sns-cache',type=Path)
     parser.add_argument('--url',default='http://monica-rs-server-1:17494')

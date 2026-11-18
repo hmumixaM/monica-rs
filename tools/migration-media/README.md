@@ -30,7 +30,7 @@ Uncaught panics or native dependencies can produce other diagnostics. Callers
 must accept only validated JSON fields and must not save captured stdout or
 stderr verbatim as a diagnostic record.
 
-`--batch --credentials-stdin` adds an explicit recovery protocol. The first
+`--batch --credentials-stdin` adds an explicit batch protocol. The first
 newline-terminated JSON frame contains only `image_key` and `image_xor` strings.
 It is consumed in memory, and credential environment variables are removed
 before conversion. Each subsequent frame contains a unique 64-character hex
@@ -40,10 +40,10 @@ frame at most 8192 bytes. Responses contain `id`, `codec_commit`, and either an
 failures remain individual results; malformed input fails the batch process.
 The existing single-request protocol remains the default.
 
-The indexed-media recovery client is `scripts/retry-wechat-media.py`; see
-`docs/indexed-media-recovery.md`. It uses a pinned local runtime with FFmpeg,
-read-only copied raw files, a marked CAS destination, and no network. Do not
-replace an active copy worker with this client.
+Normal import publication uses `scripts/monica_imports/`; see
+`docs/import-storage.md`. Snapshot-specific retry and correction clients have
+been retired. The codec and its format validation remain available for ordinary
+imports.
 
 Stamp release builds from the reviewed clean source archive with
 `go build -trimpath -ldflags "-X main.buildCommit=FULL_REVIEWED_COMMIT" .`.

@@ -59,3 +59,32 @@ test('password recovery retains account and allows optional TOTP reset',async({p
  await page.getByRole('button',{name:'重置密码',exact:true}).click();await expect(page.getByRole('status')).toContainText('密码已重置');
  await expect(page.getByRole('textbox',{name:'新密码',exact:true})).toHaveCount(0);
 });
+
+
+test('a slow collector poll does not queue IPC or interrupt an account form', async ({page}) => {
+ await page.clock.install();
+ await fixture(page);
+ await expect(page.getByRole('heading',{name:'运行中',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'创建首次使用账号'}).click();
+ await page.getByLabel('邮箱').fill('keep-this-form@example.invalid');
+ await page.evaluate(() => {
+  const state=window as unknown as {__TAURI_INTERNALS__:{invoke:(name:string,args?:unknown)=>Promise<unknown>};polls:number;finishPoll:()=>void};
+  const original=state.__TAURI_INTERNALS__.invoke;
+  state.polls=0;
+  state.__TAURI_INTERNALS__.invoke=(name,args)=>{
+   if(name!=='collector_status')return original(name,args);
+   state.polls++;
+   return new Promise(resolve=>{state.finishPoll=()=>resolve({})});
+  };
+ });
+ await page.clock.runFor(5000);
+ await expect.poll(()=>page.evaluate(()=>(window as unknown as {polls:number}).polls)).toBe(1);
+ await page.clock.runFor(30000);
+ expect(await page.evaluate(()=>(window as unknown as {polls:number}).polls)).toBe(1);
+ await expect(page.getByLabel('邮箱')).toHaveValue('keep-this-form@example.invalid');
+ await page.getByLabel('密码',{exact:true}).fill('still-interactive-password');
+ await page.evaluate(()=>(window as unknown as {finishPoll:()=>void}).finishPoll());
+ await page.clock.runFor(5000);
+ await expect.poll(()=>page.evaluate(()=>(window as unknown as {polls:number}).polls)).toBe(2);
+ await expect(page.getByLabel('邮箱')).toHaveValue('keep-this-form@example.invalid');
+});

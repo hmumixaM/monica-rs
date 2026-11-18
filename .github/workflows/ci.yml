@@ -49,6 +49,7 @@ jobs:
           "$RUNNER_TEMP/legacy-migration/bin/python" scripts/test-legacy-import.py
           MONICA_GROUP_IMAGE_TEST_ADMIN="$DATABASE_URL" "$RUNNER_TEMP/legacy-migration/bin/python" scripts/test-wechat-group-images.py
           "$RUNNER_TEMP/legacy-migration/bin/python" scripts/test-nas-live-imports.py
+          "$RUNNER_TEMP/legacy-migration/bin/python" scripts/test-import-media.py
           python3 scripts/test-migration-file-copy.py
           python3 scripts/test-nas-migration-copy.py
           python3 scripts/test-nas-migration-download.py
@@ -103,9 +104,7 @@ jobs:
       - run: python3 scripts/test-collector-bridge.py && python3 scripts/test-collector-chatlog.py
       - run: python3 scripts/test-build-context.py
       - run: python3 scripts/test-collector-supervisor.py
-      - run: python3 scripts/test-nas-chatlog-readiness.py
       - run: python3 scripts/test-legacy-wechat-emoji.py
-      - run: python3 scripts/test-retry-wechat-media.py
       - run: python3 -m pip install uv==0.9.17
       - name: Benchmark availability and latency reporting
         run: uv run --no-project --python 3.12 --with psutil==7.1.3 python scripts/test-benchmark-read-results.py
@@ -120,13 +119,12 @@ jobs:
         working-directory: tools/migration-media
         env:
           CGO_ENABLED: '1'
-      - name: Recovered media publication and linking contract
+      - name: Import storage and source snapshot contracts
         run: |
-          (cd tools/migration-media && go build -mod=readonly -trimpath -ldflags "-X main.buildCommit=$GITHUB_SHA" -o "$RUNNER_TEMP/reviewed-media-codec" .)
-          uv run --with 'psycopg[binary]==3.2.12' --with Pillow python scripts/test-restore-verified-wechat-sources.py
-          uv run --with 'psycopg[binary]==3.2.12' --with Pillow python scripts/test-publish-image-corrections.py
-          MONICA_REVIEWED_CODEC="$RUNNER_TEMP/reviewed-media-codec" MONICA_REVIEWED_CODEC_COMMIT="$GITHUB_SHA" uv run --with 'psycopg[binary]==3.2.12' --with Pillow python scripts/test-redecode-known-image-snapshot.py
-          uv run --with 'psycopg[binary]==3.2.12' --with Pillow python scripts/test-wechat-media-link-recoveries.py
+          python3 scripts/test-media-store.py
+          python3 scripts/test-sqlite-snapshot.py
+          python3 scripts/test-sns-media-source.py
+
   optional-containers:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45

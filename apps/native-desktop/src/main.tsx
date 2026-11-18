@@ -2,6 +2,7 @@ import '../../web/src/theme-bootstrap';
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
+import { useCommandPoll } from "./use-command-poll";
 import "./styles.css";
 type Status={chatlog?:{enabled:boolean;configured:boolean;running:boolean;error:string|null;url:string};phase:string;server_pid?:number|null;postgres_pid?:number|null;url:string|null;paused:boolean;draining:boolean;active_jobs:number;error:string|null;data_directory:string;adapters_enabled:boolean;ai_enabled:boolean};
 const labels:Record<string,string>={starting:"正在启动",running:"运行中",stopping:"正在安全退出",stopped:"已停止",failed:"需要处理"};
@@ -11,12 +12,13 @@ function App(){
  const [instagramUsername,setInstagramUsername]=useState("");
  const [collectors,setCollectors]=useState<Record<string,CollectorStatus>>({});
  async function readCollectors(){setCollectors(await invoke<Record<string,CollectorStatus>>("collector_status"))}
- useEffect(()=>{void readCollectors().catch(()=>{});const timer=setInterval(()=>{if(document.visibilityState==='visible')void readCollectors().catch(()=>{})},5000);return()=>clearInterval(timer)},[]);
+ useCommandPoll<Record<string,CollectorStatus>>("collector_status",setCollectors);
  const [wechatPath,setWechatPath]=useState("");const [wechatKey,setWechatKey]=useState("");
  const [sources,setSources]=useState<Record<string,NativeStatus>>({});
- useEffect(()=>{let active=true;const read=()=>invoke<Record<string,NativeStatus>>("native_status").then(value=>{if(active)setSources(value)}).catch(()=>{});void read();const timer=setInterval(()=>{if(document.visibilityState==='visible')void read()},5000);return()=>{active=false;clearInterval(timer)}},[]);
+ useCommandPoll<Record<string,NativeStatus>>("native_status",setSources);
  const [status,setStatus]=useState<Status>();const [error,setError]=useState("");const [busy,setBusy]=useState(false);const [auto,setAuto]=useState(false);const [account,setAccount]=useState(false);const [email,setEmail]=useState("");const [password,setPassword]=useState("");const [created,setCreated]=useState(false);
- useEffect(()=>{let mounted=true;const read=()=>invoke<Status>("runtime_status").then(s=>{if(mounted)setStatus(s)}).catch(e=>{if(mounted)setError(String(e))});void read();void invoke<boolean>("autostart_enabled").then(setAuto).catch(e=>setError(String(e)));const timer=setInterval(()=>{if(document.visibilityState==='visible')void read()},5000);return()=>{mounted=false;clearInterval(timer)}},[]);
+ useCommandPoll<Status>("runtime_status",setStatus,setError);
+ useEffect(()=>{let active=true;void invoke<boolean>("autostart_enabled").then(value=>{if(active)setAuto(value)}).catch(error=>{if(active)setError(String(error))});return()=>{active=false}},[]);
  async function action(name:string){setBusy(true);setError("");try{setStatus(await invoke<Status>("runtime_action",{action:name}))}catch(e){setError(String(e))}finally{setBusy(false)}}
  async function command(name:string,args?:Record<string,unknown>){setError("");try{await invoke(name,args)}catch(e){setError(String(e))}}
  async function bootstrap(event:React.FormEvent){event.preventDefault();setBusy(true);setError("");try{await invoke("create_account",{email,password});setPassword("");setCreated(true);setAccount(false)}catch(e){setError(String(e))}finally{setBusy(false)}}
