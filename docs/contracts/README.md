@@ -7,10 +7,10 @@ definitions** from `git show` at the two accepted commits. The generator reads n
 working-tree files, credentials, exports, or runtime directories from either
 original checkout. All inputs are generated synthetic values.
 
-Run with Python 3.11 or newer:
+The one-time capture generators have been retired. The checked-in synthetic
+golden files remain inputs to the ordinary Rust regression tests:
 
 ```sh
-python3 scripts/legacy-contract.py --check
 cargo test --locked -p monica-core --test identity
 ```
 
@@ -45,7 +45,7 @@ the initial router list.
 
 ## Runtime capture at the original freeze
 
-`legacy-contract.py --runtime` stages only pinned `services/api/app/*.py` and SQL
+At the original freeze, the retired runtime generator staged only pinned `services/api/app/*.py` and SQL
 source files into a fresh temporary directory. A subprocess imports the real
 FastAPI app with database connections and outbound socket connections denied,
 fresh synthetic settings, AI disabled, and no inherited application environment.
@@ -69,21 +69,9 @@ executor sandbox cannot install dependencies itself (DNS unavailable; `uv`
 additionally panicked on macOS system configuration), so the parent performed
 that isolated setup.
 
-For the supervising parent, create a temporary dependency project from the
-pinned tracked dependency files, without copying any `.env` or working tree:
-
-```sh
-contract_project=$(mktemp -d /tmp/monica-contract-deps.XXXXXX)
-git -C /Users/maxhu/play/monica show 6d59cfef4b1a12f678d809a00e37d8332be70b06:services/api/pyproject.toml > "$contract_project/pyproject.toml"
-git -C /Users/maxhu/play/monica show 6d59cfef4b1a12f678d809a00e37d8332be70b06:services/api/uv.lock > "$contract_project/uv.lock"
-uv sync --project "$contract_project" --frozen --no-dev
-"$contract_project/.venv/bin/python" scripts/legacy-contract.py --baseline crm --runtime
-"$contract_project/.venv/bin/python" scripts/legacy-contract.py --baseline crm --runtime --check
-```
-
-Repeat in a separate temporary dependency project using the desktop pinned
-dependency files and `--baseline desktop`. Capture verifies the critical package
-versions against each baseline's lock and records dependency-file hashes.
+The capture used separate temporary dependency environments for CRM and desktop
+and recorded dependency-file hashes. The remaining notes preserve that freeze's
+provenance; they are not instructions to rerun the retired generators.
 
 ## Rust wiring and original validation checkpoints
 

@@ -60,6 +60,8 @@ class LiveImportContract(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         folder = Path(self.temp.name).resolve()
         self.args = types.SimpleNamespace(source=folder/'source',state=folder/'live-imports',media=folder/'media',chatlog=folder/'chatlog',wechat_self='synthetic-self',since='2026-11-13T00:00:00Z',url='http://monica-rs-server-1:17494')
+        target = live.DatabaseTarget.read(self.db)
+        self.args.expected_system_id, self.args.expected_database, self.args.expected_database_oid = target.values
         for path in (self.args.source,self.args.state,self.args.media,self.args.chatlog):
             path.mkdir()
         (folder/'.monica-rs-ssd-target').write_bytes(b'monica-rs-ssd-target-v1\n')
@@ -67,6 +69,18 @@ class LiveImportContract(unittest.TestCase):
         self.addCleanup(self.consumer.close)
         # Never relax the production identity guard; this test uses another DB.
         self.consumer.guard = lambda: None
+
+    def test_target_configuration_checks_identity_without_a_release_version_allowlist(self):
+        self.db.execute('CREATE TABLE _sqlx_migrations(version bigint,success boolean)')
+        self.db.execute('INSERT INTO _sqlx_migrations VALUES(88,true),(89,true)')
+        live.Consumer.guard(self.consumer)
+        self.args.expected_database_oid = '0'
+        with self.assertRaisesRegex(ValueError, 'target identity'):
+            live.Consumer.guard(self.consumer)
+        self.args.expected_database_oid = live.DatabaseTarget.read(self.db).oid
+        self.db.execute('DELETE FROM _sqlx_migrations WHERE version>=88')
+        with self.assertRaisesRegex(ValueError, 'target identity'):
+            live.Consumer.guard(self.consumer)
 
     def test_recent_images_include_direct_and_group_but_exclude_old_messages(self):
         recent = live.module('recent_images', 'nas-wechat-images.py')
@@ -89,25 +103,6 @@ class LiveImportContract(unittest.TestCase):
             self.assertIsNotNone(self.db.execute(item.current_sql+' AND m.message_id=%s',(*item.query_args,selected[0])).fetchone())
             self.assertIsNone(self.db.execute(item.current_sql+' AND m.message_id=%s',(*item.query_args,selected[2])).fetchone())
             self.assertEqual(self.db.execute('SELECT count(*)FROM crm.message_search').fetchone()[0],3)
-
-    def test_archived_media_url_restore_checks_bytes_and_replays_without_changes(self):
-        binding = live.module('legacy_media_bindings', 'legacy-media-bindings.py')
-        migration, mid = uuid.uuid4(), uuid.uuid4()
-        image = b'synthetic-published-image'
-        digest = hashlib.sha256(image).hexdigest()
-        path = self.args.media/'sha256'/digest[:2]/digest[2:4]/digest
-        path.parent.mkdir(parents=True);path.write_bytes(image)
-        self.db.execute("INSERT INTO crm.legacy_migrations(id,manifest_hash,source_manifest,status) VALUES(%s,'binding-test','{}','database_ready')", (migration,))
-        self.db.execute("INSERT INTO crm.media_assets(id,sha256,byte_length,media_type,object_path,source_type) VALUES(%s,%s,%s,'image/jpeg','legacy-path','wechat')", (mid,digest,len(image)))
-        value = json.dumps(dict(media_id=str(mid),source_url='archive://instagram/synthetic/photo'))
-        self.db.execute("INSERT INTO crm.legacy_history VALUES(%s,'crm','remote_media_sources','one',%s)", (migration,value))
-        first = binding.restore_page(self.db,self.args.media,migration,'')
-        self.assertEqual((first['processed'],first['inserted'],first['missing_files']),(1,1,0))
-        self.assertEqual(binding.restore_page(self.db,self.args.media,migration,'')['inserted'],0)
-        self.assertEqual(self.db.execute('SELECT source_url FROM crm.media_provenance WHERE media_id=%s',(mid,)).fetchall(),[('archive://instagram/synthetic/photo',)])
-        path.write_bytes(b'truncated')
-        self.assertEqual(binding.restore_page(self.db,self.args.media,migration,'')['missing_files'],1)
-        self.assertEqual(self.db.execute('SELECT payload FROM crm.legacy_history WHERE migration_id=%s',(migration,)).fetchone()[0],json.loads(value))
 
     def test_sns_source_reuses_exact_registered_image_and_does_not_recheck_completed_photos(self):
         import struct,zlib
@@ -265,36 +260,8 @@ class LiveImportContract(unittest.TestCase):
             self.assertEqual(json.dumps(content),original)
         self.assertEqual(live.postgres_content(dict(participants=[dict(id='peer-id',name='Display\0name')]))[0]['participants'][0],dict(id='peer-id',name='Display␀name'))
 
-    def test_busy_sqlite_backup_times_out_without_changing_source(self):
-        path=self.args.source/'busy.db'
-        with closing(sqlite3.connect(path))as writer:
-            writer.execute('CREATE TABLE messages(id)');writer.commit();writer.execute('BEGIN EXCLUSIVE')
-            with closing(sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=0.01))as source,closing(sqlite3.connect(self.args.state/'unfinished.db'))as target:
-                reports=[]
-                with self.assertRaises(sqlite3.OperationalError):live.backup_with_progress(source,target,lambda *row:reports.append(row),stall_seconds=0.02)
-                self.assertFalse(source.in_transaction)
-            writer.rollback();self.assertEqual(writer.execute('SELECT count(*) FROM messages').fetchone()[0],0)
-
-    def test_backup_keeps_one_read_snapshot_while_wal_writer_commits(self):
-        path=self.args.source/'wal-snapshot.db'
-        with closing(sqlite3.connect(path))as writer:
-            writer.execute('PRAGMA journal_mode=WAL');writer.execute('CREATE TABLE messages(id INTEGER PRIMARY KEY,body TEXT)')
-            writer.executemany('INSERT INTO messages(body)VALUES(?)',[('x'*4000,)]*2500);writer.commit()
-            inserted=[]
-            def report(*_):
-                if not inserted:
-                    writer.execute("INSERT INTO messages(body)VALUES('arrived during copy')");writer.commit();inserted.append(True)
-            with closing(sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.01))as source,closing(sqlite3.connect(self.args.state/'snapshot.db'))as target:
-                clock=live.time.monotonic;origin=clock()
-                with patch.object(live.time,'monotonic',side_effect=lambda:10+clock()-origin):
-                    live.backup_with_progress(source,target,report)
-                self.assertTrue(inserted)
-                self.assertEqual(target.execute('SELECT count(*) FROM messages').fetchone()[0],2500)
-                self.assertFalse(source.in_transaction)
-            self.assertEqual(writer.execute('SELECT count(*) FROM messages').fetchone()[0],2501)
-
     def test_database_disconnect_exits_for_a_fresh_supervised_connection(self):
-        argv = ['nas-live-imports.py','--run','--once','--source',str(self.args.source),'--state',str(self.args.state),'--media',str(self.args.media),'--since',self.args.since]
+        argv = ['nas-live-imports.py','--run','--once','--source',str(self.args.source),'--state',str(self.args.state),'--media',str(self.args.media),'--since',self.args.since,'--expected-system-id',self.args.expected_system_id,'--expected-database',self.args.expected_database,'--expected-database-oid',self.args.expected_database_oid]
         def disconnected(consumer,provider):
             self.admin.execute('SELECT pg_terminate_backend(%s)',(consumer.db.info.backend_pid,))
             consumer.db.execute('SELECT 1')

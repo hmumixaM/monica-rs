@@ -1,20 +1,48 @@
-"""Publish an explicitly verified SNS import batch without removing any media.
-
-The stage has only decoded images and public source identities, never image keys.
-"""
-import argparse
+"""Publish verified source media through the normal import/storage contract."""
+from dataclasses import dataclass
 import hashlib
 import importlib.util
 import json
-import os
 from pathlib import Path
+from typing import Optional
 import re
 import subprocess
 import uuid
 
+from .files import atomic_json, canonical, checksum
+from .media_store import MARKER, MediaStore
+
+
+@dataclass(frozen=True)
+class DatabaseTarget:
+    system_id: str
+    database: str
+    oid: str
+
+    @property
+    def values(self):
+        return self.system_id, self.database, self.oid
+
+    @classmethod
+    def read(cls, db):
+        return cls(*db.execute("SELECT system_identifier::text,current_database(),(SELECT oid::text FROM pg_database WHERE datname=current_database()) FROM pg_control_system()").fetchone())
+
+
+@dataclass(frozen=True)
+class Publication:
+    stage: Path
+    media: Path
+    state: Path
+    validator: Path
+    manifest_sha256: str
+    expected_records: int
+    target: DatabaseTarget
+    runtime: Optional[Path] = None
+
 
 def module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(filename))
+    path = Path(__file__).resolve().parents[1] / filename
+    spec = importlib.util.spec_from_file_location(name, path)
     value = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(value)
     return value
@@ -25,21 +53,19 @@ def require(value):
         raise ValueError('sns_publication_contract')
 
 
-def publish(db, args):
-    restorer = module('sns_atomic_restorer', 'restore-verified-wechat-sources.py')
-    helper = restorer.helper
-    for path in (args.stage, args.media, args.state):
-        helper.canonical(path, directory=True)
+def publish(db, request: Publication):
+    store = MediaStore(request.media)
+    for path in (request.stage, request.media, request.state):
+        canonical(path, directory=True)
     require(not any(a == b or a in b.parents or b in a.parents for a, b in
-                    ((args.stage, args.media), (args.state, args.media), (args.stage, args.state))))
-    require((args.media / '.monica-rust-migration-media').read_text() == helper.MARKER)
-    manifest = args.stage / 'manifest.json'
-    require(helper.checksum(manifest) == args.manifest_sha256)
+                    ((request.stage, request.media), (request.state, request.media), (request.stage, request.state))))
+    require((request.media / '.monica-rust-migration-media').read_text() == MARKER)
+    manifest = request.stage / 'manifest.json'
+    require(checksum(manifest) == request.manifest_sha256)
     rows = json.loads(manifest.read_text())['rows']
-    require(len(rows) == args.expected_records and 0 < len(rows) <= 1000)
+    require(len(rows) == request.expected_records and 0 < len(rows) <= 1000)
     require(len({(r['event_id'], r.get('asset_role', 'media-'+str(r['slot']))) for r in rows}) == len(rows))
-    identity = db.execute("SELECT system_identifier::text,current_database(),(SELECT oid::text FROM pg_database WHERE datname=current_database()),(SELECT max(version) FROM _sqlx_migrations WHERE success) FROM pg_control_system()").fetchone()
-    require(identity == (args.expected_system_id, 'monica_rust', '16384', args.expected_schema))
+    require(DatabaseTarget.read(db) == request.target)
     for row in rows:
         asset = row['media']
         require(str(uuid.UUID(row['event_id'])) == row['event_id'] and row['external_id'].isdigit())
@@ -49,20 +75,19 @@ def publish(db, args):
         require(re.fullmatch('[0-9a-f]{64}', asset['sha256']) and
                 0 < asset['byte_length'] <= (512 if video else 32) * 1024 * 1024 and
                 asset['media_type'] in ('image/jpeg', 'image/png', 'video/mp4'))
-        source = args.stage / 'objects' / asset['sha256']
-        require(helper.canonical(source).st_size == asset['byte_length'])
+        source = request.stage / 'objects' / asset['sha256']
+        require(canonical(source).st_size == asset['byte_length'])
         if video:
             verifier=module('sns_video_validation','sns-video.py')
-            actual=verifier.validate(source,args.runtime)
+            actual=verifier.validate(source,request.runtime)
         else:
-            checked = subprocess.run([str(args.validator)], input=source.read_bytes(),
+            checked = subprocess.run([str(request.validator)], input=source.read_bytes(),
                                      capture_output=True, timeout=15,
                                      env={'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})
             require(checked.returncode == 0 and len(checked.stdout) < 4096)
             actual = json.loads(checked.stdout)
         require(all(actual.get(k) == asset[k] for k in
                     ('sha256', 'byte_length', 'media_type', 'width', 'height')))
-    owner = (args.media.stat().st_uid, args.media.stat().st_gid)
     with db.transaction():
         require(db.execute("SELECT pg_try_advisory_xact_lock(hashtextextended('sns-verified-publication',0))").fetchone()[0])
         for event_id, role in sorted((r['event_id'], r.get('asset_role', 'media-'+str(r['slot']))) for r in rows):
@@ -94,10 +119,9 @@ def publish(db, args):
                     original.get('source_md5') == row['source_md5'])
             asset = row['media']
             digest = asset['sha256']
-            path = restorer.publish(args.stage / 'objects' / digest, args.media,
-                                    digest, asset['byte_length'], owner)
+            path = store.publish(request.stage / 'objects' / digest, digest, asset['byte_length'])
             media_id = uuid.uuid5(uuid.NAMESPACE_URL, 'monica:sns:' + digest)
-            provenance = 'sns-restore:' + external + ':' + str(row['slot']) + ':' + row['raw_xml_sha256']
+            provenance = 'sns-import:' + external + ':' + str(row['slot']) + ':' + row['raw_xml_sha256']
             db.execute("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,width,height,source_type,source_record_id,duration_ms,verified_at) VALUES(%s,%s,%s,%s,%s,%s,%s,'wechat',%s,%s,now()) ON CONFLICT(sha256) DO UPDATE SET media_type=excluded.media_type,byte_length=excluded.byte_length,object_path=excluded.object_path,width=excluded.width,height=excluded.height,duration_ms=coalesce(excluded.duration_ms,crm.media_assets.duration_ms),verified_at=excluded.verified_at", (media_id, digest, asset['media_type'], asset['byte_length'], path, asset['width'], asset['height'], provenance,asset.get('duration_ms')))
             media_id, length = db.execute('SELECT id,byte_length FROM crm.media_assets WHERE sha256=%s', (digest,)).fetchone()
             require(length == asset['byte_length'])
@@ -110,36 +134,11 @@ def publish(db, args):
             require(all(r[0] == media_id for r in linked))
             db.execute("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role,source_account_id) VALUES('social_post',%s,%s,%s,%s) ON CONFLICT DO NOTHING", (row['event_id'], media_id, role, source_account))
         from psycopg.types.json import Jsonb
-        metadata = dict(manifest_sha256=args.manifest_sha256, records=len(rows), before_links=before,
+        metadata = dict(manifest_sha256=request.manifest_sha256, records=len(rows), before_links=before,
                         files_deleted=0, references_deleted=0)
-        db.execute("INSERT INTO crm.audit_events(action,entity_type,metadata) VALUES('media.sns_import_repaired','social_post',%s)", (Jsonb(metadata),))
+        db.execute("INSERT INTO crm.audit_events(action,entity_type,metadata) VALUES('media.sns_import_published','social_post',%s)", (Jsonb(metadata),))
     result = dict(complete=True, records=len(rows), unique_files=len({r['media']['sha256'] for r in rows}),
-                  manifest_sha256=args.manifest_sha256, files_deleted=0, references_deleted=0)
-    helper.atomic_json(args.state / 'result.json', result)
+                  manifest_sha256=request.manifest_sha256, files_deleted=0, references_deleted=0)
+    atomic_json(request.state / 'result.json', result)
     return result
 
-
-def main():
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--stage', type=Path, required=True)
-    p.add_argument('--media', type=Path, required=True)
-    p.add_argument('--state', type=Path, required=True)
-    p.add_argument('--validator', type=Path, required=True)
-    p.add_argument('--runtime', type=Path)
-    p.add_argument('--manifest-sha256', required=True)
-    p.add_argument('--expected-records', type=int, required=True)
-    p.add_argument('--expected-system-id', required=True)
-    p.add_argument('--expected-schema', type=int, required=True)
-    args = p.parse_args()
-    import psycopg
-    with psycopg.connect(os.environ['MONICA_DATABASE_URL'], autocommit=True) as db:
-        print(json.dumps(publish(db, args)), flush=True)
-
-
-if __name__ == '__main__':
-    os.umask(0o077)
-    try:
-        main()
-    except Exception as error:
-        print(json.dumps(dict(error_type=type(error).__name__)), flush=True)
-        raise SystemExit(1)

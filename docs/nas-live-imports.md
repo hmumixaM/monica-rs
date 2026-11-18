@@ -5,8 +5,10 @@ Chatlog archives. It never starts a collector, signs in, decrypts files or calls
 an AI model. Next can remain stopped. The standalone worker is independent of
 the Mac and uses the isolated Rust network and SSD only for its writable state.
 
-The worker is intentionally bound to the current isolated NAS database identity
-and schema 86. It must not target Monica Next or another restored database.
+The worker requires the PostgreSQL system identifier, database name and database
+OID as explicit launch configuration. These must identify the isolated Rust
+installation, not Monica Next or another restored database. Schema 88 or newer
+is required; additive migrations do not require editing a version allowlist.
 Run the worker as UID/GID **10001:10001**, matching the Rust server. The CLI rejects other UIDs. New CAS shards therefore remain writable by the server as well as readable. Run the reviewed source from a read-only `/work` mount, with these mounts:
 
 - Existing Next `data` → `/source`, **read-only**.
@@ -30,6 +32,8 @@ python3 -u scripts/nas-live-imports.py --run \
   --source /source --chatlog /chatlog --wechat-self VERIFIED_EXISTING_SELF_ID \
   --linkedin-self VERIFIED_LINKEDIN_OWNER_URN --linkedin-connection ARCHIVE_CONNECTION_UUID \
   --media /data/media --state /data/live-imports \
+  --expected-system-id VERIFIED_POSTGRES_SYSTEM_ID \
+  --expected-database monica_rust --expected-database-oid VERIFIED_DATABASE_OID \
   --since 2026-11-13T00:00:00Z --interval 300
 ```
 
@@ -93,23 +97,20 @@ Version 2 batches use a distinct `nas-live:v2:` receipt namespace and bind the
 original input hashes. Existing successful local delivery rows are reused.
 Replays still use normal content identities and preserve manual profile values.
 
-On NAS exports whose WAL/SHM coordination files need initialization after a
-plaintext refresh, run `scripts/nas-chatlog-readiness.py --watch` on the NAS host.
-It uses only SQLite `mode=ro` plus `query_only`, reads schema metadata and keeps a
-private status under the SSD state directory. SQLite can update its SHM reader
-coordination, while database/WAL business bytes remain unchanged. The importer
-continues to mount the complete source read-only. The helper is independent of
-the Mac, bounded by a two-second SQLite busy timeout and one probe per changed
-file per minute. Preserve its PID/start receipt and restart it after a NAS reboot.
-SQLite backup reports page counts and retries a file after 120 seconds without
-progress; partial exports are not published or acknowledged.
-
-Each source file backup pins an explicit read transaction before stepping pages.
-This prevents a read-only WAL source from restarting every incremental step.
+`monica_imports.sqlite_snapshot` pins an explicit read transaction before stepping
+backup pages. Ongoing WAL commits therefore do not restart incremental backup.
 The snapshot is released on success, cancellation or failure. WAL writers can
-continue committing while that read snapshot is held. Source journal mode and
-business data are not changed; a busy initial read fails within the connection
-busy timeout and is retried without acknowledging a partial export.
+continue committing while that read snapshot is held.
+
+Fresh plaintext exports can contain a WAL without an initialized SHM index.
+The receiver captures a stable database/WAL file set into its private writable
+directory and lets SQLite build coordination files there. An existing rollback
+journal is captured with the database so SQLite can recover the private copy.
+File identities must remain unchanged during that capture; a changed source is
+reported for the next normal polling cycle. This path needs no host helper,
+writable source mount, immutable live connection or backup stall timer. The
+published target is replaced only after SQLite integrity validation completes.
+See [import storage](import-storage.md) for the normal media publication path.
 
 Each polling cycle handles WeChat before social archive scans so the large
 Instagram history walk does not postpone an unfinished WeChat backfill.

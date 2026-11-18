@@ -16,7 +16,7 @@ import signal
 import sqlite3
 import sys
 import time
-from urllib.parse import quote
+from monica_imports.sqlite_snapshot import publish_snapshot
 
 spec = importlib.util.spec_from_file_location('group_images', Path(__file__).with_name('wechat-group-images.py'))
 images = importlib.util.module_from_spec(spec)
@@ -70,35 +70,7 @@ def requested_catalog(source, metadata, ledger, requested, guard):
 
 
 def snapshot(source, target, guard):
-    temporary = target.with_suffix('.partial')
-    if source.resolve() != source or source.is_symlink() or target.is_symlink() or temporary.is_symlink():
-        raise ValueError('metadata snapshot alias')
-    temporary.unlink(missing_ok=True)
-    last = time.monotonic()
-    remaining_before = None
-    def progress(status, remaining, total):
-        nonlocal last, remaining_before
-        guard()
-        now = time.monotonic()
-        if remaining_before is None or remaining < remaining_before:
-            last = now
-        if now-last > 120:
-            raise TimeoutError('metadata snapshot stalled')
-        remaining_before = remaining
-    try:
-        with closing(sqlite3.connect('file:'+quote(str(source))+'?mode=ro', uri=True, timeout=2)) as reader, closing(sqlite3.connect(temporary)) as output:
-            reader.execute('PRAGMA query_only=ON'); reader.execute('BEGIN')
-            try:
-                reader.execute('PRAGMA schema_version').fetchone()
-                reader.backup(output, pages=128, progress=progress, sleep=.05)
-            finally:
-                reader.rollback()
-            if output.execute('PRAGMA quick_check').fetchone() != ('ok',):
-                raise ValueError('metadata snapshot integrity failed')
-            output.execute('PRAGMA journal_mode=DELETE')
-        os.replace(temporary, target)
-    finally:
-        temporary.unlink(missing_ok=True)
+    publish_snapshot(source, target, progress=lambda *_: guard())
 
 
 class RecentImages(images.Worker):
@@ -145,6 +117,8 @@ def main():
         parser.add_argument('--'+name, type=Path, required=True)
     for name in ('account','expected-system-id','since'):
         parser.add_argument('--'+name, required=True)
+    parser.add_argument('--expected-database', default='monica_rust')
+    parser.add_argument('--expected-database-oid', type=int, required=True)
     parser.add_argument('--interval', type=int, default=300)
     args = parser.parse_args()
     if os.geteuid() != 10001 or args.interval < 30:
@@ -152,7 +126,7 @@ def main():
     cutoff = datetime.fromisoformat(args.since.replace('Z','+00:00'))
     if cutoff.tzinfo is None or cutoff.utcoffset().total_seconds() != 0:
         raise ValueError('explicit UTC cutoff required')
-    args.include_direct, args.expected_database, args.source_owner = True, 'monica_rust', None
+    args.include_direct, args.source_owner = True, None
     args.hardlink_db, args.decoder = images.canonical(args.hardlink_db), images.canonical(args.decoder)
     paths = images.roots(args.source_root, args.media_root, args.state_root)
     policy = [args.account, cutoff.isoformat(), str(args.hardlink_db), str(paths[0]), str(paths[1])]
@@ -184,7 +158,7 @@ def main():
     with (paths[2]/'worker.lock').open('a') as lock, closing(sqlite3.connect(paths[2]/'group-images.sqlite')) as ledger, psycopg.connect(os.environ['MONICA_DATABASE_URL'], autocommit=True) as db:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         target = db.execute("SELECT system_identifier::text,(SELECT oid FROM pg_database WHERE datname=current_database()),(SELECT max(version) FROM _sqlx_migrations WHERE success) FROM pg_control_system()").fetchone()
-        if target[:2] != (args.expected_system_id, 16384) or target[2] not in (86,87,88):
+        if target[:2] != (args.expected_system_id, args.expected_database_oid) or target[2] is None or target[2] < 86:
             raise ValueError('isolated target differs')
         worker = RecentImages(db, ledger, args, paths, child_env)
         try:
