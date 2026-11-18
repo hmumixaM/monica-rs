@@ -141,4 +141,3 @@ def publish(db, request: Publication):
                   manifest_sha256=request.manifest_sha256, files_deleted=0, references_deleted=0)
     atomic_json(request.state / 'result.json', result)
     return result
-
