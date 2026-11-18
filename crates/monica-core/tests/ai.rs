@@ -93,14 +93,17 @@ async fn post_media_requires_real_image_evidence_and_preserves_the_image_role(po
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(input["evidence"].as_array().unwrap().len(), 1);
-    assert_eq!(input["evidence"][0]["id"], image.to_string());
-    assert_eq!(input["evidence"][0]["role"], "media-3");
+    assert_eq!(input["images"].as_array().unwrap().len(), 2);
+    assert_eq!(input["images"][1]["media_id"], image.to_string());
+    assert_eq!(input["images"][1]["slot"], 3);
     assert!(
         ai::run_one(
             &pool,
             &FakeProvider {
-                output: json!({"summary":"两张图片", "items":[]})
+                output: json!({"summary":"两张图片", "items":[
+                    {"index":1,"description":"Saved Next city image","text":"","category":"城市街景"},
+                    {"index":2,"description":"Teapots","text":"","category":"食物"}
+                ]})
             }
         )
         .await
@@ -127,8 +130,201 @@ async fn post_media_requires_real_image_evidence_and_preserves_the_image_role(po
             .as_array()
             .unwrap()
             .iter()
-            .any(|item| item["media_id"] == image.to_string() && item["text"] == "Menu words" && item["description"] == "Teapots")
+            .any(|item| item["media_id"] == image.to_string()
+                && item["text"] == "Menu words"
+                && item["description"] == "Teapots")
     );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn archived_story_reads_pixels_without_waiting_for_single_image_history(pool: PgPool) {
+    use image::ImageEncoder;
+    use std::io::{Read, Write};
+    person(&pool).await;
+    sqlx::query("UPDATE crm.ai_settings SET provider='openai',execution_enabled=true")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE crm.image_ocr_settings SET enabled=true,daily_limit=1,model='fixture-vision'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let image = Uuid::new_v4();
+    let post = Uuid::new_v4();
+    let root = tempfile::tempdir().unwrap();
+    let mut bytes = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut bytes)
+        .write_image(
+            &[255, 0, 0, 255, 0, 0],
+            1,
+            2,
+            image::ExtendedColorType::Rgb8,
+        )
+        .unwrap();
+    let sha = monica_core::identity::bytes_hash(&bytes);
+    let relative = monica_core::media::object_path(&sha).unwrap();
+    let path = root.path().join(&relative);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, &bytes).unwrap();
+    sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path)VALUES($1,$2,'image/png',$3,$4)")
+        .bind(image).bind(&sha).bind(bytes.len()as i64).bind(&relative).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,event_type,external_id,occurred_at,content,content_hash,version,status)VALUES($1,'instagram',$1,'story','fixture-story',now(),'{\"text\":\"配文\"}','fixture',1,'archived')")
+        .bind(post).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role)VALUES('social_story',$1,$2,'media-1')")
+        .bind(post).bind(image).execute(&pool).await.unwrap();
+    let single_image_job = ai::enqueue(&pool, "ai.image_ocr", &image.to_string())
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO crm.ai_call_reservations(job_id,day)VALUES($1,(now() AT TIME ZONE 'America/Chicago')::date)")
+        .bind(single_image_job).execute(&pool).await.unwrap();
+    assert_eq!(
+        ai::post_media::pending_subjects(&pool, None).await.unwrap(),
+        vec![post.to_string()]
+    );
+    let mut tx = pool.begin().await.unwrap();
+    let ingested = ai::post_media::enqueue_import(&mut tx, post, "media-1")
+        .await
+        .unwrap()
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert!(ai::claim(&pool).await.unwrap().is_none());
+    tokio::time::sleep(std::time::Duration::from_millis(12_050)).await;
+    let failed = ai::claim(&pool).await.unwrap().unwrap();
+    assert_eq!(failed.id, ingested);
+    ai::fail(&pool, &failed, "network unavailable")
+        .await
+        .unwrap();
+    assert_eq!(
+        ai::post_media::pending_subjects(&pool, None).await.unwrap(),
+        vec![post.to_string()]
+    );
+    sqlx::query("UPDATE crm.ai_jobs SET error='image or video frame could not be read'WHERE id=$1")
+        .bind(failed.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        ai::post_media::pending_subjects(&pool, None)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    sqlx::query("UPDATE crm.timeline_events SET version=version+1 WHERE id=$1")
+        .bind(post)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        ai::post_media::pending_subjects(&pool, None).await.unwrap(),
+        vec![post.to_string()]
+    );
+    ai::enqueue(&pool, "ai.post_media", &post.to_string())
+        .await
+        .unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+            .unwrap();
+        let mut raw = Vec::new();
+        let mut chunk = [0; 4096];
+        let (head_end, length) = loop {
+            let n = stream.read(&mut chunk).unwrap();
+            assert!(n > 0);
+            raw.extend_from_slice(&chunk[..n]);
+            if let Some(n) = raw.windows(4).position(|w| w == b"\r\n\r\n") {
+                let headers = String::from_utf8_lossy(&raw[..n]);
+                let length = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.to_ascii_lowercase()
+                            .strip_prefix("content-length:")
+                            .map(|s| s.trim().parse::<usize>().unwrap())
+                    })
+                    .unwrap();
+                break (n + 4, length);
+            }
+        };
+        while raw.len() < head_end + length {
+            let n = stream.read(&mut chunk).unwrap();
+            assert!(n > 0);
+            raw.extend_from_slice(&chunk[..n]);
+        }
+        let request: serde_json::Value =
+            serde_json::from_slice(&raw[head_end..head_end + length]).unwrap();
+        let output = json!({"summary":"红色照片","items":[{"index":1,"description":"红色图片","text":"","category":"其他"}]});
+        let body = json!({"choices":[{"message":{"content":output.to_string()}}]}).to_string();
+        write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
+        request
+    });
+    let provider =
+        OpenAiProvider::new(&format!("http://{address}/v1"), "fixture-key".into()).unwrap();
+    assert!(
+        ai::run_with_media(&pool, &provider, Some(root.path()), None)
+            .await
+            .unwrap()
+    );
+    let request = server.join().unwrap();
+    assert_eq!(request["messages"][0]["content"], ai::prompts::POST_MEDIA);
+    assert_eq!(request["response_format"]["type"], "json_schema");
+    assert_eq!(request["messages"][1]["content"][1]["text"], "图 1（照片）");
+    assert!(
+        request["messages"][1]["content"][2]["image_url"]["url"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/jpeg;base64,")
+    );
+    let reading: serde_json::Value =
+        sqlx::query_scalar("SELECT items FROM crm.media_readings WHERE entity_id=$1")
+            .bind(post)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(reading[0]["media_id"], image.to_string());
+    assert_eq!(reading[0]["description"], "红色图片");
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT status FROM crm.image_ocr_readings WHERE media_id=$1"
+        )
+        .bind(image)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        "complete"
+    );
+    assert!(
+        ai::post_media::pending_subjects(&pool, None)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*)FROM crm.ai_call_reservations")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT status FROM crm.ai_jobs WHERE id=$1")
+            .bind(single_image_job)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "cancelled"
+    );
+    let mut tx = pool.begin().await.unwrap();
+    assert!(
+        ai::post_media::enqueue_import(&mut tx, post, "media-1")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    tx.rollback().await.unwrap();
 }
 #[sqlx::test(migrations = "../../migrations")]
 async fn input_dedupe_privacy_and_stale_output_fencing(pool: PgPool) {

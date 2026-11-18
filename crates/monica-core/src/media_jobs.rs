@@ -113,6 +113,9 @@ pub async fn resolve_dependencies(pool: &PgPool) -> Result<usize> {
                 sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING").bind(entity).bind(target).bind(media).bind(role).execute(&mut *tx).await?;
                 sqlx::query("INSERT INTO crm.media_provenance(media_id,source,source_record_id,import_batch_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING").bind(media).bind(&provider).bind(external.unwrap_or("record")).bind(batch).execute(&mut *tx).await?;
                 sqlx::query("UPDATE crm.media_dependencies SET state='complete',reason='linked',media_id=$2,updated_at=now() WHERE id=$1").bind(id).bind(media).execute(&mut *tx).await?;
+                if matches!(entity, "social_post" | "social_story") {
+                    crate::ai::post_media::enqueue_import(&mut tx, target, role).await?;
+                }
                 tx.commit().await?;
                 completed += 1;
                 continue;
@@ -140,6 +143,9 @@ pub async fn resolve_dependencies(pool: &PgPool) -> Result<usize> {
                 sqlx::query("INSERT INTO crm.media_profile_refresh(account_id) VALUES($1) ON CONFLICT(account_id) DO UPDATE SET generation=crm.media_profile_refresh.generation+1").bind(target).execute(&mut *tx).await?;
             }
             sqlx::query("UPDATE crm.media_dependencies SET state='complete',reason='linked',media_id=$2,updated_at=now() WHERE id=$1").bind(id).bind(media).execute(&mut *tx).await?;
+            if matches!(entity, "social_post" | "social_story") {
+                crate::ai::post_media::enqueue_import(&mut tx, target, role).await?;
+            }
             completed += 1;
         } else {
             let reason = if saved.is_none() {
