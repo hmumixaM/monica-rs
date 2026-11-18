@@ -139,7 +139,9 @@ async fn post_media_requires_real_image_evidence_and_preserves_the_image_role(po
 #[sqlx::test(migrations = "../../migrations")]
 async fn archived_story_reads_pixels_without_waiting_for_single_image_history(pool: PgPool) {
     use image::ImageEncoder;
+    use sqlx::ConnectOptions;
     use std::io::{Read, Write};
+    use std::time::Duration;
     person(&pool).await;
     sqlx::query("UPDATE crm.ai_settings SET provider='openai',execution_enabled=true")
         .execute(&pool)
@@ -218,7 +220,7 @@ async fn archived_story_reads_pixels_without_waiting_for_single_image_history(po
         ai::post_media::pending_subjects(&pool, None).await.unwrap(),
         vec![post.to_string()]
     );
-    ai::enqueue(&pool, "ai.post_media", &post.to_string())
+    let job = ai::enqueue(&pool, "ai.post_media", &post.to_string())
         .await
         .unwrap();
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -254,17 +256,68 @@ async fn archived_story_reads_pixels_without_waiting_for_single_image_history(po
         }
         let request: serde_json::Value =
             serde_json::from_slice(&raw[head_end..head_end + length]).unwrap();
+        // A normal vision response may take longer than the object-task budget.
+        std::thread::sleep(Duration::from_millis(250));
         let output = json!({"summary":"红色照片","items":[{"index":1,"description":"红色图片","text":"","category":"其他"}]});
         let body = json!({"choices":[{"message":{"content":output.to_string()}}]}).to_string();
         write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
         request
     });
-    let provider =
-        OpenAiProvider::new(&format!("http://{address}/v1"), "fixture-key".into()).unwrap();
-    assert!(
-        ai::run_with_media(&pool, &provider, Some(root.path()), None)
+    let cipher = monica_core::credentials::CredentialCipher::new(
+        "synthetic-installation-secret-at-least-32",
+    )
+    .unwrap();
+    let encrypted = cipher.encrypt(&json!({"api_key":"fixture-key"})).unwrap();
+    sqlx::query("UPDATE crm.ai_settings SET base_url=$1,credential_ciphertext=$2")
+        .bind(format!("http://{address}/v1"))
+        .bind(encrypted)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let db = monica_core::resources::DatabasePools::connect(
+        pool.connect_options().to_url_lossy().as_str(),
+        Default::default(),
+    )
+    .await
+    .unwrap();
+    let scheduler = monica_core::scheduler::Scheduler::start_with_sources(
+        db.background.clone(),
+        db.control.clone(),
+        monica_core::resources::ResourceBudget::new(Default::default()).unwrap(),
+        monica_core::scheduler::SchedulerConfig {
+            task_timeout: Duration::from_millis(50),
+            ..Default::default()
+        },
+        root.path().to_path_buf(),
+        cipher,
+    )
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            let status: String = sqlx::query_scalar("SELECT status FROM crm.ai_jobs WHERE id=$1")
+                .bind(job)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            if status == "complete" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the scheduler must let the model's own vision deadline run");
+    scheduler.pause().await.unwrap();
+    scheduler.shutdown().await.unwrap();
+    db.close().await;
+    assert_eq!(
+        sqlx::query_scalar::<_, i32>("SELECT attempts FROM crm.ai_jobs WHERE id=$1")
+            .bind(job)
+            .fetch_one(&pool)
             .await
-            .unwrap()
+            .unwrap(),
+        1
     );
     let request = server.join().unwrap();
     assert_eq!(request["messages"][0]["content"], ai::prompts::POST_MEDIA);

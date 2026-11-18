@@ -393,6 +393,10 @@ async fn delayed_old_blob_cannot_replace_a_newer_imported_slot(pool: PgPool) {
 #[sqlx::test(migrations = "../../migrations")]
 async fn signed_record_media_archives_links_and_replays_without_fabrication(pool: PgPool) {
     use monica_core::imports::{self, Batch};
+    sqlx::query("UPDATE crm.ai_settings SET enabled=true")
+        .execute(&pool)
+        .await
+        .unwrap();
     let root = tempfile::tempdir().unwrap();
     let store = store(pool.clone(), root.path());
     let hash = format!("{:x}", Sha256::digest(b"ABC"));
