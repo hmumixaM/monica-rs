@@ -201,6 +201,7 @@ pub async fn snapshot(
                 .await?;
             let id: Uuid = subject.parse()?;
             let (post, images) = post_media::snapshot(tx, id).await?;
+            ensure!(!images.is_empty(), "post has no image evidence");
             input["post"] = post;
             input["evidence"] = json!(images.iter().map(|image|json!({"id":image["media_id"],"kind":"image","sha256":image["sha256"]})).collect::<Vec<_>>());
             input["images"] = json!(images);

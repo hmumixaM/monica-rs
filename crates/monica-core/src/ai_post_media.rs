@@ -57,7 +57,6 @@ pub async fn snapshot(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result<(V
     let rows: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('role',l.role,'id',a.id,'sha256',a.sha256,'media_type',a.media_type,'duration_ms',a.duration_ms) FROM crm.media_links l JOIN crm.media_assets a ON a.id=l.media_id WHERE l.entity_id=$1 AND l.entity_type=$2 AND (a.media_type LIKE 'image/%' OR a.media_type LIKE 'video/%') ORDER BY l.role,a.created_at,a.id")
         .bind(id).bind(if post["kind"]=="story"{"social_story"}else{"social_post"}).fetch_all(&mut **tx).await?;
     let images = slots(&rows);
-    ensure!(!images.is_empty(), "post has no image evidence");
     Ok((post, images))
 }
 
@@ -76,6 +75,9 @@ pub async fn enqueue_import(
         return Ok(None);
     }
     let (_, images) = snapshot(tx, id).await?;
+    if images.is_empty() {
+        return Ok(None);
+    }
     let cached:Option<Value>=sqlx::query_scalar("SELECT items FROM crm.media_readings WHERE entity_id=$1 AND entity_type=(SELECT CASE WHEN event_type='story' THEN 'social_story' ELSE 'social_post'END FROM crm.timeline_events WHERE id=$1)")
         .bind(id).fetch_optional(&mut **tx).await?;
     let sources: Vec<Uuid> = images
