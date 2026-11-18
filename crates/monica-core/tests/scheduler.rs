@@ -158,8 +158,8 @@ async fn actual_queues_pause_resume_and_restart_preserve_work(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn committed_import_receipt_recovers_without_another_http_request(pool: PgPool) {
-    let batch: monica_core::imports::Batch = serde_json::from_value(json!({
+async fn committed_import_receipt_and_media_recover_with_unavailable_ai_credentials(pool: PgPool) {
+    let mut batch: monica_core::imports::Batch = serde_json::from_value(json!({
         "source":"wechat", "stream":"posts", "batch_id":"crashed-request",
         "idempotency_key":"crashed-request", "observed_at":"2026-01-01T00:00:00Z",
         "cursor_after":"synthetic-checkpoint",
@@ -170,6 +170,23 @@ async fn committed_import_receipt_recovers_without_another_http_request(pool: Pg
         })).collect::<Vec<_>>()
     }))
     .unwrap();
+    batch.records[0].extra.insert(
+        "media".into(),
+        json!([{"bytes":"414243","media_type":"application/octet-stream"}]),
+    );
+    let saved_cipher = monica_core::credentials::CredentialCipher::new(
+        "synthetic-previous-installation-secret-at-least-32",
+    )
+    .unwrap();
+    let credentials = saved_cipher
+        .encrypt(&json!({"api_key":"synthetic-only-key"}))
+        .unwrap();
+    sqlx::query("UPDATE crm.ai_settings SET enabled=true,execution_enabled=true,provider='openai',base_url='http://127.0.0.1:9/v1',credential_ciphertext=$1")
+        .bind(credentials).execute(&pool).await.unwrap();
+    let cipher = monica_core::credentials::CredentialCipher::new(
+        "synthetic-current-installation-secret-at-least-32",
+    )
+    .unwrap();
     let mut tx = pool.begin().await.unwrap();
     let id = monica_core::imports::receive(&mut tx, &batch, "synthetic-request-hash")
         .await
@@ -178,11 +195,14 @@ async fn committed_import_receipt_recovers_without_another_http_request(pool: Pg
     // Simulate the HTTP process disappearing after acceptance, before any source
     // processing. No original database, archive, collector or real user is read.
     let pools = pools(&pool).await;
-    let handle = Scheduler::start(
+    let media_root = tempfile::tempdir().unwrap();
+    let handle = Scheduler::start_with_sources(
         pools.background.clone(),
         pools.control.clone(),
-        resources(),
+        ResourceBudget::new(ResourceLimits::nas()).unwrap(),
         config(),
+        media_root.path().to_path_buf(),
+        cipher,
     )
     .await
     .unwrap();
@@ -203,7 +223,24 @@ async fn committed_import_receipt_recovers_without_another_http_request(pool: Pg
     .await
     .unwrap();
     assert_eq!(cursor, "synthetic-checkpoint");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let linked: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM crm.media_links WHERE entity_type='social_post'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if linked == 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("AI configuration errors must not stop attachment consumption");
     assert!(handle.status().await.unwrap().import_recovery_attempts >= 3);
+    assert!(handle.status().await.unwrap().failed_attempts > 0);
     handle.shutdown().await.unwrap();
     pools.close().await;
 }

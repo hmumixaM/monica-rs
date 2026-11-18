@@ -1040,7 +1040,7 @@ pub async fn schedule_due(pool: &PgPool) -> Result<()> {
 /// enqueue are replay-safe; there is no1000-person truncation or long DB lock.
 pub async fn dispatch_one(pool: &PgPool) -> Result<bool> {
     let token = Uuid::new_v4();
-    let row=sqlx::query("WITH candidate AS (SELECT d.id FROM crm.ai_dispatches d JOIN crm.ai_settings s ON s.id AND s.enabled AND s.execution_enabled WHERE d.status='queued' OR (d.status='running' AND d.lease_until<clock_timestamp()) ORDER BY d.created_at,d.id FOR UPDATE OF d SKIP LOCKED LIMIT 1) UPDATE crm.ai_dispatches d SET status='running',token=$1,lease_until=clock_timestamp()+interval '2 minutes' FROM candidate c WHERE d.id=c.id RETURNING d.*").bind(token).fetch_optional(pool).await?;
+    let row=sqlx::query("WITH candidate AS (SELECT d.id FROM crm.ai_dispatches d JOIN crm.ai_settings s ON s.id AND s.enabled AND s.execution_enabled WHERE d.status='queued' OR (d.status='running' AND d.lease_until<clock_timestamp()) ORDER BY (d.kind='ai.post_media') DESC,CASE WHEN d.kind='ai.post_media' THEN d.period END DESC,d.created_at,d.id FOR UPDATE OF d SKIP LOCKED LIMIT 1) UPDATE crm.ai_dispatches d SET status='running',token=$1,lease_until=clock_timestamp()+interval '2 minutes' FROM candidate c WHERE d.id=c.id RETURNING d.*").bind(token).fetch_optional(pool).await?;
     let Some(row) = row else { return Ok(false) };
     let id: Uuid = row.get("id");
     let kind: String = row.get("kind");

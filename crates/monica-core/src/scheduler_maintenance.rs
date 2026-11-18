@@ -54,6 +54,21 @@ pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
             let importing: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.import_batches WHERE status IN ('received','running') AND retry_after<=clock_timestamp())")
                 .fetch_one(&shared.background).await?;
             let mut reduced = 0;
+            // Prepare durable model work independently of the model permits.
+            // A full execution backlog must not starve newly requested batches.
+            let prepared = async {
+                if shared.media.is_some()
+                    && crate::ai::configured_provider(&shared.background, shared.credentials.as_ref()).await?.is_some()
+                {
+                    crate::ai::schedule_due(&shared.background).await?;
+                    crate::ai::dispatch_one(&shared.background).await?;
+                }
+                Ok::<_, anyhow::Error>(())
+            }.await;
+            if prepared.is_err() {
+                shared.failed.fetch_add(1, Ordering::Relaxed);
+                tracing::warn!("model queue preparation failed");
+            }
             if !importing {
                 reduced+=crate::ai::week_window::refresh_observations(&shared.background).await?;
                 reduced+=crate::ai::memory::refresh_profile_facts(&shared.background).await?;
