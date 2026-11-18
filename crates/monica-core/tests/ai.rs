@@ -39,7 +39,7 @@ fn evidence_and_output_boundaries() {
         ai::fingerprint("company", " Fixture  Corp ", None),
         ai::fingerprint("company", "fixturecorp", None)
     );
-    assert!(OpenAiProvider::new("http://example.com/v1", "synthetic-key".into()).is_err());
+    assert!(OpenAiProvider::new("http://example.com/v1", "synthetic-key".into()).is_ok());
     assert!(
         OpenAiProvider::new(
             "http://host.docker.internal:4000/v1",
@@ -205,11 +205,9 @@ async fn archived_story_reads_pixels_without_waiting_for_single_image_history(po
         .execute(&pool)
         .await
         .unwrap();
-    assert!(
-        ai::post_media::pending_subjects(&pool, None)
-            .await
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        ai::post_media::pending_subjects(&pool, None).await.unwrap(),
+        vec![post.to_string()]
     );
     sqlx::query("UPDATE crm.timeline_events SET version=version+1 WHERE id=$1")
         .bind(post)

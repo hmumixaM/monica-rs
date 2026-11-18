@@ -128,15 +128,6 @@ WHERE e.status<>'deleted'
        AND (a.media_type LIKE 'image/%' OR a.media_type LIKE 'video/%')
    ) m WHERE m.position<=10
    AND NOT EXISTS(
-     SELECT 1 FROM crm.ai_jobs j CROSS JOIN LATERAL jsonb_array_elements(j.input->'images') failed_image
-     WHERE j.kind='ai.post_media'AND j.subject=e.id::text AND j.status='failed'
-       AND j.error='image or video frame could not be read'
-       AND j.input->>'vision_mode'='monica-next-v1'
-       AND j.input#>'{post,version}'=to_jsonb(e.version)
-       AND j.model=(SELECT model FROM crm.image_ocr_settings WHERE id)
-       AND (failed_image->>'media_id'=m.media_id::text OR failed_image->>'read_from'=m.media_id::text)
-   )
-   AND NOT EXISTS(
      SELECT 1 FROM crm.media_readings r CROSS JOIN LATERAL jsonb_array_elements(r.items) item
      WHERE r.entity_id=e.id AND r.entity_type=CASE WHEN e.event_type='story' THEN 'social_story' ELSE 'social_post' END
        AND (coalesce(item->>'media_id',item->>'id')=m.media_id::text OR EXISTS(

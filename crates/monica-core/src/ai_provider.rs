@@ -45,13 +45,8 @@ impl OpenAiProvider {
             "invalid provider URL"
         );
         ensure!(
-            base.scheme() == "https"
-                || (base.scheme() == "http"
-                    && matches!(
-                        base.host_str(),
-                        Some("localhost" | "127.0.0.1" | "[::1]" | "host.docker.internal")
-                    )),
-            "model HTTP requires a local host service; use HTTPS for remote providers"
+            matches!(base.scheme(), "http" | "https"),
+            "model URL must use HTTP or HTTPS"
         );
         ensure!(
             !api_key.is_empty() && !api_key.contains(['\r', '\n']),
@@ -64,8 +59,6 @@ impl OpenAiProvider {
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(180))
-            .redirect(reqwest::redirect::Policy::none())
-            .no_proxy()
             .build()?;
         Ok(Self {
             client,
@@ -178,8 +171,6 @@ impl OpenAiProvider {
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(15))
             .timeout(Duration::from_secs(180))
-            .redirect(reqwest::redirect::Policy::none())
-            .no_proxy()
             .build()?;
         for attempt in 0..3 {
             match client
