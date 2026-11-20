@@ -10,7 +10,9 @@ Monica Rust 是这台 NAS 上的主服务，三个容器使用全部四个核心
 
 PostgreSQL 的 Unix socket 目录是数据根目录下的 `postgres-run`（宿主机目录）。导入 worker 把它只读挂载到 `/pg`，因此重建数据库容器不会让 worker 失去连接。数据目录和 socket 目录都设置了 `create_host_path: false`：数据盘没有挂载时容器会启动失败，而不是在别处初始化一个空库。
 
-数据盘是 USB 外接 SSD。DSM 内核会把它当作机械盘并使用 CFQ 调度，交互查询会排在后台查询的时间片后面；`infra/nas-boot.sh` 在开机时把该设备设为 `rotational=0` 和 `deadline`。SSD 必须接在 USB 3 口并使用 USB 3 线，`cat /sys/bus/usb/devices/*/speed` 中该设备应为 5000。
+数据盘是 USB 外接 SSD，挂载晚于 Docker 启动。所有 bind mount 都设置了 `create_host_path: false`，磁盘未挂载时容器启动失败，不会在系统盘上建出空目录。`infra/nas-boot.sh` 安装为 `/usr/local/etc/rc.d/monica-rs.sh`，开机后等待磁盘和 Docker 就绪，然后依次：把该设备设为 `rotational=0` 和 `deadline`（DSM 内核会把它当作机械盘并使用 CFQ 调度，交互查询会排在后台查询的时间片后面）、`compose up` 三个服务、启动导入 worker 容器（名称记录在 `config/live-imports.container`），以及两个宿主机辅助进程（`config/chatlog-readiness.py` 和 `config/wechat-images-supervisor.py`，后者的参数在 `config/wechat-images.args`）。SSD 必须接在 USB 3 口并使用 USB 3 线，`cat /sys/bus/usb/devices/*/speed` 中该设备应为 5000。
+
+辅助进程通过容器名和可执行文件路径找到 PostgreSQL 和 Chatlog，不依赖进程号、容器 ID 或设备号，重启后无需修改。
 
 表结构迁移用 `docker-compose --profile migrate run --rm migrate` 执行，然后再启动 `server`。
 

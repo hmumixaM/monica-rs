@@ -44,18 +44,19 @@ services:
       - -c
       - log_parameter_max_length_on_error=0
     volumes:
-      # Never create the data directory: if the data disk is not mounted the
-      # container must fail instead of initializing an empty database elsewhere.
+      # Never create a missing directory: everything lives on an external disk,
+      # and a container that starts before the disk is mounted must fail instead
+      # of initializing an empty database or writing media to the system disk.
       - type: bind
         source: ${MONICA_RUST_DATA_ROOT:?Set an independent Rust data root}/postgres
         target: /var/lib/postgresql/data
-        bind: {create_host_path: false}
+        bind: &existing {create_host_path: false}
       # Import workers reach the database through this socket directory. It is a
       # host directory so that replacing this container does not disconnect them.
       - type: bind
         source: ${MONICA_RUST_DATA_ROOT}/postgres-run
         target: /var/run/postgresql
-        bind: {create_host_path: false}
+        bind: *existing
     networks: [isolated]
     shm_size: 256m
     mem_limit: ${MONICA_PG_MEMORY:-3g}
@@ -101,9 +102,9 @@ services:
     extra_hosts:
       - host.docker.internal:host-gateway
     volumes:
-      - ${MONICA_RUST_DATA_ROOT}/media:/data/media
-      - ${MONICA_RUST_DATA_ROOT}/snapshots/monica-next:/data/archive:ro
-      - ${MONICA_RUST_DATA_ROOT}/migration:/data/migration:ro
+      - {type: bind, source: '${MONICA_RUST_DATA_ROOT}/media', target: /data/media, bind: *existing}
+      - {type: bind, source: '${MONICA_RUST_DATA_ROOT}/snapshots/monica-next', target: /data/archive, read_only: true, bind: *existing}
+      - {type: bind, source: '${MONICA_RUST_DATA_ROOT}/migration', target: /data/migration, read_only: true, bind: *existing}
     networks: [isolated, ingress]
     mem_limit: 1g
     stop_grace_period: 120s
@@ -122,10 +123,10 @@ services:
     ports:
       - '${MONICA_BIND_ADDRESS:-100.77.236.1}:9444:443'
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./certs:/certs:ro
-      - ${MONICA_RUST_DATA_ROOT}/proxy-data:/data
-      - ${MONICA_RUST_DATA_ROOT}/proxy-config:/config
+      - {type: bind, source: ./Caddyfile, target: /etc/caddy/Caddyfile, read_only: true, bind: *existing}
+      - {type: bind, source: ./certs, target: /certs, read_only: true, bind: *existing}
+      - {type: bind, source: '${MONICA_RUST_DATA_ROOT}/proxy-data', target: /data, bind: *existing}
+      - {type: bind, source: '${MONICA_RUST_DATA_ROOT}/proxy-config', target: /config, bind: *existing}
     # Docker does not publish host ports for an exclusively internal bridge.
     # Only the TLS proxy joins this second, project-owned ingress network.
     networks: [isolated, ingress]
