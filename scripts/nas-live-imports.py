@@ -450,7 +450,8 @@ class Consumer:
                 # finish publication before this page is acknowledged.
                 for record in frame['batch']['records']:
                     value=record['content']
-                    if value.get('kind')!='post':continue
+                    # Pages queued by an older reader carry posts without raw XML.
+                    if value.get('kind')!='post' or 'raw_content' not in value:continue
                     root,_=self.legacy.reader.moments.parse_moments_xml(value['raw_content'])
                     obj=root if root.tag=='TimelineObject'else root.find('TimelineObject')
                     author=next(p['id']for p in value['participants']if p['role']=='author')

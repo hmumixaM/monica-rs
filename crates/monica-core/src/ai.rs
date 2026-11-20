@@ -130,7 +130,36 @@ pub async fn snapshot(
                 evidence.extend(notes);
             }
             if privacy.include_messages {
-                let messages:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',m.message_id,'conversation_id',m.conversation_id,'kind',c.conversation_type,'text',left(m.body,4000),'at',m.occurred_at,'sender',m.sender,'sender_profile_id',coalesce(m.sender_profile_id,l.profile_id),'direction',coalesce(m.direction,CASE WHEN m.sender=m.account THEN 'sent' ELSE 'received' END),'speaker',CASE WHEN c.conversation_type='group' THEN 'TA' WHEN m.direction='unknown' THEN '未知' WHEN m.direction='sent' OR (m.direction IS NULL AND m.sender=m.account) THEN '我' ELSE 'TA' END,'group',CASE WHEN c.conversation_type='group' THEN coalesce(c.source_display_name,c.external_id) END) FROM crm.message_search m JOIN crm.conversations c ON c.id=m.conversation_id LEFT JOIN crm.source_account_links l ON l.account_id=m.sender_account_id WHERE ((c.conversation_type='direct' AND c.profile_id=$1) OR (c.conversation_type='group' AND coalesce(m.sender_profile_id,l.profile_id)=$1)) AND NOT m.tombstone AND ($2::date IS NULL OR (m.occurred_at>=($2::timestamp AT TIME ZONE 'America/Chicago') AND m.occurred_at<(($2+7)::timestamp AT TIME ZONE 'America/Chicago'))) ORDER BY m.occurred_at DESC,m.message_id LIMIT 120").bind(id).bind(week).fetch_all(&mut **tx).await?;
+                // Each way a message can belong to this person has its own index:
+                // their direct conversations, their own group lines, and group
+                // lines from accounts linked to them.
+                // Every branch reads its newest rows (with ties) straight from
+                // that index; the final sort then keeps the newest 120 overall.
+                let messages:Vec<Value>=sqlx::query_scalar(&format!(r#"WITH picked AS (
+ (SELECT m.* FROM crm.conversations c CROSS JOIN LATERAL(
+   SELECT m.* FROM crm.message_search m WHERE m.conversation_id=c.id AND NOT m.tombstone AND {WEEK}
+   ORDER BY m.occurred_at DESC FETCH FIRST 120 ROWS WITH TIES) m
+  WHERE c.profile_id=$1 AND c.conversation_type='direct')
+ UNION ALL
+ (SELECT m.* FROM crm.message_search m JOIN crm.conversations c ON c.id=m.conversation_id AND c.conversation_type='group'
+  WHERE m.sender_profile_id=$1 AND NOT m.tombstone AND {WEEK}
+  ORDER BY m.occurred_at DESC FETCH FIRST 120 ROWS WITH TIES)
+ UNION ALL
+ (SELECT m.* FROM crm.source_account_links a CROSS JOIN LATERAL(
+   SELECT m.* FROM crm.message_search m JOIN crm.conversations c ON c.id=m.conversation_id AND c.conversation_type='group'
+   WHERE m.sender_account_id=a.account_id AND m.sender_profile_id IS NULL AND NOT m.tombstone AND {WEEK}
+   ORDER BY m.occurred_at DESC FETCH FIRST 120 ROWS WITH TIES) m
+  WHERE a.profile_id=$1)
+)
+{SELECT} FROM picked m JOIN crm.conversations c ON c.id=m.conversation_id LEFT JOIN crm.source_account_links l ON l.account_id=m.sender_account_id ORDER BY m.occurred_at DESC,m.message_id LIMIT 120"#,
+                    // A plain range keeps the newest-first index scan; an
+                    // "is null or in range" test would hide it from the planner.
+                    WEEK = if week.is_some() {
+                        "(m.occurred_at>=($2::timestamp AT TIME ZONE 'America/Chicago') AND m.occurred_at<(($2+7)::timestamp AT TIME ZONE 'America/Chicago'))"
+                    } else {
+                        "$2::date IS NULL"
+                    },
+                    SELECT = "SELECT jsonb_build_object('id',m.message_id,'conversation_id',m.conversation_id,'kind',c.conversation_type,'text',left(m.body,4000),'at',m.occurred_at,'sender',m.sender,'sender_profile_id',coalesce(m.sender_profile_id,l.profile_id),'direction',coalesce(m.direction,CASE WHEN m.sender=m.account THEN 'sent' ELSE 'received' END),'speaker',CASE WHEN c.conversation_type='group' THEN 'TA' WHEN m.direction='unknown' THEN '未知' WHEN m.direction='sent' OR (m.direction IS NULL AND m.sender=m.account) THEN '我' ELSE 'TA' END,'group',CASE WHEN c.conversation_type='group' THEN coalesce(c.source_display_name,c.external_id) END)")).bind(id).bind(week).fetch_all(&mut **tx).await?;
                 evidence.extend(messages);
             }
             if week.is_some() {
