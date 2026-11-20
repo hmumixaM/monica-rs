@@ -6,7 +6,13 @@
 
 `infra/nas.compose.yaml` 要求明确提供 Rust、PostgreSQL 和 Caddy 的不可变镜像引用。Rust 镜像从已完成本地技能审查并合并的 main 提交构建。交付记录同时保存源码提交、多架构镜像摘要和 amd64 实际镜像摘要。
 
-NAS 当前内核支持 cpuset 和 CPU shares，不支持 CFS 配额及 pids controller。新服务统一固定在四核中的一个核心，降低调度权重。PostgreSQL、Rust 服务、代理分别限制为 384、384、64 MiB。采集器不部署，模型执行及 OCR 关闭，MCP 初始关闭。安装秘密、控制 token、导入凭据和数据库密码均独立生成。
+Monica Rust 是这台 NAS 上的主服务，三个容器使用全部四个核心，不再固定 cpuset 或降低调度权重。PostgreSQL 上限 3 GiB（`shared_buffers=1GB`，可用 `MONICA_PG_SHARED_BUFFERS`、`MONICA_PG_MEMORY` 调整），Rust 服务 1 GiB，代理 128 MiB。数据库比内存大得多，热数据要留在 shared buffers 里；存储按 SSD 计价（`random_page_cost=1.1`），超过 2 秒的语句写入日志但不记录绑定参数。所有 PostgreSQL 参数都在 `infra/nas.compose.yaml` 的启动命令里，不使用 `ALTER SYSTEM`。安装秘密、控制 token、导入凭据和数据库密码均独立生成。
+
+PostgreSQL 的 Unix socket 目录是数据根目录下的 `postgres-run`（宿主机目录）。导入 worker 把它只读挂载到 `/pg`，因此重建数据库容器不会让 worker 失去连接。数据目录和 socket 目录都设置了 `create_host_path: false`：数据盘没有挂载时容器会启动失败，而不是在别处初始化一个空库。
+
+数据盘是 USB 外接 SSD。DSM 内核会把它当作机械盘并使用 CFQ 调度，交互查询会排在后台查询的时间片后面；`infra/nas-boot.sh` 在开机时把该设备设为 `rotational=0` 和 `deadline`。SSD 必须接在 USB 3 口并使用 USB 3 线，`cat /sys/bus/usb/devices/*/speed` 中该设备应为 5000。
+
+表结构迁移用 `docker-compose --profile migrate run --rm migrate` 执行，然后再启动 `server`。
 
 开始启动服务前，再检查 9444 端口空闲，以及当前内存、磁盘等待和旧版健康状态。用户后续明确取消固定的 1.5 GiB / 五分钟启动条件，要求以 NAS 稳定为准，并允许必要时暂时停止 Monica Next 进行 Rust 测试。先暂停新增复制工作，再逐项启动受内存限制的新服务；出现压力时只停止本次新增任务。若临时停旧版，应记录准确容器 ID 和原运行状态，并在测试后恢复。复制仍使用保守的 768 MiB 保护值，可根据实测资源情况调整。
 

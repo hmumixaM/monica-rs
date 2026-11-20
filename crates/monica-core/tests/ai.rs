@@ -182,7 +182,10 @@ async fn archived_story_reads_pixels_without_waiting_for_single_image_history(po
     sqlx::query("INSERT INTO crm.ai_call_reservations(job_id,day)VALUES($1,(now() AT TIME ZONE 'America/Chicago')::date)")
         .bind(single_image_job).execute(&pool).await.unwrap();
     assert_eq!(
-        ai::post_media::pending_subjects(&pool, None).await.unwrap(),
+        ai::post_media::pending_subjects(&pool, None)
+            .await
+            .unwrap()
+            .0,
         vec![post.to_string()]
     );
     let mut tx = pool.begin().await.unwrap();
@@ -199,7 +202,10 @@ async fn archived_story_reads_pixels_without_waiting_for_single_image_history(po
         .await
         .unwrap();
     assert_eq!(
-        ai::post_media::pending_subjects(&pool, None).await.unwrap(),
+        ai::post_media::pending_subjects(&pool, None)
+            .await
+            .unwrap()
+            .0,
         vec![post.to_string()]
     );
     sqlx::query("UPDATE crm.ai_jobs SET error='image or video frame could not be read'WHERE id=$1")
@@ -208,7 +214,10 @@ async fn archived_story_reads_pixels_without_waiting_for_single_image_history(po
         .await
         .unwrap();
     assert_eq!(
-        ai::post_media::pending_subjects(&pool, None).await.unwrap(),
+        ai::post_media::pending_subjects(&pool, None)
+            .await
+            .unwrap()
+            .0,
         vec![post.to_string()]
     );
     sqlx::query("UPDATE crm.timeline_events SET version=version+1 WHERE id=$1")
@@ -217,7 +226,10 @@ async fn archived_story_reads_pixels_without_waiting_for_single_image_history(po
         .await
         .unwrap();
     assert_eq!(
-        ai::post_media::pending_subjects(&pool, None).await.unwrap(),
+        ai::post_media::pending_subjects(&pool, None)
+            .await
+            .unwrap()
+            .0,
         vec![post.to_string()]
     );
     let job = ai::enqueue(&pool, "ai.post_media", &post.to_string())
@@ -351,6 +363,7 @@ async fn archived_story_reads_pixels_without_waiting_for_single_image_history(po
         ai::post_media::pending_subjects(&pool, None)
             .await
             .unwrap()
+            .0
             .is_empty()
     );
     assert_eq!(

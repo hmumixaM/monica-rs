@@ -1,6 +1,7 @@
 //! Authentication and cheap committed dependency tokens precede the singleflight.
 //! The original handler (including its SQL and JSON construction) runs only on miss.
 use super::*;
+use crate::auth::user;
 use axum::{
     body::to_bytes,
     extract::{Request, State},
@@ -8,20 +9,11 @@ use axum::{
     middleware::Next,
     response::IntoResponse,
 };
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::sync::{Arc, Mutex};
 
-fn aggregate(path: &str) -> bool {
-    matches!(
-        path,
-        "/api/v1/home"
-            | "/api/v1/insights"
-            | "/api/v1/metrics/people-overview"
-            | "/api/v1/metrics/summary"
-    )
-}
+/// Pages that show values relative to "now" are recomputed at this cadence
+/// when nothing they depend on has changed.
+const CLOCK_BUCKET_SECONDS: i32 = 300;
 
 fn dependencies(path: &str) -> (&'static [&'static str], bool) {
     match path {
@@ -139,8 +131,8 @@ pub(crate) async fn version(s: &AppState, path: &str) -> Result<String> {
  WHERE $2::uuid IS NOT NULL AND v.domain=ANY($1) AND v.domain NOT IN('organization','tag','community','directory') AND v.subject IN(SELECT id FROM subjects)
  UNION ALL SELECT v.domain,'shard:'||v.shard::text,v.version FROM crm.cache_domain_versions v
  WHERE v.domain=ANY($1) AND($2::uuid IS NULL OR v.domain IN('organization','tag','community','directory')))
- SELECT md5(coalesce(string_agg(domain||':'||subject||':'||version::text,',' ORDER BY domain,subject) FILTER(WHERE domain IN('profile','identity','organization','tag','community','media','media-assets','directory','calendar','weekly-statistics')),''))||':'||md5(coalesce(string_agg(domain||':'||subject||':'||version::text,',' ORDER BY domain,subject),''))||CASE WHEN $3 THEN ':'||floor(extract(epoch FROM now())/$4::integer)::bigint::text ELSE '' END FROM tokens"#)
-        .bind(scopes).bind(profile).bind(timed).bind(if aggregate(path) { 15i32 } else { 60i32 }).fetch_one(&s.pool).await?;
+ SELECT md5(coalesce(string_agg(domain||':'||subject||':'||version::text,',' ORDER BY domain,subject),''))||CASE WHEN $3 THEN ':'||floor(extract(epoch FROM now())/$4::integer)::bigint::text ELSE '' END FROM tokens"#)
+        .bind(scopes).bind(profile).bind(timed).bind(CLOCK_BUCKET_SECONDS).fetch_one(&s.pool).await?;
     Ok(value)
 }
 
@@ -149,14 +141,13 @@ pub(super) async fn middleware(
     mut request: Request,
     next: Next,
 ) -> Response {
-    if request.method() != Method::GET {
-        return next.run(request).await;
-    }
     if let Err(error) = user(&s, request.headers()).await {
         return error.into_response();
     }
-    let path = request.uri().path().to_owned();
-    let version = match version(&s, &path).await {
+    if request.method() != Method::GET {
+        return next.run(request).await;
+    }
+    let version = match version(&s, request.uri().path()).await {
         Ok(value) => value,
         Err(error) => return error.into_response(),
     };
@@ -165,58 +156,11 @@ pub(super) async fn middleware(
     request
         .headers_mut()
         .remove(axum::http::header::IF_NONE_MATCH);
-    if aggregate(&path)
-        && let Some(value) = s
-            .read_cache
-            .stale_aggregate(&key, &version, Duration::from_secs(30))
-            .await
-    {
-        if let Some(guard) = value
-            .refresh_due()
-            .then(|| s.read_cache.begin_refresh(key.clone()))
-            .flatten()
-        {
-            let cache = s.read_cache.clone();
-            let resources = s.resources.clone();
-            request
-                .extensions_mut()
-                .insert(BackgroundReadPool(s.aggregate_pool.clone()));
-            tokio::spawn(async move {
-                let _guard = guard;
-                let refresh = async {
-                    resources.background_turn().await;
-                    let _budget = resources
-                        .acquire_background(monica_core::resources::TaskResources {
-                            cpu: 1,
-                            memory_bytes: 16 * 1024 * 1024,
-                            ..Default::default()
-                        })
-                        .await
-                        .map_err(|_| {
-                            ApiError(
-                                StatusCode::SERVICE_UNAVAILABLE,
-                                "aggregate refresh unavailable",
-                            )
-                        })?;
-                    cache
-                        .get_or_try_init(key, version, || build(request, next, None))
-                        .await
-                };
-                let _ = tokio::time::timeout(Duration::from_secs(15), refresh).await;
-            });
-        }
-        let mut response = value.response(&headers);
-        response.headers_mut().insert(
-            "x-monica-aggregate-stale",
-            axum::http::HeaderValue::from_static("true"),
-        );
-        return response;
-    }
     let fallback = Arc::new(Mutex::new(None));
     let original = fallback.clone();
     let result = s
         .read_cache
-        .get_or_try_init(key, version, || build(request, next, Some(original)))
+        .get_or_try_init(key, version, || build(request, next, original))
         .await;
     match result {
         Ok(value) => value.response(&headers),
@@ -231,8 +175,8 @@ pub(super) async fn middleware(
 async fn build(
     request: Request,
     next: Next,
-    fallback: Option<Arc<Mutex<Option<Response>>>>,
-) -> Result<Value> {
+    fallback: Arc<Mutex<Option<Response>>>,
+) -> Result<axum::body::Bytes> {
     #[cfg(test)]
     if let Some(counter) = request
         .extensions()
@@ -243,25 +187,17 @@ async fn build(
     let response = next.run(request).await;
     if response.status() != StatusCode::OK {
         let status = response.status();
-        if let Some(fallback) = fallback {
-            *fallback.lock().expect("page error response") = Some(response);
-        }
+        *fallback.lock().expect("page error response") = Some(response);
         return Err(ApiError(status, "page cache rebuild failed"));
     }
-    let bytes = to_bytes(response.into_body(), 8 * 1024 * 1024)
+    to_bytes(response.into_body(), crate::cache::MAX_PAGE_BYTES)
         .await
         .map_err(|_| {
             ApiError(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "response exceeds bounded page size",
             )
-        })?;
-    serde_json::from_slice(&bytes).map_err(|_| {
-        ApiError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "page JSON decoding failed",
-        )
-    })
+        })
 }
 
 #[cfg(test)]
@@ -418,11 +354,13 @@ mod tests {
                 .header("cookie", "crm_session=aggregate-fixture")
                 .body(Body::empty())
                 .unwrap();
-            let response =
-                tokio::time::timeout(Duration::from_secs(5), router.clone().oneshot(request))
-                    .await
-                    .expect("page read tried to scan locked message history")
-                    .unwrap();
+            let response = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                router.clone().oneshot(request),
+            )
+            .await
+            .expect("page read tried to scan locked message history")
+            .unwrap();
             assert_eq!(response.status(), StatusCode::OK, "{path}");
         }
         locked.rollback().await.unwrap();
@@ -468,8 +406,9 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        let changed = home(&router, true).await;
-        assert!(!changed.headers().contains_key("x-monica-aggregate-stale"));
-        assert_eq!(value(changed).await["key_numbers"]["contacts"], 0);
+        assert_eq!(
+            value(home(&router, true).await).await["key_numbers"]["contacts"],
+            0
+        );
     }
 }

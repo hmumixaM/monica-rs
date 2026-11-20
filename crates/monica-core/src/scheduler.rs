@@ -430,27 +430,61 @@ impl Drop for Active {
     }
 }
 
+/// A lane ends only when the scheduler stops. A failed turn (a slow statement,
+/// a busy pool) restarts that lane; it never takes the web server down.
+fn spawn_lane<F, Fut>(
+    workers: &mut JoinSet<Result<()>>,
+    shared: &Arc<Shared>,
+    name: &'static str,
+    lane: F,
+) where
+    F: Fn(Arc<Shared>) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<()>> + Send,
+{
+    let shared = shared.clone();
+    workers.spawn(async move {
+        loop {
+            match lane(shared.clone()).await {
+                Ok(()) => return Ok(()),
+                Err(_) if *shared.mode.borrow() == Mode::Stopping => return Ok(()),
+                Err(error) => {
+                    shared.failed.fetch_add(1, Ordering::Relaxed);
+                    tracing::warn!(%error, lane = name, "background lane failed; restarting");
+                    tokio::time::sleep(shared.config.retry_delay).await;
+                }
+            }
+        }
+    });
+}
+
 async fn supervise(shared: Arc<Shared>, mut leader: PoolConnection<Postgres>) -> Result<()> {
     let _stopped = SupervisorStopped(shared.clone());
     let mut workers = JoinSet::new();
     for partition in 0..shared.config.partitions {
-        workers.spawn(worker(shared.clone(), partition));
+        spawn_lane(&mut workers, &shared, "projection", move |shared| {
+            worker(shared, partition)
+        });
     }
-    workers.spawn(recover_imports(shared.clone()));
-    workers.spawn(maintenance_lane::run(shared.clone()));
-    workers.spawn(adapter_lane::run(shared.clone()));
-    workers.spawn(adapter_lane::run_messages(shared.clone()));
-    workers.spawn(cdc_lane::run(shared.clone()));
+    spawn_lane(&mut workers, &shared, "imports", recover_imports);
+    spawn_lane(&mut workers, &shared, "maintenance", maintenance_lane::run);
+    spawn_lane(&mut workers, &shared, "adapter", adapter_lane::run);
+    spawn_lane(
+        &mut workers,
+        &shared,
+        "adapter-messages",
+        adapter_lane::run_messages,
+    );
+    spawn_lane(&mut workers, &shared, "cdc", cdc_lane::run);
     if shared.credentials.is_some() {
-        workers.spawn(idle_lane::run(shared.clone()));
-        workers.spawn(whatsapp_lane::run(shared.clone()));
+        spawn_lane(&mut workers, &shared, "mail-idle", idle_lane::run);
+        spawn_lane(&mut workers, &shared, "whatsapp", whatsapp_lane::run);
         for _ in 0..2 {
-            workers.spawn(source_lane::run(shared.clone()));
+            spawn_lane(&mut workers, &shared, "source", source_lane::run);
         }
     }
     if shared.media.is_some() {
         for _ in 0..3 {
-            workers.spawn(ai_lane::run(shared.clone()));
+            spawn_lane(&mut workers, &shared, "model", ai_lane::run);
         }
     }
     let mut pulse = tokio::time::interval(Duration::from_secs(5));
@@ -482,8 +516,14 @@ async fn supervise(shared: Arc<Shared>, mut leader: PoolConnection<Postgres>) ->
                     .bind(mode.name())
                     .bind(shared.import_chunks.load(Ordering::Relaxed) as i64)
                     .execute(&mut *leader).await {
-                    failure.get_or_insert(anyhow::Error::new(error));
-                    shared.mode.send_replace(Mode::Stopping);
+                    // Only a lost session releases the coordinator lease. A slow
+                    // or cancelled statement keeps it and is retried on the next pulse.
+                    if matches!(error, sqlx::Error::Database(_)) {
+                        tracing::warn!(%error, "scheduler heartbeat failed; retrying");
+                    } else {
+                        failure.get_or_insert(anyhow::Error::new(error));
+                        shared.mode.send_replace(Mode::Stopping);
+                    }
                 }
             }
         }
@@ -590,6 +630,13 @@ async fn claim_summary(shared: &Shared, partition: usize) -> Result<Option<Claim
     }))
 }
 
+/// Idle polls double up to eight times the base interval; work resets them.
+fn idle_poll(shared: &Shared, idle_turns: &mut u32) -> Duration {
+    let delay = shared.config.poll_interval * (1 << (*idle_turns).min(3));
+    *idle_turns += 1;
+    delay
+}
+
 fn background_request() -> TaskResources {
     // Includes decoded JSON, handler clones and SQLx serialization, rather than
     // pretending the serialized payload size equals its in-memory working set.
@@ -605,6 +652,7 @@ fn background_request() -> TaskResources {
 /// backpressure and drain admission with normal projection workers.
 async fn recover_imports(shared: Arc<Shared>) -> Result<()> {
     let mut had_progress = false;
+    let mut idle_turns = 0;
     let mut mode = shared.mode.subscribe();
     loop {
         let current = *mode.borrow_and_update();
@@ -653,6 +701,7 @@ async fn recover_imports(shared: Arc<Shared>) -> Result<()> {
         drop(active);
         if progressed {
             had_progress = true;
+            idle_turns = 0;
             // A committed chunk yields its admission/resources, then continues
             // without turning an idle retry delay into an ingestion rate limit.
             tokio::task::yield_now().await;
@@ -662,7 +711,7 @@ async fn recover_imports(shared: Arc<Shared>) -> Result<()> {
                 had_progress = false;
             }
             tokio::select! {
-                _ = tokio::time::sleep(shared.config.poll_interval) => {}
+                _ = tokio::time::sleep(idle_poll(&shared, &mut idle_turns)) => {}
                 _ = mode.changed() => {}
             }
         }
@@ -672,6 +721,7 @@ async fn recover_imports(shared: Arc<Shared>) -> Result<()> {
 async fn worker(shared: Arc<Shared>, partition: usize) -> Result<()> {
     let mut mode = shared.mode.subscribe();
     let mut prefer_summary = partition % 2 == 1;
+    let mut idle_turns = 0;
     loop {
         let current = *mode.borrow_and_update();
         match current {
@@ -725,6 +775,7 @@ async fn worker(shared: Arc<Shared>, partition: usize) -> Result<()> {
             let active = Active::new(shared.clone());
             drop(admission);
             prefer_summary = !prefer_summary;
+            idle_turns = 0;
             let result = execute(&shared, &claim).await;
             match result {
                 Ok(()) => {
@@ -752,7 +803,7 @@ async fn worker(shared: Arc<Shared>, partition: usize) -> Result<()> {
             drop(admission);
             drop(permit);
             tokio::select! {
-                _ = tokio::time::sleep(shared.config.poll_interval) => {}
+                _ = tokio::time::sleep(idle_poll(&shared, &mut idle_turns)) => {}
                 _ = mode.changed() => {}
             }
         }

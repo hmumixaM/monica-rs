@@ -1,5 +1,6 @@
 use super::*;
 use axum::{
+    Json,
     extract::{Path, Query, State},
     routing::get,
 };
@@ -263,11 +264,7 @@ pub(super) async fn build(
         json!({"points":points,"people":people.len(),"place_count":place_count,"located_records":post_records+profile_records,"post_records":post_records,"profile_records":profile_records,"source_counts":sources,"years":years,"months":months,"unresolved":unresolved,"city_reference":"GeoNames cities15000; exact names and country/state constraints; city centers only"}),
     )
 }
-async fn atlas(
-    State(s): State<AppState>,
-    h: HeaderMap,
-    Query(q): Query<Filter>,
-) -> Result<Response> {
+async fn atlas(State(s): State<AppState>, Query(q): Query<Filter>) -> Result<Json<Value>> {
     if q.provider
         .as_deref()
         .is_some_and(|p| !["wechat", "instagram", "linkedin"].contains(&p))
@@ -281,27 +278,17 @@ async fn atlas(
             "invalid location filter",
         ));
     }
-    let mut tx = snapshot(&s, &h).await?;
+    let mut tx = snapshot(&s).await?;
     let value = build(&mut tx, None, &q).await?;
     tx.commit().await?;
-    cached(
-        &s,
-        &h,
-        format!("atlas:{:?}:{:?}:{:?}", q.provider, q.year, q.kind),
-        value,
-    )
-    .await
+    Ok(Json(value))
 }
-async fn profile(
-    State(s): State<AppState>,
-    h: HeaderMap,
-    Path(id): Path<Uuid>,
-) -> Result<Response> {
-    let mut tx = snapshot(&s, &h).await?;
+async fn profile(State(s): State<AppState>, Path(id): Path<Uuid>) -> Result<Json<Value>> {
+    let mut tx = snapshot(&s).await?;
     let id = canonical(&mut tx, id).await?;
     let value = build(&mut tx, Some(id), &Filter::default()).await?;
     tx.commit().await?;
-    cached(&s, &h, format!("locations:{id}"), value).await
+    Ok(Json(value))
 }
 
 // A profile's map has the pinned coordinate-only contract. A city-center lookup

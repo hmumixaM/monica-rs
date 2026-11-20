@@ -169,8 +169,7 @@ async fn dispatch(
     if !enabled(&s).await? || !ai::SCHEDULED.contains(&kind.as_str()) {
         return Err(missing("Unknown or disabled model job"));
     }
-    let period = ai::current_period(&s.pool, &kind, true)
-        .await
+    let period = ai::current_period(&kind, true)
         .map_err(service)?
         .ok_or(missing("Unknown or disabled model job"))?;
     let id = ai::enqueue_dispatch(&s.pool, &kind, &period, true)
@@ -270,7 +269,7 @@ async fn profile(
         return Ok(Json(json!({"enabled":false})));
     }
     let memory:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('summary',output->'summary','facts',output->'facts','gaps',output->'gaps','generated_at',generated_at) FROM crm.ai_visible_outputs WHERE kind IN ('ai.profile','ai.profile_overview') AND subject=$1 ORDER BY (kind='ai.profile') DESC LIMIT 1").bind(id.to_string()).fetch_optional(&s.pool).await?;
-    let queued:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.ai_jobs j JOIN crm.ai_subject_heads h ON h.job_id=j.id WHERE (j.subject=$1 OR j.subject LIKE $1||':%') AND j.status IN ('queued','running'))").bind(id.to_string()).fetch_one(&s.pool).await?;
+    let queued:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.ai_subject_heads h JOIN crm.ai_jobs j ON j.id=h.job_id WHERE (h.subject=$1 OR (h.subject~>=~($1||':') AND h.subject~<~($1||';'))) AND j.status IN ('queued','running'))").bind(id.to_string()).fetch_one(&s.pool).await?;
     let weeks:Vec<Value>=sqlx::query_scalar("SELECT output||jsonb_build_object('week_start',week_start,'generated_at',generated_at) FROM crm.person_weekly_updates w WHERE profile_id=$1 AND EXISTS(SELECT 1 FROM crm.ai_visible_outputs o WHERE o.kind='ai.person_week' AND o.subject=w.profile_id::text||':'||w.week_start::text AND o.input_hash=w.input_hash) ORDER BY week_start DESC LIMIT 12").bind(id).fetch_all(&s.pool).await?;
     let suggestions = pending(&s, Some(id))
         .await?

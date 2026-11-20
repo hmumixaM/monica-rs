@@ -35,7 +35,12 @@ async fn graph(
     let version = crate::pages::cache::version(&s, uri.path()).await?;
     let value = s
         .read_cache
-        .get_or_try_init(format!("page:{uri}"), version, || graph_value(&s, q))
+        .get_or_try_init(format!("page:{uri}"), version, || async {
+            let value = graph_value(&s, q).await?;
+            Ok(serde_json::to_vec(&value)
+                .expect("JSON values always encode")
+                .into())
+        })
         .await?;
     Ok(value.response(&h))
 }

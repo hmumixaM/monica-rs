@@ -7,9 +7,14 @@ use std::{
 };
 use tokio::time::Instant;
 
+/// Due periods change at most hourly, and cleanup has no reader waiting on it.
+const SCHEDULE_EVERY: Duration = Duration::from_secs(30);
+const HOUSEKEEPING_EVERY: Duration = Duration::from_secs(300);
+
 pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
     let mut mode = shared.mode.subscribe();
     let mut housekeeping_at = Instant::now();
+    let mut schedule_at = Instant::now() - SCHEDULE_EVERY;
     let mut monitor_at = Instant::now() - Duration::from_secs(5);
     let mut statistics_at = Instant::now() - Duration::from_secs(24 * 3600);
     loop {
@@ -60,14 +65,17 @@ pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
                 if shared.media.is_some()
                     && crate::ai::configured_provider(&shared.background, shared.credentials.as_ref()).await?.is_some()
                 {
-                    crate::ai::schedule_due(&shared.background).await?;
-                    crate::ai::dispatch_one(&shared.background).await?;
+                    if schedule_at.elapsed() >= SCHEDULE_EVERY {
+                        crate::ai::schedule_due(&shared.background).await?;
+                        schedule_at = Instant::now();
+                    }
+                    crate::ai::prepare(&shared.background).await?;
                 }
                 Ok::<_, anyhow::Error>(())
             }.await;
-            if prepared.is_err() {
+            if let Err(error) = prepared {
                 shared.failed.fetch_add(1, Ordering::Relaxed);
-                tracing::warn!("model queue preparation failed");
+                tracing::warn!(%error, "model queue preparation failed");
             }
             if !importing {
                 reduced+=crate::ai::week_window::refresh_observations(&shared.background).await?;
@@ -95,12 +103,12 @@ pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
                 crate::media::refresh_profiles(&shared.background).await?;
                 crate::adapter::consume_media(&shared.background, &media.root, &shared.resources).await?;
                 media.recover_publications().await?;
-                if !importing && housekeeping_at.elapsed() >= Duration::from_secs(15) {
+                if !importing && housekeeping_at.elapsed() >= HOUSEKEEPING_EVERY {
                     media.expire_uploads().await?;
                     media.collect_orphans(Duration::from_secs(24 * 3600)).await?;
                 }
             }
-            if !importing && housekeeping_at.elapsed() >= Duration::from_secs(15) {
+            if !importing && housekeeping_at.elapsed() >= HOUSEKEEPING_EVERY {
                 crate::ai::week_window::prune_completed(&shared.background).await?;
                 sqlx::query("DELETE FROM crm.import_run_events WHERE id IN(SELECT id FROM crm.import_run_events WHERE created_at<now()-interval '90 days' ORDER BY created_at LIMIT 1000)").execute(&shared.background).await?;
                 crate::pages::refresh_metrics(&shared.background).await?;
@@ -110,8 +118,14 @@ pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
         }).await;
         let progressed = match result {
             Ok(Ok(n)) => n > 0,
-            _ => {
+            Ok(Err(error)) => {
                 shared.failed.fetch_add(1, Ordering::Relaxed);
+                tracing::warn!(%error, "maintenance turn failed");
+                false
+            }
+            Err(_) => {
+                shared.failed.fetch_add(1, Ordering::Relaxed);
+                tracing::warn!("maintenance turn exceeded its deadline");
                 false
             }
         };

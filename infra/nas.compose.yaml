@@ -6,13 +6,60 @@ services:
       POSTGRES_DB: monica_rust
       POSTGRES_USER: monica_rust
       POSTGRES_PASSWORD: ${MONICA_DB_PASSWORD:?Set an independent database password}
-    command: [postgres, -c, shared_buffers=64MB, -c, work_mem=4MB, -c, maintenance_work_mem=32MB, -c, max_connections=30, -c, max_parallel_workers_per_gather=0]
+    # The database is several times larger than memory. Keep its hot pages in
+    # shared buffers, price storage as the SSD it is, and log slow statements
+    # without their bound values.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${MONICA_PG_SHARED_BUFFERS:-1GB}
+      - -c
+      - effective_cache_size=2GB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - max_connections=40
+      - -c
+      - max_parallel_workers=2
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - jit=off
+      - -c
+      - wal_buffers=16MB
+      - -c
+      - wal_compression=lz4
+      - -c
+      - checkpoint_timeout=15min
+      - -c
+      - max_wal_size=2GB
+      - -c
+      - track_io_timing=on
+      - -c
+      - log_min_duration_statement=2s
+      - -c
+      - log_parameter_max_length=0
+      - -c
+      - log_parameter_max_length_on_error=0
     volumes:
-      - ${MONICA_RUST_DATA_ROOT:?Set an independent Rust data root}/postgres:/var/lib/postgresql/data
+      # Never create the data directory: if the data disk is not mounted the
+      # container must fail instead of initializing an empty database elsewhere.
+      - type: bind
+        source: ${MONICA_RUST_DATA_ROOT:?Set an independent Rust data root}/postgres
+        target: /var/lib/postgresql/data
+        bind: {create_host_path: false}
+      # Import workers reach the database through this socket directory. It is a
+      # host directory so that replacing this container does not disconnect them.
+      - type: bind
+        source: ${MONICA_RUST_DATA_ROOT}/postgres-run
+        target: /var/run/postgresql
+        bind: {create_host_path: false}
     networks: [isolated]
-    mem_limit: 384m
-    cpuset: '${MONICA_CPUSET:-3}'
-    cpu_shares: 128
+    shm_size: 256m
+    mem_limit: ${MONICA_PG_MEMORY:-3g}
+    stop_grace_period: 120s
     restart: unless-stopped
     healthcheck:
       test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U monica_rust -d monica_rust']
@@ -23,6 +70,17 @@ services:
     logging: &logging
       driver: json-file
       options: {max-size: 10m, max-file: '3'}
+  migrate:
+    profiles: [migrate]
+    image: ${MONICA_IMAGE:?Set the reviewed Rust image digest}
+    command: [migrate]
+    environment:
+      MONICA_DATABASE_URL: postgresql://monica_rust:${MONICA_DB_PASSWORD}@postgres/monica_rust
+      MONICA_MIGRATION_STATEMENT_TIMEOUT_SECONDS: ${MONICA_MIGRATION_STATEMENT_TIMEOUT_SECONDS:-3600}
+    networks: [isolated]
+    depends_on:
+      postgres: {condition: service_healthy}
+    logging: *logging
   server:
     group_add: ['10001']
     image: ${MONICA_IMAGE:?Set the reviewed Rust image digest}
@@ -40,7 +98,6 @@ services:
       MONICA_AI_QA_ENABLED: ${MONICA_AI_QA_ENABLED:-false}
       MONICA_OCR_ENABLED: ${MONICA_OCR_ENABLED:-false}
       MONICA_START_PAUSED: ${MONICA_START_PAUSED:-true}
-      TOKIO_WORKER_THREADS: '2'
     extra_hosts:
       - host.docker.internal:host-gateway
     volumes:
@@ -48,9 +105,8 @@ services:
       - ${MONICA_RUST_DATA_ROOT}/snapshots/monica-next:/data/archive:ro
       - ${MONICA_RUST_DATA_ROOT}/migration:/data/migration:ro
     networks: [isolated, ingress]
-    mem_limit: 384m
-    cpuset: '${MONICA_CPUSET:-3}'
-    cpu_shares: 128
+    mem_limit: 1g
+    stop_grace_period: 120s
     restart: unless-stopped
     depends_on:
       postgres: {condition: service_healthy}
@@ -73,9 +129,7 @@ services:
     # Docker does not publish host ports for an exclusively internal bridge.
     # Only the TLS proxy joins this second, project-owned ingress network.
     networks: [isolated, ingress]
-    mem_limit: 64m
-    cpuset: '${MONICA_CPUSET:-3}'
-    cpu_shares: 64
+    mem_limit: 128m
     restart: unless-stopped
     depends_on:
       server: {condition: service_healthy}

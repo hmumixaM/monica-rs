@@ -138,7 +138,7 @@ async fn source_facts_reject_rewrites_but_accept_new_revisions(pool: PgPool) {
     let tables: Vec<(String, String, String)> = sqlx::query_as(
         "SELECT n.nspname,c.relname,a.attname FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum=1 WHERE t.tgname='append_only_facts' ORDER BY 1,2",
     ).fetch_all(&pool).await.unwrap();
-    assert_eq!(tables.len(), 70);
+    assert_eq!(tables.len(), 72);
     // Test the database boundary, including accidental writes matching no row.
     for (schema, table, column) in tables {
         for statement in [

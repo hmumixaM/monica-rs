@@ -247,7 +247,7 @@ pub(crate) async fn enqueue_in_tx(
     subject: &str,
 ) -> Result<Uuid> {
     let data = snapshot(tx, kind, subject).await?;
-    let id:Uuid=sqlx::query_scalar("INSERT INTO crm.ai_jobs(id,kind,subject,model,input_hash,input,source_versions,privacy) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(kind,subject,model,input_hash) DO UPDATE SET status=CASE WHEN ai_jobs.status IN ('failed','cancelled') OR (ai_jobs.status='complete' AND NOT EXISTS(SELECT 1 FROM crm.ai_outputs o WHERE o.kind=ai_jobs.kind AND o.subject=ai_jobs.subject AND o.input_hash=ai_jobs.input_hash)) THEN 'queued' ELSE ai_jobs.status END,error=NULL,attempts=CASE WHEN ai_jobs.status IN ('failed','cancelled','complete') THEN 0 ELSE ai_jobs.attempts END RETURNING id")
+    let id:Uuid=sqlx::query_scalar("INSERT INTO crm.ai_jobs(id,kind,subject,model,input_hash,input,source_versions,privacy,priority_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,CASE WHEN $2='ai.post_media' THEN ($6::jsonb#>>'{post,occurred_at}')::timestamptz END) ON CONFLICT(kind,subject,model,input_hash) DO UPDATE SET status=CASE WHEN ai_jobs.status IN ('failed','cancelled') OR (ai_jobs.status='complete' AND NOT EXISTS(SELECT 1 FROM crm.ai_outputs o WHERE o.kind=ai_jobs.kind AND o.subject=ai_jobs.subject AND o.input_hash=ai_jobs.input_hash)) THEN 'queued' ELSE ai_jobs.status END,error=NULL,attempts=CASE WHEN ai_jobs.status IN ('failed','cancelled','complete') THEN 0 ELSE ai_jobs.attempts END RETURNING id")
         .bind(Uuid::new_v4()).bind(kind).bind(subject).bind(&data.model).bind(&data.hash).bind(&data.input).bind(&data.versions).bind(json!({"provider":data.provider,"policy":data.privacy})).fetch_one(&mut **tx).await?;
     sqlx::query("INSERT INTO crm.ai_subject_heads VALUES($1,$2,$3) ON CONFLICT(kind,subject) DO UPDATE SET job_id=excluded.job_id").bind(kind).bind(subject).bind(id).execute(&mut **tx).await?;
     sqlx::query("UPDATE crm.ai_jobs SET status='cancelled',token=NULL,lease_until=NULL,error='superseded',completed_at=now() WHERE kind=$1 AND subject=$2 AND id<>$3 AND status IN ('queued','running')").bind(kind).bind(subject).bind(id).execute(&mut **tx).await?;
@@ -268,24 +268,31 @@ pub struct Lease {
     pub input_hash: String,
     pub privacy: Value,
 }
+/// Newest posts first, then analysis, then the image backlog. Each queue has a
+/// matching partial index, so a claim reads one candidate instead of sorting
+/// every queued job.
 pub async fn claim(pool: &PgPool) -> Result<Option<Lease>> {
+    const POSTS: &str = "j.kind='ai.post_media' AND(coalesce((j.input->>'ingested')::boolean,false)=false OR j.created_at<=clock_timestamp()-interval '12 seconds') ORDER BY j.priority_at DESC NULLS LAST,j.created_at,j.id";
+    const ANALYSIS: &str =
+        "j.kind NOT IN('ai.post_media','ai.image_ocr') ORDER BY j.created_at,j.id";
+    const IMAGES: &str = "j.kind='ai.image_ocr' AND EXISTS(SELECT 1 FROM crm.image_ocr_settings o WHERE o.id AND o.enabled AND o.daily_limit>(SELECT count(*) FROM crm.ai_call_reservations WHERE day=(now() AT TIME ZONE 'America/Chicago')::date)) ORDER BY j.created_at,j.id";
     let token = Uuid::new_v4();
-    let urgent=sqlx::query("WITH candidate AS (SELECT j.id FROM crm.ai_jobs j JOIN crm.ai_subject_heads h ON h.job_id=j.id JOIN crm.ai_settings s ON s.id AND s.enabled AND s.execution_enabled WHERE j.kind='ai.post_media' AND j.attempts<3 AND(coalesce((j.input->>'ingested')::boolean,false)=false OR j.created_at<=clock_timestamp()-interval '12 seconds') AND (j.status='queued' OR(j.status='running'AND j.lease_until<clock_timestamp())) ORDER BY (j.input#>>'{post,occurred_at}')::timestamptz DESC NULLS LAST,j.created_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1)UPDATE crm.ai_jobs j SET status='running',token=$1,lease_until=clock_timestamp()+interval '90 seconds',attempts=attempts+1 FROM candidate c WHERE j.id=c.id RETURNING j.*").bind(token).fetch_optional(pool).await?;
-    let row = if urgent.is_some() {
-        urgent
-    } else {
-        sqlx::query("WITH candidate AS (SELECT j.id FROM crm.ai_jobs j JOIN crm.ai_subject_heads h ON h.job_id=j.id JOIN crm.ai_settings s ON s.id AND s.enabled AND s.execution_enabled WHERE j.kind<>'ai.post_media'AND j.attempts<3 AND (j.kind<>'ai.image_ocr' OR EXISTS(SELECT 1 FROM crm.image_ocr_settings o WHERE o.id AND o.enabled AND o.daily_limit>(SELECT count(*) FROM crm.ai_call_reservations WHERE day=(now() AT TIME ZONE 'America/Chicago')::date))) AND (j.status='queued' OR (j.status='running' AND j.lease_until<clock_timestamp())) ORDER BY j.created_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1) UPDATE crm.ai_jobs j SET status='running',token=$1,lease_until=clock_timestamp()+interval '90 seconds',attempts=attempts+1 FROM candidate c WHERE j.id=c.id RETURNING j.*").bind(token).fetch_optional(pool).await?
-    };
-    Ok(row.map(|r| Lease {
-        id: r.get("id"),
-        token,
-        kind: r.get("kind"),
-        subject: r.get("subject"),
-        model: r.get("model"),
-        input: r.get("input"),
-        input_hash: r.get("input_hash"),
-        privacy: r.get("privacy"),
-    }))
+    for queue in [POSTS, ANALYSIS, IMAGES] {
+        let row = sqlx::query(&format!("WITH candidate AS (SELECT j.id FROM crm.ai_jobs j WHERE EXISTS(SELECT 1 FROM crm.ai_settings s WHERE s.id AND s.enabled AND s.execution_enabled) AND j.status IN('queued','running') AND(j.status='queued' OR j.lease_until<clock_timestamp()) AND j.attempts<3 AND EXISTS(SELECT 1 FROM crm.ai_subject_heads h WHERE h.kind=j.kind AND h.subject=j.subject AND h.job_id=j.id) AND {queue} FOR UPDATE OF j SKIP LOCKED LIMIT 1) UPDATE crm.ai_jobs j SET status='running',token=$1,lease_until=clock_timestamp()+interval '90 seconds',attempts=attempts+1 FROM candidate c WHERE j.id=c.id RETURNING j.*")).bind(token).fetch_optional(pool).await?;
+        if let Some(r) = row {
+            return Ok(Some(Lease {
+                id: r.get("id"),
+                token,
+                kind: r.get("kind"),
+                subject: r.get("subject"),
+                model: r.get("model"),
+                input: r.get("input"),
+                input_hash: r.get("input_hash"),
+                privacy: r.get("privacy"),
+            }));
+        }
+    }
+    Ok(None)
 }
 pub async fn heartbeat(pool: &PgPool, lease: &Lease) -> Result<bool> {
     Ok(sqlx::query("UPDATE crm.ai_jobs SET lease_until=clock_timestamp()+interval '90 seconds' WHERE id=$1 AND token=$2 AND status='running' AND lease_until>clock_timestamp()").bind(lease.id).bind(lease.token).execute(pool).await?.rows_affected()==1)
@@ -903,6 +910,7 @@ async fn hydrate_image(
 }
 /// The scheduler owns this future. Disabled settings or absent runtime keys do
 /// no external work; injected FakeProvider is used only by explicit tests.
+/// Model lanes only execute claimed jobs; `prepare` plans new work.
 pub async fn run_configured(
     pool: &PgPool,
     media_root: &std::path::Path,
@@ -912,17 +920,15 @@ pub async fn run_configured(
     let Some(provider) = configured_provider(pool, cipher).await? else {
         return Ok(false);
     };
-    // Preparing another large snapshot can consume the whole scheduler turn.
-    // Drain durable ready work before preparing more inputs for the backlog.
-    if run_with_media(pool, &provider, Some(media_root), Some(resources)).await? {
-        return Ok(true);
-    }
-    schedule_due(pool).await?;
+    run_with_media(pool, &provider, Some(media_root), Some(resources)).await
+}
+
+/// Turn one dispatch page and newly ready inputs into durable model jobs.
+pub async fn prepare(pool: &PgPool) -> Result<()> {
     dispatch_one(pool).await?;
     mail::enqueue_pending(pool).await?;
     memory::enqueue_pending(pool).await?;
-    week_window::enqueue_pending(pool).await?;
-    run_with_media(pool, &provider, Some(media_root), Some(resources)).await
+    week_window::enqueue_pending(pool).await
 }
 
 /// Environment configuration may override an installation's encrypted settings.
@@ -962,15 +968,14 @@ pub async fn configured_provider(
     Ok(Some(provider::OpenAiProvider::new(&base, key)?))
 }
 
-pub async fn current_period(pool: &PgPool, kind: &str, force: bool) -> Result<Option<String>> {
+pub fn current_period(kind: &str, force: bool) -> Result<Option<String>> {
     ensure!(
         SCHEDULED.contains(&kind) || kind == "ai.image_ocr",
         "unknown model schedule"
     );
-    let local: chrono::NaiveDateTime =
-        sqlx::query_scalar("SELECT now() AT TIME ZONE 'America/Chicago'")
-            .fetch_one(pool)
-            .await?;
+    let local = Utc::now()
+        .with_timezone(&chrono_tz::America::Chicago)
+        .naive_local();
     let local = if force {
         local.date().and_hms_opt(23, 59, 0).context("local time")?
     } else {
@@ -1017,22 +1022,20 @@ pub async fn enqueue_dispatch(
     }
     Ok(sqlx::query_scalar("INSERT INTO crm.ai_dispatches(id,kind,period) VALUES($1,$2,$3) ON CONFLICT(kind,period) DO UPDATE SET status=CASE WHEN $4 AND ai_dispatches.status='complete' THEN 'queued' ELSE ai_dispatches.status END,cursor=CASE WHEN $4 AND ai_dispatches.status='complete' THEN NULL ELSE ai_dispatches.cursor END RETURNING id").bind(Uuid::new_v4()).bind(kind).bind(period).bind(refresh).fetch_one(pool).await?)
 }
+/// Record each due period once. The hourly sweeps only top up a backlog: a
+/// new one waits for the previous sweep, and image reading waits until the
+/// queue is below one day of its quota.
 pub async fn schedule_due(pool: &PgPool) -> Result<()> {
     for kind in SCHEDULED
         .iter()
         .copied()
         .chain(std::iter::once("ai.image_ocr"))
     {
-        if kind == "ai.image_ocr"
-            && !sqlx::query_scalar::<_, bool>("SELECT enabled FROM crm.image_ocr_settings WHERE id")
-                .fetch_one(pool)
-                .await?
-        {
+        let Some(period) = current_period(kind, false)? else {
             continue;
-        }
-        if let Some(period) = current_period(pool, kind, false).await? {
-            enqueue_dispatch(pool, kind, &period, false).await?;
-        }
+        };
+        sqlx::query("INSERT INTO crm.ai_dispatches(id,kind,period) SELECT $1,$2,$3 WHERE NOT EXISTS(SELECT 1 FROM crm.ai_dispatches WHERE kind=$2 AND(period=$3 OR($4 AND status IN('queued','running')))) AND($2<>'ai.image_ocr' OR EXISTS(SELECT 1 FROM crm.image_ocr_settings o WHERE o.id AND o.enabled AND o.daily_limit>(SELECT count(*) FROM crm.ai_jobs WHERE kind='ai.image_ocr' AND status IN('queued','running')))) ON CONFLICT(kind,period) DO NOTHING")
+            .bind(Uuid::new_v4()).bind(kind).bind(period).bind(matches!(kind, "ai.post_media" | "ai.image_ocr")).execute(pool).await?;
     }
     Ok(())
 }
@@ -1046,11 +1049,12 @@ pub async fn dispatch_one(pool: &PgPool) -> Result<bool> {
     let kind: String = row.get("kind");
     let period: String = row.get("period");
     let cursor: Option<String> = row.get("cursor");
+    let mut sweep = None;
     let (child,subjects):(String,Vec<String>)=match kind.as_str(){
         "ai.digest"=>{let week=period.parse::<NaiveDate>()?-chrono::Duration::days(7);(kind.clone(),if cursor.is_none(){vec![week.to_string()]}else{vec![]})},
         "ai.community_names"=>("ai.community".into(),sqlx::query_scalar("SELECT community_id FROM crm.ai_community_inputs WHERE ($1::text IS NULL OR community_id>$1) ORDER BY community_id LIMIT 25").bind(&cursor).fetch_all(pool).await?),
-        "ai.image_ocr"=>(kind.clone(),sqlx::query_scalar("SELECT m.id::text FROM crm.media_assets m CROSS JOIN crm.image_ocr_settings o WHERE o.id AND o.enabled AND m.media_type LIKE 'image/%' AND ($1::text IS NULL OR m.id>$1::text::uuid) AND crm.ai_ocr_media_allowed(m.id,o.include_chat) AND NOT EXISTS(SELECT 1 FROM crm.image_ocr_readings r WHERE r.media_id=m.id AND (r.status='complete' OR(r.generated_at IS NOT NULL AND(coalesce(btrim(r.text),'')<>'' OR coalesce(btrim(r.description),'')<>''))) AND r.model=o.model) ORDER BY m.id LIMIT 25").bind(&cursor).fetch_all(pool).await?),
-        "ai.post_media"=>(kind.clone(),post_media::pending_subjects(pool,cursor.as_deref()).await?),
+        "ai.image_ocr"=>(kind.clone(),sqlx::query_scalar("SELECT m.id::text FROM crm.media_assets m CROSS JOIN crm.image_ocr_settings o WHERE o.id AND o.enabled AND m.media_type LIKE 'image/%' AND ($1::text IS NULL OR m.id>$1::text::uuid) AND crm.ai_ocr_media_allowed(m.id,o.include_chat) AND NOT EXISTS(SELECT 1 FROM crm.image_ocr_readings r LEFT JOIN crm.ai_jobs j ON j.id=r.job_id AND j.status IN('queued','running') WHERE r.media_id=m.id AND(j.id IS NOT NULL OR((r.status='complete' OR(r.generated_at IS NOT NULL AND(coalesce(btrim(r.text),'')<>'' OR coalesce(btrim(r.description),'')<>''))) AND r.model=o.model))) ORDER BY m.id LIMIT 25").bind(&cursor).fetch_all(pool).await?),
+        "ai.post_media"=>{let (subjects,next)=post_media::pending_subjects(pool,cursor.as_deref()).await?;sweep=Some(next);(kind.clone(),subjects)},
         _=>{let child=if kind=="ai.person_weeks"{"ai.person_week"}else if kind=="ai.reconnect"{"ai.reconnect_one"}else{"ai.profile"};let ids:Vec<String>=sqlx::query_scalar("SELECT id::text FROM crm.profiles WHERE profile_type='person' AND archived_at IS NULL AND ($1::text IS NULL OR id::text>$1) ORDER BY id::text LIMIT 25").bind(cursor.as_ref().map(|c|c.split(':').next().unwrap_or(c))).fetch_all(pool).await?;let week=if kind=="ai.person_weeks"{Some(period.parse::<NaiveDate>()?-chrono::Duration::days(7))}else{None};(child.into(),ids.into_iter().map(|id|week.map_or(id.clone(),|week|format!("{id}:{week}"))).collect())}
     };
     let mut errors = 0i64;
@@ -1067,8 +1071,11 @@ pub async fn dispatch_one(pool: &PgPool) -> Result<bool> {
             }
         }
     }
-    let complete = subjects.len() < 25;
-    let last = subjects.last().or(cursor.as_ref());
+    // A post sweep pages over posts, not over the unread ones it finds.
+    let (complete, last) = match sweep {
+        Some(next) => (next.is_none(), next.or(cursor)),
+        None => (subjects.len() < 25, subjects.last().cloned().or(cursor)),
+    };
     sqlx::query("UPDATE crm.ai_dispatches SET status=$3,cursor=$4,processed_count=processed_count+$5,error_count=error_count+$6,token=NULL,lease_until=NULL,completed_at=CASE WHEN $7 THEN now() ELSE NULL END WHERE id=$1 AND token=$2 AND lease_until>clock_timestamp()").bind(id).bind(token).bind(if complete{"complete"}else{"queued"}).bind(last).bind(subjects.len() as i64).bind(errors).bind(complete).execute(pool).await?;
     Ok(true)
 }

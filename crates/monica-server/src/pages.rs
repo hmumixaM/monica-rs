@@ -1,5 +1,5 @@
 //! Authenticated reads from current rows and compact day/month page projections.
-use crate::auth::{ApiError, AppState, user};
+use crate::auth::{ApiError, AppState};
 use axum::{
     Router,
     http::{HeaderMap, StatusCode},
@@ -28,28 +28,12 @@ pub fn routes(state: AppState) -> Router<AppState> {
             cache::middleware,
         ))
 }
-#[derive(Clone)]
-struct BackgroundReadPool(sqlx::PgPool);
-async fn snapshot(s: &AppState, h: &HeaderMap) -> Result<Transaction<'static, Postgres>> {
-    snapshot_on(s, h, None).await
-}
-async fn snapshot_on(
-    s: &AppState,
-    h: &HeaderMap,
-    background: Option<sqlx::PgPool>,
-) -> Result<Transaction<'static, Postgres>> {
-    user(s, h).await?;
-    let mut tx = background.unwrap_or_else(|| s.pool.clone()).begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        .execute(&mut *tx)
-        .await?;
-    Ok(tx)
+/// One consistent read-only snapshot. The route layer has authenticated the request.
+async fn snapshot(s: &AppState) -> Result<Transaction<'static, Postgres>> {
+    Ok(s.pool
+        .begin_with("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        .await?)
 }
 pub(crate) async fn canonical(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result<Uuid> {
     sqlx::query_scalar("WITH RECURSIVE chain(id) AS(SELECT $1::uuid UNION SELECT r.new_profile_id FROM crm.profile_redirects r JOIN chain c ON c.id=r.old_profile_id) SELECT p.id FROM chain c JOIN crm.profiles p ON p.id=c.id WHERE p.archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM crm.profile_redirects r WHERE r.old_profile_id=p.id)").bind(id).fetch_optional(&mut **tx).await?.ok_or(ApiError(StatusCode::NOT_FOUND,"profile not found"))
-}
-// Conditional caching is applied by the route layer before any page SQL.
-async fn cached(_s: &AppState, _h: &HeaderMap, _scope: String, value: Value) -> Result<Response> {
-    use axum::response::IntoResponse;
-    Ok(axum::Json(value).into_response())
 }

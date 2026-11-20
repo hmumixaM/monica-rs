@@ -219,7 +219,6 @@ async fn run() -> Result<()> {
             state.configure_cookie_prefix(&cookie_prefix)?;
             state.legacy_archive_root = legacy_archive_root;
             state.legacy_migration_root = legacy_migration_root;
-            state.aggregate_pool = pools.background.clone();
             state.import_hmac_secret = import_hmac_secret.filter(|secret| !secret.is_empty());
             if let Some(secret) = &state.import_hmac_secret {
                 anyhow::ensure!(
@@ -282,6 +281,7 @@ async fn run() -> Result<()> {
             let listener = tokio::net::TcpListener::bind(listen).await?;
             tracing::info!(address=%listener.local_addr()?,"server ready; authentication enabled, business API in progress");
             let stopping = runtime.clone();
+            let (stopped, drained) = tokio::sync::oneshot::channel::<()>();
             let served = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
                 .with_graceful_shutdown(async move {
                     tokio::select! {
@@ -294,8 +294,18 @@ async fn run() -> Result<()> {
                         } => {},
                     }
                     if let Err(error) = stopping.shutdown().await { tracing::error!(%error,"background shutdown failed"); }
-                })
-                .await;
+                    let _ = stopped.send(());
+                });
+            // Keep-alive and streaming connections may never close on their own.
+            // After background work has stopped they get a short grace period,
+            // then the process exits so its supervisor can start a fresh one.
+            let served = tokio::select! {
+                result = std::future::IntoFuture::into_future(served) => result,
+                _ = async {
+                    let _ = drained.await;
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                } => Ok(()),
+            };
             runtime.shutdown().await?;
             served?;
         }

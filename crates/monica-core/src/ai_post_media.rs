@@ -114,14 +114,45 @@ pub async fn enqueue_import(
 }
 
 /// Next's unread scan includes archived Stories and uses newest publications first.
-pub async fn pending_subjects(pool: &sqlx::PgPool, cursor: Option<&str>) -> Result<Vec<String>> {
+/// One call reads a bounded page of posts, so a sweep always advances even when
+/// nearly everything has already been read. Returns the unread posts on this
+/// page and the cursor for the next page (`None` after the oldest post).
+pub async fn pending_subjects(
+    pool: &sqlx::PgPool,
+    cursor: Option<&str>,
+) -> Result<(Vec<String>, Option<String>)> {
+    const PAGE: usize = 200;
     let cursor = cursor.map(str::parse::<Uuid>).transpose()?;
-    Ok(sqlx::query_scalar(r#"
-SELECT e.id::text FROM crm.timeline_events e
-WHERE e.status<>'deleted'
- AND ($1::uuid IS NULL OR (coalesce(e.occurred_at,'-infinity'),e.id)<
-     (SELECT coalesce(c.occurred_at,'-infinity'),c.id FROM crm.timeline_events c WHERE c.id=$1))
- AND EXISTS(
+    let rows: Vec<(String, bool)> = sqlx::query_as(
+        r#"
+WITH page AS MATERIALIZED (
+ SELECT e.id,e.event_type,e.occurred_at FROM crm.timeline_events e
+ WHERE e.status<>'deleted'
+  AND ($1::uuid IS NULL OR (coalesce(e.occurred_at,'-infinity'),e.id)<
+      (SELECT coalesce(c.occurred_at,'-infinity'),c.id FROM crm.timeline_events c WHERE c.id=$1))
+ ORDER BY e.occurred_at DESC NULLS LAST,e.id DESC LIMIT $2
+)
+SELECT e.id::text,
+ UNREAD
+FROM page e ORDER BY e.occurred_at DESC NULLS LAST,e.id DESC
+"#
+        .replace("UNREAD", UNREAD)
+        .as_str(),
+    )
+    .bind(cursor)
+    .bind(PAGE as i64)
+    .fetch_all(pool)
+    .await?;
+    let next = (rows.len() == PAGE).then(|| rows[PAGE - 1].0.clone());
+    let unread = rows
+        .into_iter()
+        .filter_map(|(id, unread)| unread.then_some(id))
+        .collect();
+    Ok((unread, next))
+}
+
+/// A post is unread while one of its first ten media slots has no saved text.
+const UNREAD: &str = r#"EXISTS(
    SELECT 1 FROM (
      SELECT l.media_id,l.role,a.media_type,dense_rank()OVER(ORDER BY substring(l.role FROM '[0-9]+')::integer) AS position
      FROM crm.media_links l JOIN crm.media_assets a ON a.id=l.media_id
@@ -143,10 +174,7 @@ WHERE e.status<>'deleted'
      SELECT 1 FROM crm.image_ocr_readings r WHERE r.media_id=m.media_id AND r.status='complete'
        AND (coalesce(btrim(r.text),'')<>'' OR coalesce(btrim(r.description),'')<>'')
    )
- )
-ORDER BY e.occurred_at DESC NULLS LAST,e.id DESC LIMIT 25
-"#).bind(cursor).fetch_all(pool).await?)
-}
+ )"#;
 
 /// The same preparation as Next's data_url: EXIF transpose, RGB, 1280px, JPEG80.
 pub fn data_url(path: &Path, frame: bool, duration_ms: Option<u64>) -> Result<String> {

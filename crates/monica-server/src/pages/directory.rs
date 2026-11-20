@@ -63,15 +63,15 @@ LEFT JOIN avatars a ON a.entity_id=p.id LEFT JOIN conversations c ON c.profile_i
 ORDER BY p.display_name,p.id"#).fetch_all(&mut **tx).await?)
 }
 
-async fn directory(State(s): State<AppState>, h: HeaderMap) -> Result<Response> {
-    let mut tx = snapshot(&s, &h).await?;
+async fn directory(State(s): State<AppState>) -> Result<Json<Value>> {
+    let mut tx = snapshot(&s).await?;
     let rows = rows(&mut tx).await?;
     let tags: Vec<Value> =
         sqlx::query_scalar("SELECT jsonb_build_array(id,name) FROM crm.tags ORDER BY name,id")
             .fetch_all(&mut *tx)
             .await?;
     tx.commit().await?;
-    cached(&s, &h, "directory".into(), build_directory(rows, tags)).await
+    Ok(Json(build_directory(rows, tags)))
 }
 
 fn build_directory(rows: Vec<Value>, tags: Vec<Value>) -> Value {
@@ -175,29 +175,21 @@ fn build_directory(rows: Vec<Value>, tags: Vec<Value>) -> Value {
     json!({"columns":DIRECTORY_COLUMNS,"profiles":profiles,"tags":tags,"companies":dictionaries[0],"schools":dictionaries[1]})
 }
 
-async fn posts(State(s): State<AppState>, h: HeaderMap) -> Result<Response> {
-    let mut tx = snapshot(&s, &h).await?;
+async fn posts(State(s): State<AppState>) -> Result<Json<Value>> {
+    let mut tx = snapshot(&s).await?;
     let posts:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_array(id,profile_id,provider,occurred_at,left(text,200)) FROM crm.page_posts WHERE kind='post' AND btrim(text)<>'' ORDER BY occurred_at DESC NULLS LAST,id").fetch_all(&mut *tx).await?;
     tx.commit().await?;
-    cached(
-        &s,
-        &h,
-        "directory-posts".into(),
+    Ok(Json(
         json!({"columns":["id","profile_id","provider","occurred_at","text"],"posts":posts}),
-    )
-    .await
+    ))
 }
 #[derive(Deserialize)]
 struct Search {
     q: Option<String>,
     limit: Option<i64>,
 }
-async fn search(
-    State(s): State<AppState>,
-    h: HeaderMap,
-    Query(q): Query<Search>,
-) -> Result<Json<Value>> {
-    let mut tx = snapshot(&s, &h).await?;
+async fn search(State(s): State<AppState>, Query(q): Query<Search>) -> Result<Json<Value>> {
+    let mut tx = snapshot(&s).await?;
     let needle = q.q.unwrap_or_default().trim().to_owned();
     if needle.chars().count() < 2 {
         return Ok(Json(json!([])));
