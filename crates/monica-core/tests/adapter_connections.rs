@@ -221,8 +221,11 @@ table='Msg_'+hashlib.md5(b'wxid_synthetic_peer').hexdigest();db=sqlite3.connect(
         vec![(Some(contact), Some(contact)), (Some(contact), None)],
         "source rows without CRM annotations must use the already-resolved contact"
     );
-    let people:i64=sqlx::query_scalar("SELECT count(*) FROM crm.connection_people WHERE connection_id=$1 AND external_id='wxid_synthetic_peer' AND display_name='wxid_synthetic_peer'").bind(cid).fetch_one(&pool).await.unwrap();
-    assert_eq!(people, 1);
+    let people:i64=sqlx::query_scalar("SELECT count(*) FROM crm.connection_people WHERE connection_id=$1 AND external_id='wxid_synthetic_peer' AND display_name<>external_id").bind(cid).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        people, 1,
+        "messages that carry only the id must not erase the contact's name"
+    );
     // A disabled connection preserves unacknowledged local source work.
     sqlx::query(
         "UPDATE crm.source_connections SET enabled=false,generation=generation+1 WHERE id=$1",

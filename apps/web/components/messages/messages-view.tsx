@@ -14,10 +14,10 @@ import { Avatar, EmptyState, Failure, formatNumber, relativeDays, Skeleton } fro
 import { Conversation } from "./conversation";
 import styles from "./messages.module.css";
 
+/** A conversation without a person or a title falls back to its account id, unless that id is an opaque reference. */
 function conversationName(row: ConversationItem) {
-  return row.display_name || (row.external_id.startsWith("connection:")
-    ? (row.conversation_type === "group" ? "未命名群聊" : "未知联系人")
-    : row.external_id.replace(/^(direct|group):/, ""));
+  const id = row.external_id.replace(/^(direct|group):/, "");
+  return row.display_name || (/^(connection|urn):/.test(id) ? (row.conversation_type === "group" ? "未命名群聊" : "未知联系人") : id);
 }
 
 function sourceName(source?: string) {

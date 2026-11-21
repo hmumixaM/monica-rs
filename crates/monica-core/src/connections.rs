@@ -683,7 +683,7 @@ async fn project_revision_reserved(
         }
         let name = string(p, "name", external);
         let own = truth(p.get("is_self"), false);
-        sqlx::query("INSERT INTO crm.connection_people(connection_id,external_id,display_name,is_self) VALUES($1,$2,$3,$4) ON CONFLICT(connection_id,external_id) DO UPDATE SET display_name=excluded.display_name,is_self=excluded.is_self").bind(cid).bind(external).bind(name).bind(own).execute(&mut **tx).await?;
+        sqlx::query("INSERT INTO crm.connection_people(connection_id,external_id,display_name,is_self) VALUES($1,$2,$3,$4) ON CONFLICT(connection_id,external_id) DO UPDATE SET display_name=CASE WHEN excluded.display_name=excluded.external_id THEN connection_people.display_name ELSE excluded.display_name END,is_self=excluded.is_self").bind(cid).bind(external).bind(name).bind(own).execute(&mut **tx).await?;
         let (blocked,official):(bool,bool)=sqlx::query_as("SELECT coalesce((SELECT blocked FROM crm.connection_identity_links WHERE connection_id=$1 AND external_id=$2),false),$3 AND crm.wechat_is_official($2)").bind(cid).bind(external).bind(kind == "contact" && matches!(provider, Provider::Wechat)).fetch_one(&mut **tx).await?;
         let directory_contact = kind == "contact" && !official;
         let mut person = resolve_person(tx, cid, p, directory_contact).await?;

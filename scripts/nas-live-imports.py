@@ -320,7 +320,13 @@ class Consumer:
         parties.setdefault(own,dict(id=own,name='本人',is_self=True,role='participant'))
         parties.setdefault(sender,dict(id=sender,name=sender,is_self=sender==own))
         parties[sender]['role'] = 'sender'
-        group = sum(not p['is_self'] for p in parties.values())>1
+        others = [p for p in parties.values() if not p['is_self']]
+        group = len(others)>1
+        # LinkedIn lists participants by member URN. The inbox title of a
+        # two-person conversation is the other person's name.
+        title = content.get('conversation_title')
+        if not group and others and isinstance(title,str) and title.strip() and others[0].get('name') in (None,'',others[0]['id']):
+            others[0]['name'] = title.strip()
         content.update(participants=list(parties.values()),direction='sent' if sender==own else 'received',is_group=group)
         return dict(item,content=content,conversation_external_id=content['conversation'],conversation_type='group' if group else 'direct')
 

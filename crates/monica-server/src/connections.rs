@@ -21,7 +21,8 @@ fn invalid(message: &'static str) -> ApiError {
 fn missing() -> ApiError {
     ApiError(StatusCode::NOT_FOUND, "not found")
 }
-fn operation(_: anyhow::Error) -> ApiError {
+fn operation(error: anyhow::Error) -> ApiError {
+    tracing::warn!(error = format!("{error:#}"), "connection operation failed");
     ApiError(
         StatusCode::CONFLICT,
         "Connection operation failed or ownership changed",
@@ -218,7 +219,9 @@ async fn people(
     Query(q): Query<People>,
 ) -> Result<Json<Value>> {
     user(&s, &h).await?;
-    let rows:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(p)||jsonb_build_object('profile_id',CASE WHEN l.blocked THEN NULL WHEN l.confirmed THEN l.profile_id ELSE p.resolved_profile_id END,'profile_name',r.display_name,'blocked',l.blocked,'candidates',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',c.profile_id,'name',cp.display_name,'reason',c.reason) ORDER BY cp.display_name,c.profile_id) FROM crm.connection_identity_candidates c JOIN crm.profiles cp ON cp.id=c.profile_id WHERE c.connection_id=p.connection_id AND c.external_id=p.external_id),'[]'::jsonb)) FROM crm.connection_people p LEFT JOIN crm.connection_identity_links l USING(connection_id,external_id) LEFT JOIN crm.profiles r ON r.id=CASE WHEN l.blocked THEN NULL WHEN l.confirmed THEN l.profile_id ELSE p.resolved_profile_id END WHERE p.connection_id=$1 AND p.external_id>$2 AND ($3='' OR p.display_name ILIKE '%'||$3||'%' OR p.external_id ILIKE '%'||$3||'%') ORDER BY p.external_id LIMIT $4")
+    // Besides recorded identifier conflicts, a person is offered the profile
+    // that owns an account of the same platform under exactly the same name.
+    let rows:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(p)||jsonb_build_object('profile_id',CASE WHEN l.blocked THEN NULL WHEN l.confirmed THEN l.profile_id ELSE p.resolved_profile_id END,'profile_name',r.display_name,'blocked',l.blocked,'candidates',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',x.id,'name',x.name,'reason',x.reason) ORDER BY x.name,x.id) FROM (SELECT DISTINCT ON(id) * FROM (SELECT c.profile_id id,cp.display_name name,c.reason FROM crm.connection_identity_candidates c JOIN crm.profiles cp ON cp.id=c.profile_id WHERE c.connection_id=p.connection_id AND c.external_id=p.external_id UNION ALL SELECT cp.id,cp.display_name,'same_name' FROM crm.source_connections sc JOIN crm.source_accounts a ON a.provider=sc.provider AND lower(a.display_name)=lower(p.display_name) JOIN crm.source_account_links al ON al.account_id=a.id JOIN crm.profiles cp ON cp.id=al.profile_id AND cp.archived_at IS NULL WHERE sc.id=p.connection_id AND NOT p.is_self AND p.display_name<>p.external_id) found ORDER BY id,reason) x),'[]'::jsonb)) FROM crm.connection_people p LEFT JOIN crm.connection_identity_links l USING(connection_id,external_id) LEFT JOIN crm.profiles r ON r.id=CASE WHEN l.blocked THEN NULL WHEN l.confirmed THEN l.profile_id ELSE p.resolved_profile_id END WHERE p.connection_id=$1 AND p.external_id>$2 AND ($3='' OR p.display_name ILIKE '%'||$3||'%' OR p.external_id ILIKE '%'||$3||'%') ORDER BY p.external_id LIMIT $4")
  .bind(id).bind(q.after).bind(q.q).bind(q.limit.clamp(1,100)).fetch_all(&s.pool).await?;
     Ok(Json(json!(rows)))
 }
