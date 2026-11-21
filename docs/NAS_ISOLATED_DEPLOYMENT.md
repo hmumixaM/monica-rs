@@ -6,7 +6,7 @@
 
 `infra/nas.compose.yaml` 要求明确提供 Rust、PostgreSQL 和 Caddy 的不可变镜像引用。Rust 镜像从已完成本地技能审查并合并的 main 提交构建。交付记录同时保存源码提交、多架构镜像摘要和 amd64 实际镜像摘要。
 
-Monica Rust 是这台 NAS 上的主服务，三个容器使用全部四个核心，不再固定 cpuset 或降低调度权重。PostgreSQL 上限 3 GiB（`shared_buffers=1GB`，可用 `MONICA_PG_SHARED_BUFFERS`、`MONICA_PG_MEMORY` 调整），Rust 服务 1 GiB，代理 128 MiB。数据库比内存大得多，热数据要留在 shared buffers 里；存储按 SSD 计价（`random_page_cost=1.1`），超过 2 秒的语句写入日志但不记录绑定参数。所有 PostgreSQL 参数都在 `infra/nas.compose.yaml` 的启动命令里，不使用 `ALTER SYSTEM`。安装秘密、控制 token、导入凭据和数据库密码均独立生成。
+Monica Rust 是这台 NAS 上的主服务，三个容器使用全部四个核心，不再固定 cpuset 或降低调度权重。PostgreSQL 上限 3 GiB（`shared_buffers=1GB`，可用 `MONICA_PG_SHARED_BUFFERS`、`MONICA_PG_MEMORY` 调整），Rust 服务 1 GiB，代理 128 MiB。数据库比内存大得多，热数据要留在 shared buffers 里；存储按 SSD 计价（`random_page_cost=1.1`），超过 2 秒的语句写入日志但不记录绑定参数。所有 PostgreSQL 参数都在 `infra/nas.compose.yaml` 的启动命令里，不使用 `ALTER SYSTEM`。`pg_prewarm` 会定期记录缓存里有哪些页，重启后自动读回；否则每次重启后的头一段时间，页面请求都要逐页从磁盘读数据。安装秘密、控制 token、导入凭据和数据库密码均独立生成。
 
 PostgreSQL 的 Unix socket 目录是数据根目录下的 `postgres-run`（宿主机目录）。导入 worker 把它只读挂载到 `/pg`，因此重建数据库容器不会让 worker 失去连接。数据目录和 socket 目录都设置了 `create_host_path: false`：数据盘没有挂载时容器会启动失败，而不是在别处初始化一个空库。
 
