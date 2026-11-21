@@ -10,7 +10,7 @@ export async function listConversations(): Promise<Conversation[]> {
   const saved = await get<Conversation[]>(indexKey);
   if (saved) return saved.sort((a, b) => b.updatedAt - a.updatedAt);
   // The original single-session transcript remains at its existing key.
-  const initial = [{ id: 'default', title: '问 Monica', people: [], updatedAt: Date.now() }];
+  const initial = [{ id: 'default', title: '新会话', people: [], updatedAt: Date.now() }];
   await update<Conversation[]>(indexKey, current => current ?? initial);
   return (await get<Conversation[]>(indexKey))!;
 }
@@ -24,6 +24,10 @@ export async function createConversation() {
   await saveConversation(value);
   await set(activeKey, value.id);
   return value;
+}
+
+export async function deleteConversation(id: string) {
+  await update<Conversation[]>(indexKey, current => (current ?? []).filter(c => c.id !== id));
 }
 
 export const activeConversation = () => get<string>(activeKey);

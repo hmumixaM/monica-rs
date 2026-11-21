@@ -18,17 +18,17 @@ test('PI browser loop executes tools, persists IndexedDB sessions, and restores 
    const toolReplies=body.messages.filter((m:{role:string})=>m.role==='tool');
    let chunks;
    if(toolReplies.length>=2){submittedEvidence=JSON.stringify(toolReplies.at(-1));chunks=[{choices:[{index:0,delta:{role:'assistant',content:`已找到[合成联系人](/profiles/${profile})。`},finish_reason:null}]},{choices:[{index:0,delta:{},finish_reason:'stop'}]}];}
-   else {const tool=toolReplies.length?{name:'search_evidence',arguments:JSON.stringify({profile_id:profile})}:{name:'get_profiles',arguments:'{"query":"合成"}'};chunks=[{choices:[{index:0,delta:{role:'assistant',tool_calls:[{index:0,id:`synthetic-tool-${toolReplies.length}`,type:'function',function:tool}]},finish_reason:null}]},{choices:[{index:0,delta:{},finish_reason:'tool_calls'}]}];}
+   else {const tool=toolReplies.length?{name:'search_messages',arguments:JSON.stringify({profile_id:profile,query:'message'})}:{name:'find_people',arguments:'{"query":"合成"}'};chunks=[{choices:[{index:0,delta:{role:'assistant',tool_calls:[{index:0,id:`synthetic-tool-${toolReplies.length}`,type:'function',function:tool}]},finish_reason:null}]},{choices:[{index:0,delta:{},finish_reason:'tool_calls'}]}];}
    return route.fulfill({contentType:'text/event-stream',body:chunks.map(c=>'data: '+JSON.stringify({id:'synthetic-completion',object:'chat.completion.chunk',created:1,model:'synthetic-model',...c})+'\n\n').join('')+'data: [DONE]\n\n'});
   }
   return route.fulfill({json:[]});
  });
  await page.goto('/ask');await expect(page.getByRole('heading',{name:'问 Monica',exact:true})).toBeVisible();
  await page.getByLabel('问题',{exact:true}).fill('找一下合成联系人');await page.getByRole('button',{name:'提问',exact:true}).click();
- await expect(page.getByRole('link',{name:'合成联系人',exact:true})).toBeVisible();expect(modelCalls).toBe(3);expect(toolsRead).toBe(1);expect(messagesRead).toBe(1);expect(includedGroupSpeech).toBeTruthy();expect(submittedEvidence).toContain(`/evidence/${native}?revision=7`);expect(submittedEvidence).toContain(`/evidence/${legacy}?revision=3`);
+ await expect(page.getByRole('link',{name:'合成联系人',exact:true})).toBeVisible();expect(modelCalls).toBe(3);expect(toolsRead).toBe(1);expect(messagesRead).toBe(1);expect(includedGroupSpeech).toBeTruthy();expect(submittedEvidence).toContain(`/evidence/${native}?revision=7`);expect(submittedEvidence).toContain(`/messages?conversation=legacy-room&message=${legacy}`);
  await page.reload();await expect(page.getByRole('link',{name:'合成联系人',exact:true})).toBeVisible();expect(modelCalls).toBe(3);
  await page.getByRole('button',{name:'新会话',exact:true}).click();await expect(page.getByRole('link',{name:'合成联系人',exact:true})).toHaveCount(0);
- await page.getByLabel('选择会话').selectOption({label:'找一下合成联系人'});await expect(page.getByRole('link',{name:'合成联系人',exact:true})).toBeVisible();
+ await page.getByRole('complementary',{name:'会话'}).getByRole('button',{name:'找一下合成联系人',exact:true}).click();await expect(page.getByRole('link',{name:'合成联系人',exact:true})).toBeVisible();
  await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
  await page.screenshot({path:'../../.local-validation/frontend-ask-mobile.png',fullPage:true});expect(errors).toEqual([]);
 });

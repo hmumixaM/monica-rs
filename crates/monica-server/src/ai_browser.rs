@@ -45,25 +45,10 @@ fn yes() -> bool {
     true
 }
 impl Completion {
-    fn body(self, model: &str, max: i32) -> Result<Value> {
-        if self.messages.len() > 4096
-            || self.messages.iter().any(|m| !m.is_object())
-            || self
-                .tools
-                .as_ref()
-                .is_some_and(|t| t.len() > 128 || t.iter().any(|v| !v.is_object()))
-            || self
-                .tool_choice
-                .as_ref()
-                .is_some_and(|v| !v.is_string() && !v.is_object())
-            || self.max_tokens.is_some_and(|n| n < 1)
-            || self.temperature.is_some_and(|n| !n.is_finite())
-        {
-            return Err(ApiError(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "invalid completion request",
-            ));
-        }
+    /// The request as the provider receives it: the configured model, and an
+    /// output limit no larger than the configured one. Everything else is the
+    /// browser agent's own conversation; the provider rejects what it cannot read.
+    fn body(self, model: &str, max: i32) -> Value {
         let mut body = json!({"model":model,"messages":self.messages,"stream":self.stream,"max_tokens":self.max_tokens.unwrap_or(max).min(max)});
         if let Some(tools) = self.tools {
             body["tools"] = json!(tools)
@@ -74,13 +59,7 @@ impl Completion {
         if let Some(temperature) = self.temperature {
             body["temperature"] = json!(temperature)
         }
-        if serde_json::to_vec(&body).map_or(true, |b| b.len() > 2 * 1024 * 1024) {
-            return Err(ApiError(
-                StatusCode::PAYLOAD_TOO_LARGE,
-                "completion input exceeds budget",
-            ));
-        }
-        Ok(body)
+        body
     }
 }
 async fn completion(
@@ -110,7 +89,7 @@ async fn completion(
             "ai.qa",
         ),
         row.get("max_tokens"),
-    )?;
+    );
     let provider = monica_core::ai::configured_provider(&s.pool, Some(&s.credentials))
         .await
         .map_err(|_| ApiError(StatusCode::SERVICE_UNAVAILABLE, "模型服务配置无效"))?
@@ -137,6 +116,7 @@ async fn completion(
         .await
         .map_err(|_| ApiError(StatusCode::BAD_GATEWAY, "模型服务请求失败"))?;
     if !upstream.status().is_success() {
+        tracing::warn!(status = %upstream.status(), "model service rejected a question");
         return Err(ApiError(
             StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY),
             "模型服务请求失败",
@@ -155,11 +135,13 @@ fn stream_response(
         .cloned()
         .unwrap_or_else(|| axum::http::HeaderValue::from_static("text/event-stream"));
     let stream = async_stream::stream! {
-        let _slot=slot;let _resources=resources;let mut size=0usize;
+        let _slot=slot;let _resources=resources;
         loop{
-            let bytes=match upstream.chunk().await{Ok(Some(bytes))=>bytes,Ok(None)=>break,Err(_)=>{yield Err::<axum::body::Bytes,std::io::Error>(std::io::Error::other("model stream interrupted"));break}};
-            size+=bytes.len();if size>16*1024*1024{yield Err(std::io::Error::other("model stream exceeds output budget"));break}
-            yield Ok(bytes);
+            match upstream.chunk().await{
+                Ok(Some(bytes))=>yield Ok::<axum::body::Bytes,std::io::Error>(bytes),
+                Ok(None)=>break,
+                Err(_)=>{yield Err(std::io::Error::other("model stream interrupted"));break}
+            }
         }
     };
     let mut response = Body::from_stream(stream).into_response();
@@ -185,17 +167,12 @@ mod tests {
     #[test]
     fn browser_payload_is_stateless_and_capped() {
         let input:Completion=serde_json::from_value(json!({"messages":[{"role":"user","content":"Synthetic only"}],"tools":[{"type":"function","function":{"name":"lookup"}}],"tool_choice":"auto","max_tokens":99999,"temperature":0.1})).unwrap();
-        let body = input.body("synthetic-model", 8192).unwrap();
+        let body = input.body("synthetic-model", 8192);
         assert_eq!(body["model"], "synthetic-model");
         assert_eq!(body["max_tokens"], 8192);
         assert_eq!(body["stream"], true);
         assert_eq!(body["tools"][0]["function"]["name"], "lookup");
         assert!(body.get("session_id").is_none());
-        let bad: Completion = serde_json::from_value(json!({"messages":["not-object"]})).unwrap();
-        assert!(bad.body("fake", 8192).is_err());
-        let bad: Completion =
-            serde_json::from_value(json!({"messages":[],"max_tokens":0})).unwrap();
-        assert!(bad.body("fake", 8192).is_err());
     }
     async fn fake_upstream(
         keep_open: bool,
