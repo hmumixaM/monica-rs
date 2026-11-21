@@ -7,7 +7,7 @@ import { type ReactNode, useDeferredValue, useEffect, useMemo, useState } from "
 
 import type { SearchHit } from "../../lib/api-types";
 import { useDirectorySearch, usePostSearch, useTagCounts } from "../../lib/directory";
-import { useServerSearch } from "../../lib/queries";
+import { useMessageSearch, useServerSearch } from "../../lib/queries";
 import { Button } from "../ui/button";
 import { ChipLink } from "../ui/chip";
 import { SearchInput } from "../ui/field";
@@ -17,10 +17,10 @@ import { Segmented } from "../ui/segmented";
 import { excerpt, Highlight } from "./highlight";
 import styles from "./search.module.css";
 
-type Kind = "all" | "people" | "tags" | "posts" | "records";
-const KINDS: Kind[] = ["all", "people", "tags", "posts", "records"];
-const LABEL: Record<Kind, string> = { all: "全部", people: "联系人", tags: "标签", posts: "动态", records: "记录" };
-const PREVIEW: Record<Exclude<Kind, "all">, number> = { people: 8, tags: 16, posts: 6, records: 5 };
+type Kind = "all" | "people" | "tags" | "messages" | "posts" | "records";
+const KINDS: Kind[] = ["all", "people", "tags", "messages", "posts", "records"];
+const LABEL: Record<Kind, string> = { all: "全部", people: "联系人", tags: "标签", messages: "聊天", posts: "动态", records: "记录" };
+const PREVIEW: Record<Exclude<Kind, "all">, number> = { people: 8, tags: 16, messages: 6, posts: 6, records: 5 };
 
 interface PersonHit { id: string; name: string; type: "person" | "group"; avatarMediaId: string | null; detail: string; lastContactAt?: string | null }
 interface PostHit { id: string; profileId: string | null; author: string; avatarMediaId: string | null; provider: string; occurredAt: string | null; text: string }
@@ -63,6 +63,8 @@ export function SearchView() {
   const { tags, counts } = useTagCounts();
   const posts = usePostSearch(query, query.length > 0, 200);
   const server = useServerSearch(query);
+  const chat = useMessageSearch(query);
+  const messages = chat.data ?? [];
   const remote = server.data ?? [];
 
   const people = useMemo<PersonHit[]>(() => {
@@ -99,14 +101,14 @@ export function SearchView() {
   }, [posts.results, remote, directory]);
 
   const records = remote.filter((row) => row.entity_type === "activity");
-  const total = { people: people.length, tags: tagHits.length, posts: postHits.length, records: records.length };
+  const total = { people: people.length, tags: tagHits.length, messages: messages.length, posts: postHits.length, records: records.length };
   const limit = (group: Exclude<Kind, "all">) => (kind === "all" ? PREVIEW[group] : Infinity);
   const show = (group: Exclude<Kind, "all">) => kind === "all" || kind === group;
-  const nothing = query && !server.isFetching && !posts.isFetching && !localSearch.isPending && !localSearch.isError && !posts.isError && !server.isError && Object.values(total).every((count) => count === 0);
+  const nothing = query && !server.isFetching && !posts.isFetching && !chat.isFetching && !localSearch.isPending && !localSearch.isError && !posts.isError && !server.isError && Object.values(total).every((count) => count === 0);
 
   return <Page width="narrow" className={styles.page}>
     <PageHeader title="搜索" />
-    <SearchInput value={text} onChange={(event) => setText(event.target.value)} placeholder="搜索联系人、标签、动态或记录" aria-label="搜索"
+    <SearchInput value={text} onChange={(event) => setText(event.target.value)} placeholder="搜索联系人、聊天、动态或记录" aria-label="搜索"
       autoFocus={!text} data-slash-target="" wrapperClassName={styles.input} />
     {query && <Segmented<Kind> label="结果类型" value={kind} onChange={setKind} className={styles.kinds}
       options={KINDS.map((value) => ({ value, label: LABEL[value], count: value === "all" ? undefined : total[value], disabled: value !== "all" && !total[value] }))} />}
@@ -114,8 +116,7 @@ export function SearchView() {
     {query && (localSearch.isPending || posts.isFetching || server.isFetching) && <p role="status">正在查找…</p>}
     {query && (localSearch.isError || posts.isError || server.isError) && <button type="button" onClick={() => { void localSearch.retrySearch(); void posts.refetch(); void server.refetch(); }}>部分搜索未能加载，点击重试</button>}
     {!query ? <EmptyState icon={<Search size={28} />} title="输入搜索词" />
-      : nothing ? <EmptyState title={`没有找到「${query}」`}>
-        聊天记录不在这里搜索：<Link href="/messages">打开对应会话</Link>后点放大镜。</EmptyState>
+      : nothing ? <EmptyState title={`没有找到「${query}」`}>换一个说法，或者只搜其中的一个词。</EmptyState>
       : <div className={styles.results}>
         {show("people") && <Group kind="people" count={total.people} shown={limit("people")} onMore={() => setKind("people")}>
           <ul className={styles.people}>{people.slice(0, limit("people")).map((person) => <li key={person.id}>
@@ -132,6 +133,23 @@ export function SearchView() {
           <div className={styles.tags}>{tagHits.slice(0, limit("tags")).map((tag) =>
             <ChipLink key={tag.id} href={`/profiles?tag=${tag.id}`} count={tag.count}>{tag.name}</ChipLink>)}</div>
         </Group>}
+        {show("messages") && <Group kind="messages" count={total.messages} shown={limit("messages")} onMore={() => setKind("messages")} icon={<MessagesSquare size={15} />}>
+          <ul className={styles.posts}>{messages.slice(0, limit("messages")).map((hit) => {
+            const from = hit.direction === "sent" ? "我" : hit.sender_name || "对方";
+            const room = hit.conversation_name || (hit.conversation_type === "group" ? "未命名群聊" : "未知联系人");
+            return <li key={hit.id}>
+              <Link href={`/messages?conversation=${hit.conversation_id}&message=${hit.id}`}>
+                <Avatar name={room} mediaId={directory?.byId.get(hit.profile_id ?? "")?.avatarMediaId} size={32} round={hit.conversation_type === "direct"} />
+                <span className={styles.text}>
+                  <span className={styles.byline}><strong>{room}</strong><SourceMark provider={hit.provider} size={10} />
+                    <time>{formatDateTime(hit.occurred_at, false)}</time></span>
+                  <p>{hit.conversation_type === "group" || hit.direction === "sent" ? `${from}：` : ""}<Highlight text={excerpt(hit.text, query)} query={query} /></p>
+                </span>
+              </Link>
+            </li>;
+          })}</ul>
+          {messages.length === 30 && kind === "messages" && <p className={styles.status}>只显示最新的 30 条。加上更多字词可以缩小范围。</p>}
+        </Group>}
         {show("posts") && <Group kind="posts" count={total.posts} shown={limit("posts")} onMore={() => setKind("posts")}>
           <ul className={styles.posts}>{postHits.slice(0, limit("posts")).map((post) => <li key={post.id}>
             <Link href={`/timeline?event=${post.id}`}>
@@ -147,7 +165,7 @@ export function SearchView() {
         {show("records") && <Group kind="records" count={total.records} shown={limit("records")} onMore={() => setKind("records")} icon={<NotebookPen size={15} />}>
           <ul className={styles.records}>{records.slice(0, limit("records")).map((record) => <li key={record.id}><Record hit={record} query={query} /></li>)}</ul>
         </Group>}
-        {(server.isFetching || posts.isFetching) && <p className={styles.status} role="status">还在找…</p>}
+        {(server.isFetching || posts.isFetching || chat.isFetching) && <p className={styles.status} role="status">还在找…</p>}
       </div>}
   </Page>;
 }

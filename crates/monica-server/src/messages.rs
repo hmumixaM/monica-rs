@@ -22,6 +22,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/v1/conversations", get(conversations))
         .route("/api/v1/conversations/{id}/messages", get(conversation))
+        .route("/api/v1/messages/search", get(search))
         .route("/api/v1/profiles/{id}/messages", get(profile))
         .route("/api/v1/profiles/{id}/chat-months", get(months))
         .route("/api/v1/profiles/{id}/contact-events", get(events))
@@ -126,6 +127,14 @@ async fn read(s: &AppState, profile: Option<Uuid>, q: Params) -> Result<Json<Val
     {
         return Err(invalid());
     }
+    let grams = match &q.q {
+        Some(term) => gram_query(s, term).await?,
+        None => None,
+    };
+    let indexed = |alias: &str| match grams {
+        Some(_) => format!("AND crm.search_grams({alias}.body) @@ $15::tsquery"),
+        None => String::new(),
+    };
     // Restrict each candidate stream before its limit. A person's group search
     // includes only that person's speech, even when a room has newer messages
     // from other members. Candidate IDs stay small; bodies/media join afterward.
@@ -136,8 +145,9 @@ async fn read(s: &AppState, profile: Option<Uuid>, q: Params) -> Result<Json<Val
             r#"NOT {alias}.tombstone
       AND ($12::timestamptz IS NULL OR {alias}.occurred_at>=$12::timestamptz)
       AND ($13::timestamptz IS NULL OR {alias}.occurred_at<$13::timestamptz)
-      AND ($5::text IS NULL OR position(lower($5) in lower({alias}.body))>0)
-      AND ($6::text IS NULL OR ({alias}.occurred_at>=($6||'-01')::timestamp AT TIME ZONE $7 AND {alias}.occurred_at<(($6||'-01')::timestamp+interval '1 month') AT TIME ZONE $7))"#
+      AND ($5::text IS NULL OR position(lower($5) in lower({alias}.body))>0) {indexed}
+      AND ($6::text IS NULL OR ({alias}.occurred_at>=($6||'-01')::timestamp AT TIME ZONE $7 AND {alias}.occurred_at<(($6||'-01')::timestamp+interval '1 month') AT TIME ZONE $7))"#,
+            indexed = indexed(alias)
         )
     };
     let filters = format!(
@@ -184,7 +194,7 @@ async fn read(s: &AppState, profile: Option<Uuid>, q: Params) -> Result<Json<Val
       SELECT * FROM candidates ORDER BY occurred_at DESC,message_id DESC LIMIT $10
     ) SELECT jsonb_build_object('id',m.message_id,'occurred_at',m.occurred_at,'message_type',m.message_type,
       'sender_profile_id',coalesce(m.sender_profile_id,l.profile_id),'sender_name',coalesce(p.display_name,a.display_name,nullif(m.sender,'')),
-      'conversation_id',c.id,'conversation_type',c.conversation_type,'text',m.body,'direction',m.direction,
+      'conversation_id',c.id,'conversation_type',c.conversation_type,'conversation_name',CASE WHEN c.conversation_type='group' THEN coalesce(c.source_display_name,c.external_id) END,'text',m.body,'direction',m.direction,
       'evidence_id',e.id,'evidence_revision',e.revision,
       'citation',CASE WHEN e.id IS NOT NULL THEN '/evidence/'||e.id::text||'?revision='||e.revision::text END)
       FROM page JOIN crm.message_search m ON m.message_id=page.message_id JOIN crm.conversations c ON c.id=m.conversation_id
@@ -194,7 +204,7 @@ async fn read(s: &AppState, profile: Option<Uuid>, q: Params) -> Result<Json<Val
       LEFT JOIN crm.connection_evidence e ON e.id=m.message_id AND e.message_id=m.message_id
       ORDER BY page.occurred_at DESC,page.message_id DESC"#
     );
-    let mut rows: Vec<Value> = sqlx::query_scalar(&query)
+    let mut rows = sqlx::query_scalar(&query)
         .bind(profile)
         .bind(q.conversation_id)
         .bind(q.before)
@@ -209,9 +219,11 @@ async fn read(s: &AppState, profile: Option<Uuid>, q: Params) -> Result<Json<Val
         .bind(q.since)
         .bind(q.until)
         // An explicit conversation or anchor keeps that account's originals.
-        .bind(profile.is_some() && q.conversation_id.is_none() && q.message.is_none())
-        .fetch_all(&s.pool)
-        .await?;
+        .bind(profile.is_some() && q.conversation_id.is_none() && q.message.is_none());
+    if let Some(grams) = grams {
+        rows = rows.bind(grams);
+    }
+    let mut rows: Vec<Value> = rows.fetch_all(&s.pool).await?;
     // Resolve attachments only after the global message page is bounded.
     let ids: Vec<Uuid> = rows
         .iter()
@@ -236,6 +248,81 @@ async fn read(s: &AppState, profile: Option<Uuid>, q: Params) -> Result<Json<Val
             row["citation"] = json!(format!("/evidence/{id}?revision={revision}"));
         }
     }
+    Ok(Json(json!(rows)))
+}
+/// The index condition for a search term, or None when the term is too short
+/// to have one and the search has to read message bodies in time order.
+async fn gram_query(s: &AppState, term: &str) -> Result<Option<String>> {
+    Ok(sqlx::query_scalar("SELECT crm.search_gram_query($1)::text")
+        .bind(term)
+        .fetch_one(&s.pool)
+        .await?)
+}
+#[derive(Deserialize)]
+struct SearchParams {
+    q: String,
+    limit: Option<i64>,
+    before: Option<chrono::DateTime<chrono::Utc>>,
+    since: Option<chrono::DateTime<chrono::Utc>>,
+    conversation_type: Option<String>,
+}
+/// Keyword search across every conversation, newest first. Group rows carry
+/// the group name, direct rows the person, so a hit can be opened or cited.
+async fn search(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Query(q): Query<SearchParams>,
+) -> Result<Json<Value>> {
+    user(&s, &h).await?;
+    let term = q.q.trim();
+    if term.is_empty()
+        || q.conversation_type
+            .as_deref()
+            .is_some_and(|kind| !matches!(kind, "direct" | "group"))
+    {
+        return Err(invalid());
+    }
+    let grams = gram_query(&s, term).await?;
+    // Without an index condition the scan is bounded to the last year instead.
+    let since = q.since.or_else(|| {
+        grams
+            .is_none()
+            .then(|| chrono::Utc::now() - chrono::Duration::days(365))
+    });
+    let query = format!(
+        r#"WITH hits AS MATERIALIZED (
+      SELECT m.message_id FROM crm.message_search m JOIN crm.conversations c ON c.id=m.conversation_id
+      WHERE NOT m.tombstone AND position(lower($1) in lower(m.body))>0 {indexed}
+        AND ($2::timestamptz IS NULL OR m.occurred_at<$2) AND ($3::timestamptz IS NULL OR m.occurred_at>=$3)
+        AND ($4::text IS NULL OR c.conversation_type=$4)
+      ORDER BY m.occurred_at DESC,m.message_id DESC LIMIT $5
+    ) SELECT jsonb_build_object('id',m.message_id,'occurred_at',m.occurred_at,'provider',m.provider,'text',m.body,
+      'conversation_id',c.id,'conversation_type',c.conversation_type,
+      'conversation_name',coalesce(c.source_display_name,owner.display_name,c.external_id),'profile_id',c.profile_id,
+      'sender_profile_id',coalesce(m.sender_profile_id,l.profile_id),'sender_name',coalesce(p.display_name,a.display_name,nullif(m.sender,'')),
+      'direction',coalesce(m.direction,CASE WHEN m.sender=m.account THEN 'sent' ELSE 'received' END))
+      FROM hits JOIN crm.message_search m ON m.message_id=hits.message_id JOIN crm.conversations c ON c.id=m.conversation_id
+      LEFT JOIN crm.profiles owner ON owner.id=c.profile_id
+      LEFT JOIN crm.source_account_links l ON l.account_id=m.sender_account_id
+      LEFT JOIN crm.profiles p ON p.id=coalesce(m.sender_profile_id,l.profile_id)
+      LEFT JOIN crm.source_accounts a ON a.id=m.sender_account_id
+      ORDER BY m.occurred_at DESC,m.message_id DESC"#,
+        indexed = if grams.is_some() {
+            "AND crm.search_grams(m.body) @@ $6::tsquery"
+        } else {
+            ""
+        }
+    );
+    let mut rows = sqlx::query_scalar(&query)
+        .bind(term)
+        .bind(q.before)
+        .bind(since)
+        .bind(q.conversation_type)
+        .bind(q.limit.unwrap_or(40).clamp(1, 100));
+    if let Some(grams) = grams {
+        rows = rows.bind(grams);
+    }
+    let rows: Vec<Value> = rows.fetch_all(&s.pool).await?;
     Ok(Json(json!(rows)))
 }
 pub(super) struct LocalSpeechPage {
@@ -749,6 +836,71 @@ mod tests {
         assert_eq!(detail["revisions"].as_array().unwrap().len(), 1);
         let metrics = request(router, &format!("/api/v1/metrics/social?profile_id={p}")).await;
         assert_eq!(metrics["providers"]["wechat"]["posts"], 2);
+    }
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn keyword_search_reads_every_conversation_through_the_piece_index(pool: PgPool) {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::new(
+            pool.clone(),
+            "synthetic-session-secret-32-characters",
+            "http://localhost:17494".into(),
+            dir.path().into(),
+        )
+        .await
+        .unwrap();
+        let router = crate::auth::routes(state);
+        let actor = Uuid::new_v4();
+        let person = Uuid::new_v4();
+        let conversation = Uuid::new_v4();
+        sqlx::query("INSERT INTO crm.app_users(id,email,password_hash) VALUES($1,'search@example.test','not-used')").bind(actor).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 hour')").bind(Uuid::new_v4()).bind(actor).bind(format!("{:x}",Sha256::digest(b"fixture-session"))).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Synthetic friend')").bind(person).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.conversations(id,provider,account,external_id,conversation_type,profile_id) VALUES($1,'wechat','self','friend','direct',$2)").bind(conversation).bind(person).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,occurred_at,body,tombstone) VALUES
+            (gen_random_uuid(),$1,'wechat','self','1','friend',now()-interval '3 days','下周三去纽约面试，祝我好运',false),
+            (gen_random_uuid(),$1,'wechat','self','2','self',now()-interval '2 days','Got the OFFER from Acme',false),
+            (gen_random_uuid(),$1,'wechat','self','3','friend',now()-interval '1 day','无关的内容',false),
+            (gen_random_uuid(),$1,'wechat','self','4','friend',now(),'撤回的面试消息',true)")
+            .bind(conversation).execute(&pool).await.unwrap();
+        // Pieces: pairs inside a Chinese run, triples inside a run of letters and digits.
+        let (short, pieces): (bool, String) = sqlx::query_as(
+            "SELECT crm.search_gram_query('面') IS NULL,crm.search_gram_query('纽约面试 Offer')::text",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(short, "a single character has no piece to look up");
+        for piece in ["纽约", "约面", "面试", "off", "ffe", "fer"] {
+            assert!(pieces.contains(piece), "{pieces} lacks {piece}");
+        }
+        let hits = request(
+            router.clone(),
+            "/api/v1/messages/search?q=%E9%9D%A2%E8%AF%95",
+        )
+        .await;
+        assert_eq!(hits.as_array().unwrap().len(), 1, "{hits}");
+        assert_eq!(hits[0]["conversation_name"], "Synthetic friend");
+        assert_eq!(hits[0]["profile_id"], json!(person));
+        assert_eq!(hits[0]["direction"], "received");
+        let hits = request(router.clone(), "/api/v1/messages/search?q=offer").await;
+        assert_eq!(hits[0]["text"], "Got the OFFER from Acme");
+        assert_eq!(hits[0]["direction"], "sent");
+        // Too short for the index: matched by reading recent bodies instead.
+        let hits = request(router.clone(), "/api/v1/messages/search?q=%E9%9D%A2").await;
+        assert_eq!(hits.as_array().unwrap().len(), 1);
+        let hits = request(
+            router.clone(),
+            "/api/v1/messages/search?q=offer&conversation_type=group",
+        )
+        .await;
+        assert_eq!(hits, json!([]));
+        // The person's own search goes through the same index condition.
+        let hits = request(
+            router,
+            &format!("/api/v1/profiles/{person}/messages?q=%E7%BA%BD%E7%BA%A6%E9%9D%A2%E8%AF%95"),
+        )
+        .await;
+        assert_eq!(hits.as_array().unwrap().len(), 1);
     }
     #[sqlx::test(migrations = "../../migrations")]
     async fn person_group_speech_and_native_versioned_citations(pool: PgPool) {

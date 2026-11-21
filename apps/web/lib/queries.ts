@@ -214,6 +214,20 @@ export function useServerSearch(q: string) {
   });
 }
 
+export interface MessageHit {
+  id: string; occurred_at: string; provider: string; text: string; conversation_id: string; conversation_type: "direct" | "group";
+  conversation_name: string | null; profile_id: string | null; sender_name: string | null; direction: "sent" | "received" | "unknown";
+}
+
+/** Chat messages containing the term, across every conversation, newest first. */
+export function useMessageSearch(q: string) {
+  return useQuery({
+    queryKey: ["message-search", q],
+    queryFn: ({ signal }) => fetchJson<MessageHit[]>(`/api/v1/messages/search${query({ q, limit: 30 })}`, { signal }),
+    enabled: q.trim().length >= 2,
+  });
+}
+
 // ---- Mutations --------------------------------------------------------------
 
 function invalidateProfile(client: ReturnType<typeof useQueryClient>, id: string) {
