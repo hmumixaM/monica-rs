@@ -28,6 +28,26 @@ impl Provider for FakeProvider {
     }
 }
 
+/// A rate-limited or failed request is tried three times. Each try carries the
+/// wait before the next one; the last carries none.
+fn retries() -> [Option<Duration>; 3] {
+    [
+        Some(Duration::from_secs(1)),
+        Some(Duration::from_secs(4)),
+        None,
+    ]
+}
+
+/// Some models wrap their JSON answer in a Markdown code fence.
+fn unfenced(content: &str) -> &str {
+    let content = content.trim();
+    content
+        .strip_prefix("```")
+        .and_then(|rest| rest.strip_suffix("```"))
+        .map(|rest| rest.strip_prefix("json").unwrap_or(rest).trim())
+        .unwrap_or(content)
+}
+
 pub struct OpenAiProvider {
     client: reqwest::Client,
     endpoint: reqwest::Url,
@@ -99,8 +119,8 @@ impl OpenAiProvider {
         } else {
             json!({"type":"json_object"})
         };
-        let request = json!({"model":lease.model,"messages":[{"role":"system","content":super::prompts::system(&lease.kind)},{"role":"user","content":content}],"response_format":format,"max_tokens":4096});
-        for attempt in 0..3 {
+        let request = json!({"model":lease.model,"messages":[{"role":"system","content":super::prompts::system(&lease.kind)},{"role":"user","content":content}],"response_format":format,"max_tokens":8192});
+        for retry in retries() {
             let response = self
                 .client
                 .post(self.endpoint.clone())
@@ -114,12 +134,21 @@ impl OpenAiProvider {
                     if (status == reqwest::StatusCode::TOO_MANY_REQUESTS
                         || status == reqwest::StatusCode::REQUEST_TIMEOUT
                         || status.is_server_error())
-                        && attempt < 2
+                        && let Some(delay) = retry
                     {
-                        tokio::time::sleep(Duration::from_millis(100 * (1 << attempt))).await;
+                        tokio::time::sleep(delay).await;
                         continue;
                     }
-                    ensure!(status.is_success(), "model request rejected");
+                    if !status.is_success() {
+                        let detail: String = response
+                            .text()
+                            .await
+                            .unwrap_or_default()
+                            .chars()
+                            .take(300)
+                            .collect();
+                        bail!("model request rejected: {status} {detail}");
+                    }
                     ensure!(
                         response.content_length().is_none_or(|n| n <= 1024 * 1024),
                         "model response too large"
@@ -144,24 +173,29 @@ impl OpenAiProvider {
                         if let Some(parsed) = message.get("parsed").filter(|v| v.is_object()) {
                             parsed.clone()
                         } else {
-                            serde_json::from_str(
+                            serde_json::from_str(unfenced(
                                 message["content"]
                                     .as_str()
                                     .context("missing model content")?,
-                            )
-                            .context("invalid structured model result")?
+                            ))
+                            .with_context(|| {
+                                format!(
+                                    "invalid structured model result (finish_reason {})",
+                                    envelope["choices"][0]["finish_reason"]
+                                )
+                            })?
                         };
                     ensure!(value.is_object(), "model output must be an object");
                     return Ok(value);
                 }
-                Err(_) => {
-                    if attempt < 2 {
-                        tokio::time::sleep(Duration::from_millis(100 * (1 << attempt))).await;
+                Err(error) => {
+                    if let Some(delay) = retry {
+                        tokio::time::sleep(delay).await;
                         continue;
                     }
+                    bail!("model request failed: {}", error.without_url())
                 }
             }
-            bail!("model request failed")
         }
         bail!("model retry limit")
     }
@@ -172,7 +206,7 @@ impl OpenAiProvider {
             .connect_timeout(Duration::from_secs(15))
             .timeout(Duration::from_secs(180))
             .build()?;
-        for attempt in 0..3 {
+        for retry in retries() {
             match client
                 .post(self.endpoint.clone())
                 .bearer_auth(&self.api_key)
@@ -185,18 +219,18 @@ impl OpenAiProvider {
                     if (status == reqwest::StatusCode::TOO_MANY_REQUESTS
                         || status == reqwest::StatusCode::REQUEST_TIMEOUT
                         || status.is_server_error())
-                        && attempt < 2
+                        && let Some(delay) = retry
                     {
                         drop(response);
-                        tokio::time::sleep(Duration::from_millis(100 * (1 << attempt))).await;
+                        tokio::time::sleep(delay).await;
                         continue;
                     }
                     return Ok(response);
                 }
-                Err(_) if attempt < 2 => {
-                    tokio::time::sleep(Duration::from_millis(100 * (1 << attempt))).await;
-                }
-                Err(_) => bail!("model transport unavailable"),
+                Err(error) => match retry {
+                    Some(delay) => tokio::time::sleep(delay).await,
+                    None => bail!("model transport unavailable: {}", error.without_url()),
+                },
             }
         }
         bail!("model transport retry limit")

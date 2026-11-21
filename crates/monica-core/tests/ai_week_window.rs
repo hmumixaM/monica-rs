@@ -529,7 +529,8 @@ async fn native_source_policy_contact_updates_and_chunk_failure_retry(pool: PgPo
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(state.0, "failed");
+    // The failed call waits, unowned, for its retry a few minutes later.
+    assert_eq!(state.0, "running");
     assert!(state.1.is_none());
     assert_eq!(
         state.2.as_deref(),
@@ -539,6 +540,14 @@ async fn native_source_policy_contact_updates_and_chunk_failure_retry(pool: PgPo
         ai::enqueue(&pool, "ai.digest", "2026-11-09").await.unwrap(),
         job
     );
+    assert!(!ai::run_one(&pool, &provider).await.unwrap());
+    sqlx::query(
+        "UPDATE crm.ai_jobs SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1",
+    )
+    .bind(job)
+    .execute(&pool)
+    .await
+    .unwrap();
     run(&pool, &provider).await;
     assert_eq!(
         provider

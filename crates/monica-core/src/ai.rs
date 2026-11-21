@@ -304,6 +304,8 @@ pub struct Lease {
     pub input_hash: String,
     pub privacy: Value,
 }
+/// A job is tried this many times: a lost lease and a failed model call both count.
+const MAX_ATTEMPTS: i32 = 3;
 /// Newest posts first, then analysis, then the image backlog. Each queue has a
 /// matching partial index, so a claim reads one candidate instead of sorting
 /// every queued job.
@@ -316,8 +318,13 @@ pub async fn claim(pool: &PgPool) -> Result<Option<Lease>> {
     const IMAGES: &str = "j.kind='ai.image_ocr' AND EXISTS(SELECT 1 FROM crm.image_ocr_settings o WHERE o.id AND o.enabled AND o.daily_limit>(SELECT count(*) FROM crm.ai_call_reservations WHERE day=(now() AT TIME ZONE 'America/Chicago')::date)) ORDER BY j.created_at,j.id";
     let token = Uuid::new_v4();
     for queue in [POSTS, ANALYSIS, IMAGES] {
-        let row = sqlx::query(&format!("WITH candidate AS (SELECT j.id FROM crm.ai_jobs j WHERE EXISTS(SELECT 1 FROM crm.ai_settings s WHERE s.id AND s.enabled AND s.execution_enabled) AND j.status IN('queued','running') AND(j.status='queued' OR j.lease_until<clock_timestamp()) AND j.attempts<3 AND (SELECT h.job_id FROM crm.ai_subject_heads h WHERE h.kind=j.kind AND h.subject=j.subject)=j.id AND {queue} FOR UPDATE OF j SKIP LOCKED LIMIT 1) UPDATE crm.ai_jobs j SET status='running',token=$1,lease_until=clock_timestamp()+interval '90 seconds',attempts=attempts+1 FROM candidate c WHERE j.id=c.id RETURNING j.*")).bind(token).fetch_optional(pool).await?;
+        let row = sqlx::query(&format!("WITH candidate AS (SELECT j.id FROM crm.ai_jobs j WHERE EXISTS(SELECT 1 FROM crm.ai_settings s WHERE s.id AND s.enabled AND s.execution_enabled) AND j.status IN('queued','running') AND(j.status='queued' OR j.lease_until<clock_timestamp()) AND (SELECT h.job_id FROM crm.ai_subject_heads h WHERE h.kind=j.kind AND h.subject=j.subject)=j.id AND {queue} FOR UPDATE OF j SKIP LOCKED LIMIT 1) UPDATE crm.ai_jobs j SET status='running',token=$1,lease_until=clock_timestamp()+interval '90 seconds',attempts=attempts+1 FROM candidate c WHERE j.id=c.id RETURNING j.*")).bind(token).fetch_optional(pool).await?;
         if let Some(r) = row {
+            if r.get::<i32, _>("attempts") > MAX_ATTEMPTS {
+                sqlx::query("UPDATE crm.ai_jobs SET status='failed',error='gave up after repeated attempts',token=NULL,lease_until=NULL,completed_at=now() WHERE id=$1 AND token=$2")
+                    .bind(r.get::<Uuid, _>("id")).bind(token).execute(pool).await?;
+                return Box::pin(claim(pool)).await;
+            }
             return Ok(Some(Lease {
                 id: r.get("id"),
                 token,
@@ -769,10 +776,11 @@ pub async fn run_with_media<P: provider::Provider>(
                     .bind(lease.id).bind(lease.token).execute(pool).await?;
                 return Ok(true);
             }
-            Err(_) => {
+            Err(error) => {
                 // A chunk is a provider boundary too. Settle the owned token;
-                // explicit retry preserves compatible cached parts.
-                fail(pool, &lease, "weekly evidence processing failed").await?;
+                // a retry reuses the parts that are already cached.
+                tracing::warn!(kind = %lease.kind, subject = %lease.subject, error = format!("{error:#}"), "weekly evidence processing failed");
+                retry_or_fail(pool, &lease, "weekly evidence processing failed").await?;
                 return Ok(true);
             }
         }
@@ -803,7 +811,8 @@ pub async fn run_with_media<P: provider::Provider>(
             },
             _ => Ok(()),
         };
-        if prepared.is_err() {
+        if let Err(error) = prepared {
+            tracing::warn!(kind = %lease.kind, subject = %lease.subject, error = format!("{error:#}"), "image or video frame could not be read");
             fail(pool, &lease, "image or video frame could not be read").await?;
             return Ok(true);
         }
@@ -824,7 +833,7 @@ pub async fn run_with_media<P: provider::Provider>(
             if matches!(lease.kind.as_str(), "ai.image_ocr" | "ai.post_media") {
                 180
             } else {
-                45
+                120
             },
         ),
         provider.complete(&submitted),
@@ -846,21 +855,41 @@ pub async fn run_with_media<P: provider::Provider>(
                 }
                 output["_memory_generation"] = json!(generation);
             }
-            if let Err(_error) = finish(pool, &lease, output).await {
-                fail(pool, &lease, "invalid model result").await?;
+            if let Err(error) = finish(pool, &lease, output).await {
+                tracing::warn!(kind = %lease.kind, subject = %lease.subject, error = format!("{error:#}"), "invalid model result");
+                retry_or_fail(pool, &lease, "invalid model result").await?;
             }
         }
-        _ => {
-            fail(pool, &lease, "model call failed").await?;
+        failure => {
+            let error = match failure {
+                Ok(Err(error)) => format!("{error:#}"),
+                _ => "no answer within the deadline".into(),
+            };
+            tracing::warn!(kind = %lease.kind, subject = %lease.subject, error, "model call failed");
+            retry_or_fail(pool, &lease, "model call failed").await?;
         }
     }
     Ok(true)
 }
+/// Settles a job whose input cannot be processed. The cause is in the server log.
 pub async fn fail(pool: &PgPool, lease: &Lease, message: &'static str) -> Result<()> {
-    // Never persist arbitrary provider errors: upstream bodies can echo secrets.
+    settle_failure(pool, lease, message, false).await
+}
+/// A failed model call is tried again a few minutes later, up to the attempt
+/// limit. The waiting job stays `running` without an owner: `claim` picks it up
+/// again once that lease runs out.
+async fn retry_or_fail(pool: &PgPool, lease: &Lease, message: &'static str) -> Result<()> {
+    settle_failure(pool, lease, message, true).await
+}
+async fn settle_failure(
+    pool: &PgPool,
+    lease: &Lease,
+    message: &'static str,
+    retry: bool,
+) -> Result<()> {
     let mut tx = pool.begin().await?;
-    let n=sqlx::query("UPDATE crm.ai_jobs SET status='failed',error=$3,token=NULL,lease_until=NULL,completed_at=now() WHERE id=$1 AND token=$2 AND status='running' AND lease_until>clock_timestamp()").bind(lease.id).bind(lease.token).bind(message).execute(&mut *tx).await?.rows_affected();
-    if n == 1 && lease.kind == "ai.image_ocr" {
+    let failed:Option<bool>=sqlx::query_scalar("UPDATE crm.ai_jobs SET status=CASE WHEN $4 AND attempts<$5 THEN 'running' ELSE 'failed' END,error=$3,token=NULL,lease_until=CASE WHEN $4 AND attempts<$5 THEN clock_timestamp()+attempts*interval '3 minutes' END,completed_at=CASE WHEN $4 AND attempts<$5 THEN NULL ELSE now() END WHERE id=$1 AND token=$2 AND status='running' AND lease_until>clock_timestamp() RETURNING status='failed'").bind(lease.id).bind(lease.token).bind(message).bind(retry).bind(MAX_ATTEMPTS).fetch_optional(&mut *tx).await?;
+    if failed == Some(true) && lease.kind == "ai.image_ocr" {
         sqlx::query("UPDATE crm.image_ocr_readings SET status='failed',error=$2 WHERE job_id=$1")
             .bind(lease.id)
             .bind(message)
