@@ -14,6 +14,9 @@ The backend uses Tokio, Axum, SQLx and PostgreSQL 16. One database contains CRM 
 - Mail supports Gmail history, Graph delta and read-only IMAP; Apple sources use the native bridge. Browser collectors, Chatlog and the WhatsApp Go bridge are managed adapters. Real sources and model calls require explicit configuration and enabling.
 - The Vite/React Router frontend is served by Rust with `/api` on the same origin. The native shell manages PostgreSQL, the core and optional adapters under a separate Monica Rust identity and data directory.
 
+- Chat text is searchable by substring through an index of two-character Chinese and three-character letter/digit pieces (`crm.search_grams`), across all conversations (`GET /api/v1/messages/search`) and inside one person's or one group's messages. The interface and its navigation are described in [docs/ui-clarity.md](docs/ui-clarity.md).
+- 问 Monica runs in the browser: the model calls lookup tools that read the same page endpoints (people, messages, posts, mail, weekly notes). A failed background model call is retried twice, minutes apart, before the job is marked failed; the cause is in the server log.
+
 See [multi-source scope and evidence](docs/MULTISOURCE_PARITY.md), [implementation ledger](docs/IMPLEMENTATION.md), [frozen contracts](docs/contracts/README.md) and [optional WAL history](docs/CDC.md). The registration audit currently finds all 166 frozen operations; registration alone does not prove behavioral parity. Differential, PostgreSQL, HTTP, browser and native lifecycle tests provide separate evidence.
 
 The [2026-11-12 review and parity record](docs/reviews/2026-11-12-rust-parity-review.md) records 13 repaired findings, platform capabilities, validation evidence and remaining acceptance limits.

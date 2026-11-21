@@ -11,7 +11,7 @@ import { setTheme } from "../../lib/theme";
 import { transitionTo } from "../../lib/transitions";
 import { Kbd } from "../ui/button";
 import { Avatar, providerLabel, SourceMark } from "../ui/primitives";
-import { DATA_NAV, DIGEST_NAV, PRIMARY_NAV } from "./nav";
+import { ALL_PAGES } from "./nav";
 import styles from "./palette.module.css";
 
 /**
@@ -60,7 +60,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const needle = query.toLocaleLowerCase();
   const matches = (label: string, keywords = "") => !needle || `${label} ${keywords}`.toLocaleLowerCase().includes(needle);
   const recentShown = recent.filter((person) => (!directory || directory.byId.has(person.id)) && matches(person.name)).slice(0, query ? 3 : 8);
-  const pages = [...PRIMARY_NAV, DIGEST_NAV, ...DATA_NAV].filter((entry) => matches(entry.label, entry.keywords));
+  const pages = ALL_PAGES.filter((entry) => matches(entry.label, entry.keywords));
   const commands: { id: string; label: string; keywords: string; icon: ReactNode; action: () => void }[] = [
     { id: "theme-light", label: "浅色主题", keywords: "theme light 主题 白天", icon: <Sun size={16} />, action: () => run(() => setTheme("light")) },
     { id: "theme-dark", label: "深色主题", keywords: "theme dark 主题 夜间 暗色", icon: <Moon size={16} />, action: () => run(() => setTheme("dark")) },

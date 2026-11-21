@@ -1,15 +1,21 @@
 "use client";
 
-import { Instagram, Linkedin, MessageCircle, NotebookPen } from "lucide-react";
+import { ContactRound, Instagram, Linkedin, type LucideIcon, Mail, MessageCircle, MessageSquareText, NotebookPen, Phone } from "lucide-react";
 import { useState, type CSSProperties, type ReactNode } from "react";
 
 import type { MonthCount } from "../../lib/api-types";
 import { localMediaUrl } from "../../lib/media";
+import { HubTabs } from "../shell/hub";
 import { Button } from "./button";
 import styles from "./primitives.module.css";
 
 export const PROVIDER_LABEL: Record<string, string> = {
   legacy: "旧版迁移", wechat: "微信", wechat_group: "微信群", instagram: "Instagram", linkedin: "LinkedIn", monica: "Monica", manual: "手工", whatsapp: "WhatsApp", apple_messages: "短信 / iMessage", apple_contacts: "通讯录", mail: "邮件", linkedin_messages: "LinkedIn 消息", chatlog: "微信归档",
+};
+
+const SOURCE_ICON: Record<string, LucideIcon> = {
+  instagram: Instagram, linkedin: Linkedin, linkedin_messages: Linkedin, monica: NotebookPen, manual: NotebookPen, mail: Mail,
+  whatsapp: Phone, apple_messages: MessageSquareText, apple_contacts: ContactRound,
 };
 
 export function providerLabel(provider: string) {
@@ -18,8 +24,7 @@ export function providerLabel(provider: string) {
 
 /** `decorative` when the provider name is already written beside the mark, so it is not read twice. */
 export function SourceMark({ provider, size = 14, decorative = false }: { provider: string; size?: number; decorative?: boolean }) {
-  const Icon = provider === "instagram" ? Instagram : provider === "linkedin" ? Linkedin
-    : provider === "monica" || provider === "manual" ? NotebookPen : MessageCircle;
+  const Icon = SOURCE_ICON[provider] ?? MessageCircle;
   return <span className={styles.source} data-provider={provider} title={decorative ? undefined : providerLabel(provider)}
     aria-hidden={decorative || undefined} style={{ "--mark-size": `${size}px` } as CSSProperties}>
     <Icon size={size} aria-hidden="true" />{!decorative && <span className={styles.srOnly}>{providerLabel(provider)}</span>}
@@ -68,6 +73,7 @@ export function Page({ children, width, className, label }: {
 
 export function PageHeader({ title, count, description, actions }: { title: ReactNode; count?: ReactNode; description?: ReactNode; actions?: ReactNode }) {
   return <header className={styles.pageHeader}>
+    <HubTabs />
     <div><h1>{title}{count != null && count !== "" && <small>{count}</small>}</h1>{description && <p>{description}</p>}</div>
     {actions && <div className={styles.pageActions}>{actions}</div>}
   </header>;

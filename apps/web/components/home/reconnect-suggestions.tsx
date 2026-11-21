@@ -50,7 +50,7 @@ function Suggestion({ person }: { person: ReconnectPerson }) {
         <span>“{person.suggestion.opener}”</span>
         <IconButton size="sm" label="复制开场白" onClick={() => copy(person.suggestion!.opener)}><Copy size={13} /></IconButton>
       </p>
-    </div> : <p className={styles.why}>以前一年最多聊过 {person.peak} 条，理由生成后会显示在这里。</p>}
+    </div> : <p className={styles.why}>{person.peak ? `以前一年最多聊过 ${person.peak} 条。` : ""}联系的理由还在生成。</p>}
   </li>;
 }
 

@@ -1,7 +1,9 @@
 "use client";
 
-import { Cake, CalendarDays, Heart, MessageCircleHeart } from "lucide-react";
+import { ArrowRight, Cake, CalendarDays, Heart, MessageCircleHeart, Sparkles } from "lucide-react";
 import Link from "@/router/link";
+import { useRouter } from "@/router/navigation";
+import { useState } from "react";
 
 import { useReconnect } from "../../lib/ai";
 import type { DateKind, HomePerson, InsightsSummary } from "../../lib/api-types";
@@ -93,23 +95,41 @@ function Remember() {
   </section>;
 }
 
+/** One line to Monica from the first screen; the question opens in a conversation, ready to send. */
+function AskBar() {
+  const router = useRouter();
+  const [question, setQuestion] = useState("");
+  return <form className={styles.ask} onSubmit={(event) => {
+    event.preventDefault();
+    router.push(question.trim() ? `/ask?q=${encodeURIComponent(question.trim())}` : "/ask");
+  }}>
+    <Sparkles size={16} aria-hidden="true" />
+    <input value={question} onChange={(event) => setQuestion(event.target.value)} aria-label="问 Monica" placeholder="问 Monica：最近该联系谁？谁下周过生日？" />
+    <button type="submit" aria-label="去问 Monica"><ArrowRight size={16} aria-hidden="true" /></button>
+  </form>;
+}
+
 export function HomeView() {
   const home = useHome();
   const numbers = home.data?.key_numbers;
   return <Page className={styles.page}>
     <header className={styles.greeting}>
-      <p>{today.format(new Date())}</p>
-      <h1>{greeting()}</h1>
-      {numbers ? <p className={styles.numbers}>
-        <Link href="/profiles?type=person"><b>{formatNumber(numbers.contacts)}</b> 位联系人</Link>
-        <Link href="/insights"><b>{formatNumber(numbers.active_contacts_30d)}</b> 位 30 天内聊过</Link>
-        <Link href="/messages"><b>{formatNumber(numbers.messages_30d)}</b> 条近 30 天消息</Link>
-        <Link href="/profiles?type=group"><b>{formatNumber(numbers.groups)}</b> 个群</Link>
-      </p> : home.isError ? <Faint>暂时读不到概况。</Faint> : <Skeleton height={20} style={{ inlineSize: 420, maxInlineSize: "100%" }} />}
+      <div>
+        <p>{today.format(new Date())}</p>
+        <h1>{greeting()}</h1>
+        {numbers ? <p className={styles.numbers}>
+          <Link href="/profiles?type=person"><b>{formatNumber(numbers.contacts)}</b> 位联系人</Link>
+          <Link href="/insights"><b>{formatNumber(numbers.active_contacts_30d)}</b> 位 30 天内聊过</Link>
+          <Link href="/messages"><b>{formatNumber(numbers.messages_30d)}</b> 条近 30 天消息</Link>
+          <Link href="/profiles?type=group"><b>{formatNumber(numbers.groups)}</b> 个群</Link>
+        </p> : home.isError ? <Faint>暂时读不到概况。</Faint> : <Skeleton height={20} style={{ inlineSize: 420, maxInlineSize: "100%" }} />}
+      </div>
+      <AskBar />
     </header>
-    <DigestCard />
-    <WeeklyHighlights />
-    <Remember />
+    <div className={styles.layout}>
+      <div className={styles.main}><DigestCard /><WeeklyHighlights /></div>
+      <Remember />
+    </div>
     <section className={styles.feed}><SocialFeed preview={6} title="最近动态" /></section>
   </Page>;
 }

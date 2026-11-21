@@ -1,15 +1,17 @@
 @import '../../web/app/styles/tokens.css';
 *{box-sizing:border-box}body{margin:0;color:var(--color-text);background:var(--color-canvas);font-family:var(--font-body);font-size:var(--text-md)}
-main{max-width:760px;margin:auto;padding:var(--space-6)}header{display:flex;gap:var(--space-4);align-items:center;margin-bottom:var(--space-6)}
-.mark{width:48px;height:48px;display:grid;place-items:center;background:var(--color-accent);color:var(--color-on-accent);font-family:var(--font-display);font-size:32px;border-radius:var(--radius-panel)}
+/* The same ledger as the web app: an ink band on top, paper sheets below. */
+main{padding:0 0 var(--space-6)}main>*{max-width:760px;margin-inline:auto}main>section,main>footer{width:calc(100% - 2*var(--space-6))}
+header{display:flex;gap:var(--space-4);align-items:center;max-width:none;margin-bottom:var(--space-5);padding:var(--space-5) max(var(--space-6),calc((100% - 760px)/2));background:var(--spine);color:var(--spine-text-strong)}header p{color:var(--spine-text)}
+.mark{width:44px;height:44px;display:grid;place-items:center;background:var(--gamboge);color:#141a26;font-family:var(--font-display);font-size:26px;font-weight:600;border-radius:var(--radius-control)}
 h1{font-family:var(--font-display);font-size:var(--text-2xl);font-weight:600;margin:0}h2{font-size:var(--text-lg);margin:0 0 var(--space-3)}h3{font-size:var(--text-md);margin:0 0 var(--space-2)}
 p{font-size:var(--text-sm);line-height:1.7;color:var(--color-text-soft);margin:var(--space-2) 0 var(--space-4)}header p{margin:var(--space-1) 0 0}
-section{background:var(--color-surface);border:1px solid var(--color-rule);border-radius:var(--radius-panel);padding:var(--space-5);margin:var(--space-4) 0}
-.runtime{border-inline-start:3px solid var(--color-accent)}.status{display:flex;align-items:center;gap:var(--space-2)}.status h2{margin:0}.dot{height:8px;width:8px;background:var(--color-text-faint);border-radius:50%}.dot.ready{background:var(--color-accent)}
+section{background:var(--color-surface);border:1px solid var(--color-rule);border-radius:var(--radius-panel);padding:var(--space-5);margin-block:var(--space-4)}
+.runtime{box-shadow:inset 4px 0 0 var(--color-accent)}.status{display:flex;align-items:center;gap:var(--space-2)}.status h2{margin:0}.dot{height:8px;width:8px;background:var(--color-text-faint);border-radius:50%}.dot.ready{background:var(--color-accent)}
 code{font-family:var(--font-mono);font-size:var(--text-xs);overflow-wrap:anywhere}.actions{display:flex;gap:var(--space-2);flex-wrap:wrap;margin-top:var(--space-4)}
 button{font:inherit;font-size:var(--text-sm);min-height:44px;padding:var(--space-2) var(--space-3);border:1px solid var(--color-rule-strong);border-radius:var(--radius-control);background:var(--color-surface);color:var(--color-text);cursor:pointer}
 button:hover{background:var(--color-tint)}button.primary{background:var(--color-primary);color:var(--color-on-primary);border-color:var(--color-primary)}button:disabled{opacity:.45;cursor:default}
 button:focus-visible,input:focus-visible,summary:focus-visible{outline:var(--focus-ring);outline-offset:3px}.minor{font-size:var(--text-xs);margin-bottom:0}.error{color:var(--color-danger);border-inline-start:2px solid currentColor;padding:var(--space-2) var(--space-3)}
 label{display:block;font-size:var(--text-sm);margin:var(--space-3) 0}input:not([type=checkbox]){display:block;margin-top:var(--space-2);min-height:44px;width:100%;padding:var(--space-2) var(--space-3);border:1px solid var(--color-rule-strong);border-radius:var(--radius-control);font:inherit;background:var(--color-surface);color:var(--color-text)}
 .check{display:flex;gap:var(--space-2);align-items:center}.check input{accent-color:var(--color-primary)}footer{display:flex;gap:var(--space-4);justify-content:space-between;align-items:center;font-size:var(--text-xs);color:var(--color-text-faint);overflow-wrap:anywhere}.native-source{border-block-start:1px solid var(--color-rule);padding-block:var(--space-4)}
-@media(max-width:600px){main{padding:var(--space-4)}section{padding:var(--space-4)}footer{flex-wrap:wrap}}
+@media(max-width:600px){main>section,main>footer{width:calc(100% - 2*var(--space-4))}header{padding-inline:var(--space-4)}section{padding:var(--space-4)}footer{flex-wrap:wrap}}

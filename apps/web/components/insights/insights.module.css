@@ -1,6 +1,6 @@
 /* auto-fit: a section without data is not rendered, and the others take its space. */
 .columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: var(--space-3); align-items: start; }
-.panel { padding: var(--space-4); border-radius: var(--radius-panel); background: var(--color-surface); }
+.panel { padding: var(--space-4); border: 1px solid var(--color-rule); border-radius: var(--radius-panel); background: var(--color-surface); }
 .none { margin: 0; color: var(--color-text-soft); }
 .subhead { margin: var(--space-3) 0 0; font-size: var(--text-sm); font-weight: 600; color: var(--color-text-soft); }
 

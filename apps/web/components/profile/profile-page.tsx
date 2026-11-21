@@ -89,7 +89,6 @@ export function ProfileView({ profileId }: { profileId: string }) {
   return <Page className={styles.page}>
     <ProfileHero profile={profile} hasMessages={!!overview.data?.messages || !person} editing={editing}
       onEdit={() => setEditing((value) => !value)} onPhoto={setPhoto} onLinksChanged={refresh} />
-    {person && <ButtonLink className={styles.askLink} href={`/ask?profile=${profile.id}`}>询问此人</ButtonLink>}
     {person && editing && <Button onClick={() => setMerging(true)}>合并到其他人物</Button>}
     {merging && <MergePerson sourceId={canonicalId} onClose={() => setMerging(false)} onMerged={(id) => { void client.invalidateQueries(); setMerging(false); router.replace(`/profiles/${id}`); }} />}
     {editing && detail.data && <FieldEditor profileId={profileId} profile={profile} onSaved={refresh} onCancel={() => setEditing(false)} />}

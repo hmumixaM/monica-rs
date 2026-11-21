@@ -1,31 +1,34 @@
-/* Monica Next design tokens: an address book marked with one gamboge highlighter.
-   The interface is ink on paper; gamboge marks what needs attention now; the three
-   source colours only ever describe where data came from. */
+/* Monica design tokens: a bound ledger. A deep-ink spine holds the index, the pages beside it
+   are plain paper, and one gamboge highlighter marks what needs attention now. Source colours
+   only ever describe where data came from. */
 @layer reset, base, components;
 
 :root {
   color-scheme: light;
 
   /* Tier 1: palette */
-  --paper: #f3f4f6;
+  --paper: #eef0f3;
   --surface: #ffffff;
-  --ink: #1b2230;
-  --ink-2: #545d6b;
-  --ink-3: #8b93a1;
-  --gamboge: #f5b83d;
-  --gamboge-ink: #8a5a00;
-  --gamboge-wash: #fdf0d2;
-  --danger: #c43d2b;
+  --ink: #141a26;
+  --ink-2: #4d5666;
+  --ink-3: #8891a0;
+  --gamboge: #f2b632;
+  --gamboge-ink: #7a5200;
+  --gamboge-wash: #fcefc9;
+  --danger: #c23b2a;
 
   --wechat: #07c160;
   --wechat-ink: #0a8f4e;
   --instagram: #c13584;
   --linkedin: #0a66c2;
+  --mail: #b4532a;
+  --whatsapp: #128c7e;
+  --apple: #5f6b7c;
 
   /* Tier 2: semantic */
   --color-canvas: var(--paper);
   --color-surface: var(--surface);
-  --color-sunken: #e9ebef;
+  --color-sunken: #e3e6eb;
   --color-text: var(--ink);
   --color-text-soft: var(--ink-2);
   --color-text-faint: var(--ink-3);
@@ -51,6 +54,20 @@
   --source-linkedin-text: var(--linkedin);
   --source-monica: var(--ink-2);
   --source-monica-text: var(--ink-2);
+  --source-mail: var(--mail);
+  --source-mail-text: var(--mail);
+  --source-whatsapp: var(--whatsapp);
+  --source-whatsapp-text: var(--whatsapp);
+  --source-apple: var(--apple);
+  --source-apple-text: var(--apple);
+
+  /* The spine: the one dark mass on a light page. */
+  --spine: #141a26;
+  --spine-raised: #232b3b;
+  --spine-text: #c5ccd8;
+  --spine-text-strong: #ffffff;
+  --spine-text-faint: #7d8797;
+  --spine-rule: rgb(255 255 255 / .09);
   --chart-sent: var(--ink);
   --chart-received: color-mix(in oklab, var(--ink) 32%, var(--surface));
 
@@ -91,7 +108,7 @@
 
   /* Radius follows hierarchy: media > panels > controls; chips are pills */
   --radius-media: 14px;
-  --radius-panel: 10px;
+  --radius-panel: 12px;
   --radius-control: 8px;
   --radius-chip: 999px;
 
@@ -101,6 +118,7 @@
   --duration-slow: 600ms;
 
   --focus-ring: 2px solid var(--color-accent-text);
+  --page-gutter: clamp(16px, 3.2vw, 44px);
   --shell-topbar: 56px;
   --shell-tabbar: 64px;
 }
@@ -108,8 +126,8 @@
 /* Dark: an explicit choice, or the system preference unless light was chosen. */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --paper: #171c26;
-  --surface: #1f2531;
+  --paper: #11151d;
+  --surface: #1a202b;
   --ink: #e6e8ec;
   --ink-2: #aab1bd;
   --ink-3: #7c8492;
@@ -120,10 +138,15 @@
   --wechat-ink: #34d17f;
   --instagram: #e05aa6;
   --linkedin: #4c9ae8;
-  --color-sunken: #151a23;
-  --color-on-accent: #171c26;
+  --mail: #e08a5e;
+  --whatsapp: #3fbfae;
+  --apple: #a3adbb;
+  --color-sunken: #0d1017;
+  --color-on-accent: #11151d;
   --color-primary: #e6e8ec;
-  --color-on-primary: #171c26;
+  --color-on-primary: #11151d;
+  --spine: #0b0e14;
+  --spine-raised: #1a202b;
   --color-overlay: color-mix(in oklab, #05070b 64%, transparent);
   --shadow-float: 0 12px 36px rgb(0 0 0 / .45), 0 1px 3px rgb(0 0 0 / .3);
   --graph-reciprocal: #4cc28d;
@@ -139,8 +162,8 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --paper: #171c26;
-    --surface: #1f2531;
+    --paper: #11151d;
+    --surface: #1a202b;
     --ink: #e6e8ec;
     --ink-2: #aab1bd;
     --ink-3: #7c8492;
@@ -151,10 +174,15 @@
     --wechat-ink: #34d17f;
     --instagram: #e05aa6;
     --linkedin: #4c9ae8;
-    --color-sunken: #151a23;
-    --color-on-accent: #171c26;
+    --mail: #e08a5e;
+    --whatsapp: #3fbfae;
+    --apple: #a3adbb;
+    --color-sunken: #0d1017;
+    --color-on-accent: #11151d;
     --color-primary: #e6e8ec;
-    --color-on-primary: #171c26;
+    --color-on-primary: #11151d;
+    --spine: #0b0e14;
+    --spine-raised: #1a202b;
     --color-overlay: color-mix(in oklab, #05070b 64%, transparent);
     --shadow-float: 0 12px 36px rgb(0 0 0 / .45), 0 1px 3px rgb(0 0 0 / .3);
     --graph-reciprocal: #4cc28d;

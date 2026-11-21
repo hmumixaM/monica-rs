@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { LogOut, Monitor, Moon, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Search, Sun } from "lucide-react";
 import Link from "@/router/link";
 import { useRouter } from "@/router/navigation";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { Fragment, type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { apiFetch } from "../lib/api";
 import { clearClientData } from "../lib/queries";
@@ -12,7 +12,8 @@ import { forgetRecent, type RecentPerson, useRecentPeople } from "../lib/recent"
 import { cycleTheme, SIDEBAR_KEY, type ThemeChoice, useThemeChoice } from "../lib/theme";
 import styles from "./shell/shell.module.css";
 import { CommandPalette } from "./shell/command-palette";
-import { ACTIVE_ALIAS, DATA_NAV, DIGEST_NAV, type NavEntry, PRIMARY_NAV, TAB_NAV } from "./shell/nav";
+import { HubContext } from "./shell/hub";
+import { ALL_PAGES, entryFor, NAV_GROUPS, type NavEntry, TAB_NAV } from "./shell/nav";
 import { IconButton, Kbd } from "./ui/button";
 import { Sheet } from "./ui/dialog";
 import { Avatar } from "./ui/primitives";
@@ -34,7 +35,8 @@ export function AppShell({ active, children }: { active: string; children: React
   const [palette, setPalette] = useState(false);
   const [more, setMore] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const current = ACTIVE_ALIAS[active] ?? active;
+  const entry = entryFor(active);
+  const current = entry?.id ?? "";
 
   useEffect(() => {
     setCollapsed(document.documentElement.dataset.sidebar === "collapsed");
@@ -78,10 +80,11 @@ export function AppShell({ active, children }: { active: string; children: React
     router.replace("/login");
   }
 
-  const navLink = (entry: NavEntry, compact = false) => <Link key={entry.id} href={entry.href} className={styles.navItem}
-    aria-current={current === entry.id ? "page" : undefined} title={compact ? entry.label : undefined}>
-    <entry.icon size={18} strokeWidth={1.8} aria-hidden="true" /><span>{entry.label}</span>
+  const navLink = (item: NavEntry) => <Link key={item.id} href={item.href} className={styles.navItem}
+    aria-current={current === item.id ? "page" : undefined} title={collapsed ? item.label : undefined}>
+    <item.icon size={18} strokeWidth={1.7} aria-hidden="true" /><span>{item.label}</span>
   </Link>;
+  const closeOnLink = (close: () => void) => (event: React.MouseEvent) => { if ((event.target as HTMLElement).closest("a")) close(); };
 
   return <div className={styles.frame}>
     <a className={styles.skip} href="#main-content">跳转到主要内容</a>
@@ -95,23 +98,24 @@ export function AppShell({ active, children }: { active: string; children: React
       <button type="button" className={styles.searchButton} onClick={() => setPalette(true)} aria-label="搜索（⌘K）">
         <Search size={16} aria-hidden="true" /><span>搜索</span><span className={styles.shortcut}><Kbd>⌘</Kbd><Kbd>K</Kbd></span>
       </button>
-      <nav className={styles.nav}>{PRIMARY_NAV.map((entry) => navLink(entry, collapsed))}</nav>
+      <nav className={styles.nav}>
+        {NAV_GROUPS.map((group) => <Fragment key={group.id}>
+          {group.label && <h2>{group.label}</h2>}
+          {group.entries.map(navLink)}
+        </Fragment>)}
+      </nav>
       {recent.length > 0 && <section className={styles.recent} aria-labelledby="recent-heading">
         <h2 id="recent-heading">最近查看</h2>
         <RecentList people={recent} />
       </section>}
-      <section className={styles.dataGroup} aria-labelledby="data-heading">
-        <h2 id="data-heading">数据与设置</h2>
-        <nav>{DATA_NAV.map((entry) => navLink(entry, collapsed))}</nav>
-        <div className={styles.utility}>
-          <button type="button" className={styles.navItem} onClick={cycleTheme} title={`主题：${THEME_LABEL[theme]}`}>
-            {THEME_ICON[theme]}<span>主题：{THEME_LABEL[theme]}</span>
-          </button>
-          <button type="button" className={styles.navItem} onClick={() => void logout()} title="退出">
-            <LogOut size={17} strokeWidth={1.8} aria-hidden="true" /><span>退出</span>
-          </button>
-        </div>
-      </section>
+      <div className={styles.utility}>
+        <button type="button" className={styles.navItem} onClick={cycleTheme} title={`主题：${THEME_LABEL[theme]}`}>
+          {THEME_ICON[theme]}<span>主题：{THEME_LABEL[theme]}</span>
+        </button>
+        <button type="button" className={styles.navItem} onClick={() => void logout()} title="退出">
+          <LogOut size={17} strokeWidth={1.7} aria-hidden="true" /><span>退出</span>
+        </button>
+      </div>
     </aside>
 
     <header className={styles.mobileBar} data-mobile-bar="">
@@ -121,28 +125,30 @@ export function AppShell({ active, children }: { active: string; children: React
       </button>
     </header>
 
-    <main id="main-content" className={styles.main}>{children}</main>
+    <main id="main-content" className={styles.main}>
+      <HubContext.Provider value={entry?.pages ? { pages: entry.pages, active } : null}>{children}</HubContext.Provider>
+    </main>
 
     <nav className={styles.tabbar} aria-label="主导航">
-      {TAB_NAV.map((entry) => <Link key={entry.id} href={entry.href} aria-current={current === entry.id ? "page" : undefined}>
-        <entry.icon size={21} strokeWidth={1.8} aria-hidden="true" /><span>{entry.label}</span>
+      {TAB_NAV.map((item) => <Link key={item.id} href={item.href} aria-current={current === item.id ? "page" : undefined}>
+        <item.icon size={21} strokeWidth={1.7} aria-hidden="true" /><span>{item.label}</span>
       </Link>)}
-      <button type="button" onClick={() => setMore(true)} aria-current={TAB_NAV.some((entry) => entry.id === current) ? undefined : "page"}
+      <button type="button" onClick={() => setMore(true)} aria-current={TAB_NAV.some((item) => item.id === current) ? undefined : "page"}
         aria-haspopup="dialog">
-        <MoreHorizontal size={21} strokeWidth={1.8} aria-hidden="true" /><span>更多</span>
+        <MoreHorizontal size={21} strokeWidth={1.7} aria-hidden="true" /><span>更多</span>
       </button>
     </nav>
 
     {more && <Sheet label="更多" onClose={() => setMore(false)}>
-      <div className={styles.moreGrid} onClick={(event) => { if ((event.target as HTMLElement).closest("a")) setMore(false); }}>
-        {[...PRIMARY_NAV.filter(entry => !TAB_NAV.some(tab => tab.id === entry.id)), DIGEST_NAV, ...DATA_NAV].map((entry) => <Link key={entry.id} href={entry.href}
-          aria-current={current === entry.id ? "page" : undefined}>
-          <entry.icon size={20} strokeWidth={1.8} aria-hidden="true" /><span>{entry.label}</span>
+      <div className={styles.moreGrid} onClick={closeOnLink(() => setMore(false))}>
+        {ALL_PAGES.filter((page) => !TAB_NAV.some((tab) => tab.id === page.id)).map((page) => <Link key={page.id} href={page.href}
+          aria-current={active === page.id ? "page" : undefined}>
+          <page.icon size={20} strokeWidth={1.7} aria-hidden="true" /><span>{page.label}</span>
         </Link>)}
       </div>
       {recent.length > 0 && <section className={styles.moreRecent}>
         <h2>最近查看</h2>
-        <div onClick={(event) => { if ((event.target as HTMLElement).closest("a")) setMore(false); }}><RecentList people={recent} /></div>
+        <div onClick={closeOnLink(() => setMore(false))}><RecentList people={recent} /></div>
       </section>}
       <div className={styles.moreFooter}>
         <button type="button" onClick={cycleTheme}>{THEME_ICON[theme]}主题：{THEME_LABEL[theme]}</button>

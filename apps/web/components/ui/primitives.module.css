@@ -34,17 +34,19 @@
 .page {
   display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-5); align-content: start;
   inline-size: 100%; max-inline-size: var(--page-width, 1440px); margin-inline: auto;
-  padding: var(--space-5) clamp(16px, 3vw, 40px) var(--space-7);
+  padding: var(--space-5) var(--page-gutter) var(--space-7);
   &[data-width="narrow"] { --page-width: 1080px; }
   &[data-width="wide"] { --page-width: 1760px; }
   &[data-width="full"] { --page-width: none; }
 }
 .pageHeader {
   display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3) var(--space-4);
-  & > div:first-child { flex: 1 1 200px; min-inline-size: 0; display: grid; gap: 4px; }
+  & > div:not(.pageActions) { flex: 1 1 200px; min-inline-size: 0; display: grid; gap: 6px; }
+  /* Pages that share a sidebar entry carry its tabs above their own title. */
+  & > nav[data-hub] { flex: 1 0 100%; margin-block: calc(-1 * var(--space-2)) var(--space-2); }
   & h1 { font: 600 var(--text-2xl) / 1.2 var(--font-display); letter-spacing: .01em; }
   & h1 small { margin-inline-start: var(--space-2); color: var(--color-text-faint); font: 500 var(--text-md) var(--font-body); }
-  & p { color: var(--color-text-soft); font-size: var(--text-sm); }
+  & p { max-inline-size: 72ch; color: var(--color-text-soft); font-size: var(--text-sm); }
 }
 .pageActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 
@@ -53,12 +55,14 @@
   & > header {
     display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2) var(--space-3);
     & h2 { display: inline-flex; align-items: center; gap: 8px; font-size: var(--text-md); font-weight: 650; color: var(--color-text); }
+    & h2 > svg { color: var(--color-text-faint); }
     & h2 small { color: var(--color-text-faint); font-weight: 500; font-size: var(--text-xs); }
     & > a { color: var(--color-text-soft); font-size: var(--text-xs); }
     & > a:hover { color: var(--color-text); text-decoration: underline; text-underline-offset: 3px; }
   }
 }
-.panel { padding: var(--space-4) var(--space-5) var(--space-5); border-radius: var(--radius-panel); background: var(--color-surface);
+/* A sheet of the ledger: paper with a hairline edge, no shadow. */
+.panel { padding: var(--space-4) var(--space-5) var(--space-5); border: 1px solid var(--color-rule); border-radius: var(--radius-panel); background: var(--color-surface);
   @media (max-width: 720px) { padding: var(--space-4); } }
 .panel[data-flush] { padding: 0; overflow: hidden; }
 

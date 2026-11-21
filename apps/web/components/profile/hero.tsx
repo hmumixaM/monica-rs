@@ -1,6 +1,6 @@
 "use client";
 
-import { Cake, ChevronLeft, Edit3, ExternalLink, Link2, MapPin, MessageCircle, MessagesSquare, MoreHorizontal } from "lucide-react";
+import { Cake, ChevronLeft, Edit3, ExternalLink, Link2, MapPin, MessageCircle, MessagesSquare, MoreHorizontal, Sparkles } from "lucide-react";
 import Link from "@/router/link";
 import { type MouseEvent, useState } from "react";
 
@@ -81,6 +81,7 @@ export function ProfileHero({ profile, hasMessages, editing, onEdit, onPhoto, on
       </div>
       <div className={styles.actions}>
         <div className={styles.desktopActions}>
+          {person && <ButtonLink variant="highlight" href={`/ask?profile=${profile.id}`}><Sparkles size={15} />问 Monica</ButtonLink>}
           {hasMessages && <ButtonLink href={chatHref}><MessageCircle size={15} />聊天</ButtonLink>}
           {person && <Button onClick={() => setDialog("speech")}><MessagesSquare size={15} />群聊发言</Button>}
           <Button onClick={() => setDialog("accounts")}><Link2 size={15} />来源账号</Button>
@@ -89,6 +90,7 @@ export function ProfileHero({ profile, hasMessages, editing, onEdit, onPhoto, on
         <div className={styles.mobileActions}>
           {hasMessages && <ButtonLink href={chatHref} size="sm"><MessageCircle size={15} />聊天</ButtonLink>}
           <Menu trigger={<IconButton label="更多操作" outlined><MoreHorizontal size={18} /></IconButton>} items={[
+            ...(person ? [{ label: "问 Monica", icon: <Sparkles size={15} />, href: `/ask?profile=${profile.id}` }] : []),
             { label: editing ? "关闭编辑" : "编辑资料", icon: <Edit3 size={15} />, onSelect: onEdit },
             ...(person ? [{ label: "群聊发言", icon: <MessagesSquare size={15} />, onSelect: () => setDialog("speech") }] : []),
             { label: "管理来源账号", icon: <Link2 size={15} />, onSelect: () => setDialog("accounts") },
