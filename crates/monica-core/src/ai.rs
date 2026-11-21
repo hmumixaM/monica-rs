@@ -1100,7 +1100,14 @@ pub async fn dispatch_one(pool: &PgPool) -> Result<bool> {
     let (child,subjects):(String,Vec<String>)=match kind.as_str(){
         "ai.digest"=>{let week=period.parse::<NaiveDate>()?-chrono::Duration::days(7);(kind.clone(),if cursor.is_none(){vec![week.to_string()]}else{vec![]})},
         "ai.community_names"=>("ai.community".into(),sqlx::query_scalar("SELECT community_id FROM crm.ai_community_inputs WHERE ($1::text IS NULL OR community_id>$1) ORDER BY community_id LIMIT 25").bind(&cursor).fetch_all(pool).await?),
-        "ai.image_ocr"=>(kind.clone(),sqlx::query_scalar("SELECT m.id::text FROM crm.media_assets m CROSS JOIN crm.image_ocr_settings o WHERE o.id AND o.enabled AND m.media_type LIKE 'image/%' AND ($1::text IS NULL OR m.id>$1::text::uuid) AND crm.ai_ocr_media_allowed(m.id,o.include_chat) AND NOT EXISTS(SELECT 1 FROM crm.image_ocr_readings r LEFT JOIN crm.ai_jobs j ON j.id=r.job_id AND j.status IN('queued','running') WHERE r.media_id=m.id AND(j.id IS NOT NULL OR((r.status='complete' OR(r.generated_at IS NOT NULL AND(coalesce(btrim(r.text),'')<>'' OR coalesce(btrim(r.description),'')<>''))) AND r.model=o.model))) ORDER BY m.id LIMIT 25").bind(&cursor).fetch_all(pool).await?),
+        "ai.image_ocr"=>{
+            // A bounded page of images, like the post sweep: looking for the
+            // next 25 unread images scans the whole table once most are read.
+            const PAGE: usize = 200;
+            let rows:Vec<(String,bool)>=sqlx::query_as("WITH page AS MATERIALIZED (SELECT m.id FROM crm.media_assets m WHERE m.media_type LIKE 'image/%' AND ($1::text IS NULL OR m.id>$1::text::uuid) ORDER BY m.id LIMIT $2) SELECT m.id::text,EXISTS(SELECT 1 FROM crm.image_ocr_settings o WHERE o.id AND o.enabled AND crm.ai_ocr_media_allowed(m.id,o.include_chat) AND NOT EXISTS(SELECT 1 FROM crm.image_ocr_readings r LEFT JOIN crm.ai_jobs j ON j.id=r.job_id AND j.status IN('queued','running') WHERE r.media_id=m.id AND(j.id IS NOT NULL OR((r.status='complete' OR(r.generated_at IS NOT NULL AND(coalesce(btrim(r.text),'')<>'' OR coalesce(btrim(r.description),'')<>''))) AND r.model=o.model)))) FROM page m ORDER BY m.id").bind(&cursor).bind(PAGE as i64).fetch_all(pool).await?;
+            sweep=Some((rows.len()==PAGE).then(||rows[PAGE-1].0.clone()));
+            (kind.clone(),rows.into_iter().filter_map(|(id,unread)|unread.then_some(id)).collect())
+        },
         "ai.post_media"=>{let (subjects,next)=post_media::pending_subjects(pool,cursor.as_deref()).await?;sweep=Some(next);(kind.clone(),subjects)},
         _=>{let child=if kind=="ai.person_weeks"{"ai.person_week"}else if kind=="ai.reconnect"{"ai.reconnect_one"}else{"ai.profile"};let ids:Vec<String>=sqlx::query_scalar("SELECT id::text FROM crm.profiles WHERE profile_type='person' AND archived_at IS NULL AND ($1::text IS NULL OR id::text>$1) ORDER BY id::text LIMIT 25").bind(cursor.as_ref().map(|c|c.split(':').next().unwrap_or(c))).fetch_all(pool).await?;let week=if kind=="ai.person_weeks"{Some(period.parse::<NaiveDate>()?-chrono::Duration::days(7))}else{None};(child.into(),ids.into_iter().map(|id|week.map_or(id.clone(),|week|format!("{id}:{week}"))).collect())}
     };
@@ -1118,7 +1125,7 @@ pub async fn dispatch_one(pool: &PgPool) -> Result<bool> {
             }
         }
     }
-    // A post sweep pages over posts, not over the unread ones it finds.
+    // A sweep pages over posts or images, not over the unread ones it finds.
     let (complete, last) = match sweep {
         Some(next) => (next.is_none(), next.or(cursor)),
         None => (subjects.len() < 25, subjects.last().cloned().or(cursor)),
