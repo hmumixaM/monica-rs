@@ -17,15 +17,15 @@ RETURNS void LANGUAGE sql AS $$
   WHERE (q.urls,q.checksum) IS DISTINCT FROM (excluded.urls,excluded.checksum) AND q.observed_at<=excluded.observed_at
 $$;
 
-CREATE FUNCTION crm.native_wechat_photo(person uuid) RETURNS uuid LANGUAGE sql STABLE AS $$
- SELECT s.media_id FROM crm.connection_evidence_people ep JOIN crm.connection_evidence e ON e.id=ep.evidence_id
- JOIN crm.media_slots s ON s.entity_type='wechat_native_contact' AND s.entity_id=e.id AND s.role='wechat_avatar'
- WHERE ep.profile_id=person AND ep.role='contact' AND NOT e.deleted
- AND NOT EXISTS(SELECT 1 FROM crm.media_slots m WHERE m.entity_type='profile' AND m.entity_id=person AND m.role='avatar')
- AND EXISTS(SELECT 1 FROM crm.profiles pf WHERE pf.id=person AND (pf.avatar_media_id IS NULL OR EXISTS(
-   SELECT 1 FROM crm.source_avatar_projections pr WHERE pr.profile_id=pf.id AND pr.media_id=pf.avatar_media_id)))
- ORDER BY s.source_observed_at DESC NULLS LAST,s.updated_at DESC,s.entity_id LIMIT 1
-$$;
+-- A source-selected photo may belong to a native connection contact whose
+-- owner can change independently of a migrated WeChat source account.
+ALTER TABLE crm.source_avatar_projections ALTER COLUMN source_account_id DROP NOT NULL,
+ ADD COLUMN evidence_id uuid REFERENCES crm.connection_evidence(id),
+ ADD CHECK (num_nonnulls(source_account_id,evidence_id)=1);
+ALTER TABLE crm.avatar_observations ALTER COLUMN account_id DROP NOT NULL,
+ ADD COLUMN evidence_id uuid REFERENCES crm.connection_evidence(id),
+ ADD CHECK (num_nonnulls(account_id,evidence_id)=1);
+CREATE INDEX native_avatar_history ON crm.avatar_observations(evidence_id,sequence DESC) WHERE evidence_id IS NOT NULL;
 
 -- Resolve memberships through the same current connection evidence as native
 -- contact fields, so explicit reassignment and unlink are reflected on replay.
@@ -131,15 +131,35 @@ BEGIN
  END LOOP;
 END $$;
 
-CREATE FUNCTION crm.wechat_directory_member(room text,room_label text,member text,member_label text,room_candidate uuid,member_candidate uuid)
+CREATE TABLE crm.wechat_roster_sources (
+ observer text NOT NULL,group_account_id uuid NOT NULL REFERENCES crm.source_accounts(id),
+ person_account_id uuid NOT NULL REFERENCES crm.source_accounts(id),
+ PRIMARY KEY(group_account_id,person_account_id,observer)
+);
+CREATE FUNCTION crm.wechat_directory_member(observer text,room text,room_label text,member text,member_label text,room_candidate uuid,member_candidate uuid)
 RETURNS void LANGUAGE plpgsql AS $$
 DECLARE g uuid; p uuid;
 BEGIN
  IF right(rtrim(room),9)<>'@chatroom' OR member='' OR right(rtrim(member),9)='@chatroom' THEN RETURN; END IF;
  g=crm.wechat_directory_account(room,room_label,'group',room_candidate);
  p=crm.wechat_directory_account(member,member_label,'person',member_candidate);
+ INSERT INTO crm.wechat_roster_sources VALUES(observer,g,p) ON CONFLICT DO NOTHING;
  INSERT INTO crm.source_group_memberships AS m(group_account_id,person_account_id,role)
  VALUES(g,p,NULL) ON CONFLICT(group_account_id,person_account_id) DO UPDATE SET left_at=NULL WHERE m.left_at IS NOT NULL;
+END $$;
+
+-- Absence from a complete later roster ends the current observation. It
+-- does not supply a historical join date or the actual time the person left.
+CREATE FUNCTION crm.wechat_roster_absent(observer_id text,room text,member text)
+RETURNS void LANGUAGE plpgsql AS $$
+DECLARE g uuid; p uuid;
+BEGIN
+ SELECT id INTO g FROM crm.source_accounts WHERE provider='wechat' AND external_id=room FOR UPDATE;
+ SELECT id INTO p FROM crm.source_accounts WHERE provider='wechat' AND external_id=member;
+ DELETE FROM crm.wechat_roster_sources WHERE observer=observer_id AND group_account_id=g AND person_account_id=p;
+ IF FOUND AND NOT EXISTS(SELECT 1 FROM crm.wechat_roster_sources WHERE group_account_id=g AND person_account_id=p) THEN
+   UPDATE crm.source_group_memberships SET left_at=now() WHERE group_account_id=g AND person_account_id=p AND left_at IS NULL;
+ END IF;
 END $$;
 
 CREATE OR REPLACE VIEW crm.current_group_memberships AS

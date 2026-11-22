@@ -469,7 +469,10 @@ class Importer:
             records=[r["content"] for r in frame["batch"]["records"]]
             values=[]
             for value in records:
-                if value.get("deleted") and not value.get("participants"):self.snapshot_absence(value)
+                if value.get("deleted") and not value.get("participants"):
+                    self.snapshot_absence(value)
+                    if value["kind"]=="group_membership" and not self.verifying:
+                        self.db.execute("SELECT crm.wechat_roster_absent(%s,%s,%s)",(self.own,value["room"],value["member"]))
                 else:values.append(value)
             counts=[0,len(records)-len(values),0]
             if values and values[0]["kind"]=="message":counts=[a+b for a,b in zip(counts,self.messages(values))]
@@ -477,8 +480,8 @@ class Importer:
                 for value in values:
                     if value["kind"]=="post":result=self.post(value)
                     elif value["kind"]=="group_membership":
-                        self.db.execute("SELECT crm.wechat_directory_member(%s,%s,%s,%s,%s,%s)",
-                                        (value["room"],value["room_name"],value["member"],value["member_name"],
+                        self.db.execute("SELECT crm.wechat_directory_member(%s,%s,%s,%s,%s,%s,%s)",
+                                        (self.own,value["room"],value["room_name"],value["member"],value["member_name"],
                                          uuid.uuid5(NS,"wechat:account:"+value["room"]),uuid.uuid5(NS,"wechat:account:"+value["member"])))
                         result=(0,0,1)
                         self.accounts.pop(value["room"],None)

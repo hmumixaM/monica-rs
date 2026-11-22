@@ -330,6 +330,9 @@ class LiveImportContract(unittest.TestCase):
             source.commit()
             self.consumer.wechat()
             self.assertEqual(history('alias'),['before','after','before'])
+            source.executescript("DELETE FROM chatroom_member WHERE member_id=1; UPDATE chatroom_member SET rowid=1 WHERE member_id=3;")
+            self.consumer.wechat()
+            self.assertEqual(self.db.execute("SELECT p.display_name FROM crm.current_group_memberships m JOIN crm.profiles p ON p.id=m.person_profile_id WHERE m.left_at IS NULL").fetchall(),[('Silent member',)])
 
     def test_wechat_live_wal_backup_edit_replay_and_existing_identity(self):
         self.db.execute("INSERT INTO crm.legacy_migrations(id,manifest_hash,source_manifest,status) VALUES(%s,'synthetic','{}','database_ready')",(uuid.uuid4(),))

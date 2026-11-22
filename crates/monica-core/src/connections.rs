@@ -764,6 +764,13 @@ async fn project_revision_reserved(
     for (kind, id) in changed_ids {
         queue_identifier(tx, &kind, &id).await?;
     }
+    if kind=="contact" && matches!(provider,Provider::Wechat) && sqlx::query_scalar::<_,bool>(
+        "SELECT EXISTS(SELECT 1 FROM crm.media_slots WHERE entity_type='wechat_native_contact' AND entity_id=$1 AND role='wechat_avatar')")
+        .bind(eid).fetch_one(&mut **tx).await? {
+        for &owner in &affected {
+            crate::linking::rebuild_avatar(tx,owner).await?;
+        }
+    }
     if !affected.is_empty() {
         sqlx::query("UPDATE crm.profiles SET generation=generation+1 WHERE id=ANY($1)")
             .bind(affected.into_iter().collect::<Vec<_>>())

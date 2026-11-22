@@ -82,7 +82,10 @@ pub async fn refresh_account(pool: &PgPool, account: Uuid) -> Result<()> {
     tx.commit().await?;
     Ok(())
 }
-async fn rebuild_avatar(tx: &mut Transaction<'_, Postgres>, profile: Uuid) -> Result<()> {
+pub(crate) async fn rebuild_avatar(
+    tx: &mut Transaction<'_, Postgres>,
+    profile: Uuid,
+) -> Result<()> {
     let current: Option<Uuid> =
         sqlx::query_scalar("SELECT avatar_media_id FROM crm.profiles WHERE id=$1")
             .bind(profile)
@@ -103,7 +106,19 @@ async fn rebuild_avatar(tx: &mut Transaction<'_, Postgres>, profile: Uuid) -> Re
     // Any avatar a linked account has is better than initials. Archived
     // avatars were copied without the import-time byte check, so they count
     // too; a checked one is preferred when the person has both.
-    let selected:Option<(Uuid,Uuid)>=sqlx::query_as("SELECT m.media_id,l.account_id FROM crm.source_account_links l JOIN crm.media_slots m ON m.entity_type='source_account' AND m.entity_id=l.account_id JOIN crm.media_assets a ON a.id=m.media_id WHERE l.profile_id=$1 AND m.role IN ('wechat_avatar_small','wechat_avatar','wechat_avatar_big','instagram_avatar','linkedin_avatar') ORDER BY (a.verified_at IS NULL),CASE m.role WHEN 'wechat_avatar_small' THEN 0 WHEN 'wechat_avatar' THEN 1 WHEN 'wechat_avatar_big' THEN 2 WHEN 'instagram_avatar' THEN 3 ELSE 4 END,l.account_id LIMIT 1").bind(profile).fetch_optional(&mut **tx).await?;
+    let selected:Option<(Uuid,Option<Uuid>,Option<Uuid>)>=sqlx::query_as(
+        "SELECT media_id,account_id,evidence_id FROM (
+          SELECT m.media_id,l.account_id,NULL::uuid evidence_id,a.verified_at IS NULL unverified,
+           CASE m.role WHEN 'wechat_avatar_small' THEN 0 WHEN 'wechat_avatar' THEN 1 WHEN 'wechat_avatar_big' THEN 2 WHEN 'instagram_avatar' THEN 3 ELSE 4 END priority,
+           m.source_observed_at observed
+          FROM crm.source_account_links l JOIN crm.media_slots m ON m.entity_type='source_account' AND m.entity_id=l.account_id
+          JOIN crm.media_assets a ON a.id=m.media_id WHERE l.profile_id=$1 AND m.role IN ('wechat_avatar_small','wechat_avatar','wechat_avatar_big','instagram_avatar','linkedin_avatar')
+          UNION ALL SELECT s.media_id,NULL,e.id,false,0,s.source_observed_at FROM crm.connection_evidence_people ep
+          JOIN crm.connection_evidence e ON e.id=ep.evidence_id AND NOT e.deleted
+          JOIN crm.media_slots s ON s.entity_type='wechat_native_contact' AND s.entity_id=e.id AND s.role='wechat_avatar'
+          WHERE ep.profile_id=$1 AND ep.role='contact'
+         ) photos ORDER BY unverified,priority,observed DESC NULLS LAST,account_id,evidence_id LIMIT 1")
+        .bind(profile).fetch_optional(&mut **tx).await?;
     if selected.is_none() && current.is_some() {
         let still_owned:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.source_account_links l JOIN crm.media_links m ON m.entity_type='source_account' AND m.entity_id=l.account_id WHERE l.profile_id=$1 AND m.media_id=$2)")
             .bind(profile).bind(current).fetch_one(&mut **tx).await?;
@@ -111,10 +126,10 @@ async fn rebuild_avatar(tx: &mut Transaction<'_, Postgres>, profile: Uuid) -> Re
             return Ok(());
         }
     }
-    let media = selected.map(|(m, _)| m);
+    let media = selected.map(|(m, _, _)| m);
     sqlx::query("UPDATE crm.profiles SET avatar_media_id=$2,generation=generation+1 WHERE id=$1 AND avatar_media_id IS DISTINCT FROM $2").bind(profile).bind(media).execute(&mut **tx).await?;
-    if let Some((media, account)) = selected {
-        sqlx::query("INSERT INTO crm.source_avatar_projections(profile_id,media_id,source_account_id) VALUES($1,$2,$3) ON CONFLICT(profile_id) DO UPDATE SET media_id=excluded.media_id,source_account_id=excluded.source_account_id").bind(profile).bind(media).bind(account).execute(&mut **tx).await?;
+    if let Some((media, account, evidence)) = selected {
+        sqlx::query("INSERT INTO crm.source_avatar_projections(profile_id,media_id,source_account_id,evidence_id) VALUES($1,$2,$3,$4) ON CONFLICT(profile_id) DO UPDATE SET media_id=excluded.media_id,source_account_id=excluded.source_account_id,evidence_id=excluded.evidence_id").bind(profile).bind(media).bind(account).bind(evidence).execute(&mut **tx).await?;
     } else {
         sqlx::query("DELETE FROM crm.source_avatar_projections WHERE profile_id=$1")
             .bind(profile)

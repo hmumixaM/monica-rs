@@ -269,6 +269,7 @@ class Reader:
         CREATE TABLE IF NOT EXISTS known(file TEXT,table_name TEXT,row_id INTEGER,external TEXT,hash TEXT,cycle TEXT,deleted INTEGER,context TEXT,PRIMARY KEY(file,table_name,row_id));
         CREATE TABLE IF NOT EXISTS names(file TEXT,id INTEGER,username TEXT,digest TEXT,PRIMARY KEY(file,id));
         CREATE INDEX IF NOT EXISTS names_digest ON names(file,digest);
+        CREATE TABLE IF NOT EXISTS roster_keys(slot INTEGER PRIMARY KEY,external TEXT UNIQUE NOT NULL);
         CREATE TABLE IF NOT EXISTS pending(id INTEGER PRIMARY KEY CHECK(id=1),frame TEXT,change TEXT);
         CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT);''')
         self.db.execute('CREATE TABLE IF NOT EXISTS scan_counts(file TEXT,table_name TEXT,records INTEGER NOT NULL,PRIMARY KEY(file,table_name))')
@@ -428,10 +429,16 @@ class Reader:
                     if size+row_size>MAX_PAGE:break
                     size+=row_size;state['row_id']=row['_row_id']
                     if value is None:continue
+                    known_id=row['_row_id']
+                    if table=='chatroom_member':
+                        # WeChat may compact or reuse SQLite rowids between exports.
+                        # Track presence by the stable pair, keeping the scan cursor physical.
+                        self.db.execute('INSERT INTO roster_keys(external) VALUES(?) ON CONFLICT DO NOTHING',(value['external_id'],))
+                        known_id=self.db.execute('SELECT slot FROM roster_keys WHERE external=?',(value['external_id'],)).fetchone()[0]
                     digest=hashlib.sha256(encode(value).encode()).hexdigest()
-                    old=self.db.execute('SELECT hash,external,context,deleted FROM known WHERE file=? AND table_name=? AND row_id=?',(file,table,row['_row_id'])).fetchone()
+                    old=self.db.execute('SELECT hash,external,context,deleted FROM known WHERE file=? AND table_name=? AND row_id=?',(file,table,known_id)).fetchone()
                     context={k:value[k] for k in ['kind','thread_id','occurred_at','message_type','is_group','room','member'] if k in value}
-                    known.append([file,table,row['_row_id'],value['external_id'],digest,cycle,int(value.get('deleted',False)),encode(context)])
+                    known.append([file,table,known_id,value['external_id'],digest,cycle,int(value.get('deleted',False)),encode(context)])
                     if old and old['external']!=value['external_id'] and not old['deleted']:
                         changed.append(dict(json.loads(old['context']),external_id=old['external'],deleted=True,participants=[]))
                     if not old or old['hash']!=digest:changed.append(value)
@@ -439,7 +446,7 @@ class Reader:
                     state.update(table_name=table+'\0',row_id=0)
                 return self.page(state,changed,known,emit)
         if state['phase']=='delete':
-            obsolete=self.db.execute('SELECT * FROM known WHERE file=? AND cycle<>? AND deleted=0 ORDER BY table_name,row_id LIMIT ?',(file,cycle,LIMIT)).fetchall()
+            obsolete=self.db.execute('SELECT * FROM known WHERE file=? AND cycle<>? AND deleted=0 AND (table_name<>? OR ?) ORDER BY table_name,row_id LIMIT ?',(file,cycle,'chatroom_member','chatroom_member' in tables,LIMIT)).fetchall()
             changed=[dict(json.loads(r['context']),external_id=r['external'],deleted=True,participants=[]) for r in obsolete]
             known=[[file,r['table_name'],r['row_id'],r['external'],hashlib.sha256(encode(value).encode()).hexdigest(),cycle,1,r['context']] for r,value in zip(obsolete,changed)]
             if not obsolete:state['done']=1

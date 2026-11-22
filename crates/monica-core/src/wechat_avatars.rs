@@ -143,7 +143,12 @@ async fn finish(
         .bind(format!("media-slot:{entity}:{account}:{role}"))
         .execute(&mut *tx)
         .await?;
-    if !native {
+    if native {
+        sqlx::query("SELECT id FROM crm.connection_evidence WHERE id=$1 FOR UPDATE")
+            .bind(account)
+            .fetch_one(&mut *tx)
+            .await?;
+    } else {
         sqlx::query("INSERT INTO crm.source_avatar_projections(profile_id,media_id,source_account_id)
             SELECT p.id,p.avatar_media_id,$1 FROM crm.source_account_links l JOIN crm.profiles p ON p.id=l.profile_id
             WHERE l.account_id=$1 AND EXISTS(SELECT 1 FROM crm.media_links m WHERE m.media_id=p.avatar_media_id
@@ -152,6 +157,13 @@ async fn finish(
             ON CONFLICT(profile_id) DO NOTHING").bind(account).execute(&mut *tx).await?;
     }
     if let Some(asset) = asset {
+        if native {
+            sqlx::query("INSERT INTO crm.avatar_observations(evidence_id,role,previous_media_id,media_id,observed_at,evidence_key)
+                SELECT $1,'wechat_avatar',prior.media_id,$2,$3,$4 FROM (SELECT (SELECT media_id FROM crm.media_slots WHERE entity_type='wechat_native_contact' AND entity_id=$1 AND role='wechat_avatar') media_id) prior
+                WHERE prior.media_id IS DISTINCT FROM $2 ON CONFLICT(evidence_key) DO NOTHING")
+                .bind(account).bind(asset.id).bind(observed).bind(format!("wechat-native:{token}")).execute(&mut *tx).await?;
+        }
+
         sqlx::query(
             "UPDATE crm.media_assets SET verified_at=now() WHERE id=$1 AND verified_at IS NULL",
         )
@@ -173,8 +185,11 @@ async fn finish(
             .bind(entity).bind(account).bind((!native).then_some(account)).execute(&mut *tx).await?;
     }
     if native {
-        sqlx::query("UPDATE crm.profiles SET generation=generation+1 WHERE id IN(SELECT profile_id FROM crm.connection_evidence_people WHERE evidence_id=$1)")
-            .bind(account).execute(&mut *tx).await?;
+        let owners:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM crm.profiles WHERE id IN(SELECT profile_id FROM crm.connection_evidence_people WHERE evidence_id=$1) ORDER BY id FOR UPDATE")
+            .bind(account).fetch_all(&mut *tx).await?;
+        for profile in owners {
+            crate::linking::rebuild_avatar(&mut tx, profile).await?;
+        }
     } else {
         sqlx::query("INSERT INTO crm.media_profile_refresh(account_id) VALUES($1) ON CONFLICT(account_id) DO UPDATE SET generation=crm.media_profile_refresh.generation+1")
             .bind(account).execute(&mut *tx).await?;
@@ -272,5 +287,84 @@ mod tests {
         let cleared:Option<Uuid>=sqlx::query_scalar("SELECT p.avatar_media_id FROM crm.source_account_links l JOIN crm.profiles p ON p.id=l.profile_id WHERE l.account_id=$1")
             .bind(account).fetch_one(&pool).await.unwrap();
         assert!(cleared.is_none());
+    }
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn native_photo_and_roster_follow_connection_owner(pool: sqlx::PgPool) {
+        use crate::{Provider, connections};
+        use serde_json::json;
+        let provider = Provider::Wechat;
+        let cid = connections::connection_id(provider, "fixture");
+        sqlx::query("INSERT INTO crm.source_connections(id,provider,external_account,display_name,connection_method) VALUES($1,'wechat','fixture','Fixture','local')")
+            .bind(cid).execute(&pool).await.unwrap();
+        let mut contact = json!({"kind":"contact","external_id":"contact:peer","directory_version":1,"fields":{"alias":"original","big_head_url":"https://wx.qlogo.cn/same"},"avatar_checksum":"old","participants":[{"id":"peer","name":"Friend","role":"contact"}]});
+        let member = json!({"kind":"group_membership","external_id":"membership:room:peer","participants":[{"id":"r@chatroom","role":"room"},{"id":"peer","name":"Friend","role":"member"}]});
+        let eid = connections::evidence_id(cid, "contact:peer");
+        let mut previous = None;
+        for index in 0..2 {
+            if index == 1 {
+                contact["avatar_checksum"] = json!("changed");
+                contact["fields"]["alias"] = json!("current");
+            }
+            let mut tx = pool.begin().await.unwrap();
+            connections::commit_page(
+                &mut tx,
+                provider,
+                cid,
+                "chatlog",
+                &[contact.clone(), member.clone()],
+                &json!({"position":index}),
+            )
+            .await
+            .unwrap();
+            tx.commit().await.unwrap();
+            connections::deliver(&pool, provider, cid, 10)
+                .await
+                .unwrap();
+            let token = sqlx::query_scalar(
+                "SELECT token FROM crm.wechat_avatar_requests WHERE account_id=$1",
+            )
+            .bind(eid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            let asset = Asset {
+                id: Uuid::new_v4(),
+                sha256: format!("{index:064x}"),
+                media_type: "image/png".into(),
+                byte_length: 12,
+                object_path: format!("fixture/{index}"),
+                file_name: None,
+                width: Some(2),
+                height: Some(2),
+                duration_ms: None,
+            };
+            sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path) VALUES($1,$2,'image/png',12,$3)")
+                .bind(asset.id).bind(&asset.sha256).bind(&asset.object_path).execute(&pool).await.unwrap();
+            finish(&pool, eid, token, Ok(Some(asset.clone())))
+                .await
+                .unwrap();
+            let row:(Uuid,Option<Uuid>)=sqlx::query_as("SELECT p.avatar_media_id,o.previous_media_id FROM crm.current_group_memberships m JOIN crm.profiles p ON p.id=m.person_profile_id JOIN crm.connection_evidence_people ep ON ep.profile_id=p.id AND ep.role='contact' JOIN crm.avatar_observations o ON o.evidence_id=ep.evidence_id WHERE o.media_id=$1")
+                .bind(asset.id).fetch_one(&pool).await.unwrap();
+            assert_eq!(row, (asset.id, previous));
+            previous = Some(asset.id);
+        }
+        sqlx::query("UPDATE crm.connection_identity_links SET blocked=true,profile_id=NULL WHERE connection_id=$1 AND external_id='peer'").bind(cid).execute(&pool).await.unwrap();
+        // Reproject the same records, as the connection-person unlink endpoint does.
+        sqlx::query("INSERT INTO crm.connection_relink(evidence_id) SELECT id FROM crm.connection_evidence WHERE connection_id=$1 ON CONFLICT DO NOTHING").bind(cid).execute(&pool).await.unwrap();
+        connections::relink_pending(&pool, 10).await.unwrap();
+        let visible: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM crm.profiles WHERE avatar_media_id IS NOT NULL",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(visible, 0);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM crm.current_group_memberships")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            0
+        );
     }
 }
