@@ -12,7 +12,7 @@ const PROMPT: &str = "memory-radix-v2-attribution";
 fn hash(v: &Value) -> String {
     crate::identity::observation_hash(v)
 }
-fn policy_hash(policy: &Privacy) -> String {
+pub fn policy_hash(policy: &Privacy) -> String {
     hash(&json!(policy))
 }
 
@@ -196,7 +196,12 @@ pub async fn enqueue_pending(pool: &PgPool) -> Result<()> {
     });
     let default: String = settings.get("model");
     let routes: Value = settings.get("model_routes");
-    let ids:Vec<Uuid>=sqlx::query_scalar("SELECT h.profile_id FROM crm.memory_heads h JOIN crm.profiles p ON p.id=h.profile_id AND p.archived_at IS NULL AND p.profile_type='person' LEFT JOIN crm.memory_current c ON c.profile_id=h.profile_id WHERE NOT EXISTS(SELECT 1 FROM crm.memory_legacy_pending s WHERE s.profile_id=h.profile_id) AND (c.profile_id IS NULL OR c.generation<>h.generation OR c.model<>$1 OR c.privacy_hash<>$2 OR coalesce(c.chunk_model,c.model)<>$3) ORDER BY h.updated_at,h.profile_id LIMIT 25").bind(super::models::resolve(&default,&routes,"ai.profile")).bind(policy).bind(super::models::resolve(&default,&routes,"ai.memory_chunk")).fetch_all(pool).await?;
+    // A person never summarized, or summarized under other settings, is due now.
+    // New material waits: one message is rarely worth a new summary, and the
+    // next summary reads everything that arrived since the last one. It is due
+    // once the person has been quiet for six hours (or has not been for three
+    // days), and then at most daily after ten or more changes, weekly after fewer.
+    let ids:Vec<Uuid>=sqlx::query_scalar("SELECT h.profile_id FROM crm.memory_heads h JOIN crm.profiles p ON p.id=h.profile_id AND p.archived_at IS NULL AND p.profile_type='person' LEFT JOIN crm.memory_current c ON c.profile_id=h.profile_id WHERE NOT EXISTS(SELECT 1 FROM crm.memory_legacy_pending s WHERE s.profile_id=h.profile_id) AND (c.profile_id IS NULL OR c.model<>$1 OR c.privacy_hash<>$2 OR coalesce(c.chunk_model,c.model)<>$3 OR (c.generation<>h.generation AND (h.updated_at<now()-interval '6 hours' OR c.generated_at<now()-interval '3 days') AND c.generated_at<now()-CASE WHEN h.generation-c.generation>=10 THEN interval '1 day' ELSE interval '7 days' END)) ORDER BY h.updated_at,h.profile_id LIMIT 25").bind(super::models::resolve(&default,&routes,"ai.profile")).bind(policy).bind(super::models::resolve(&default,&routes,"ai.memory_chunk")).fetch_all(pool).await?;
     for profile in ids {
         let id = super::enqueue(pool, "ai.profile", &profile.to_string()).await?;
         sqlx::query("UPDATE crm.ai_jobs SET status='queued',attempts=0,completed_at=NULL WHERE id=$1 AND status='complete'").bind(id).execute(pool).await?;

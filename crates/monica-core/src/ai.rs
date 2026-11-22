@@ -283,7 +283,7 @@ pub(crate) async fn enqueue_in_tx(
     if let Some(id) = current {
         return Ok(id);
     }
-    let id:Uuid=sqlx::query_scalar("INSERT INTO crm.ai_jobs(id,kind,subject,model,input_hash,input,source_versions,privacy,priority_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,CASE WHEN $2='ai.post_media' THEN ($6::jsonb#>>'{post,occurred_at}')::timestamptz END) ON CONFLICT(kind,subject,model,input_hash) DO UPDATE SET status=CASE WHEN ai_jobs.status IN ('failed','cancelled') OR (ai_jobs.status='complete' AND NOT EXISTS(SELECT 1 FROM crm.ai_outputs o WHERE o.kind=ai_jobs.kind AND o.subject=ai_jobs.subject AND o.input_hash=ai_jobs.input_hash)) THEN 'queued' ELSE ai_jobs.status END,error=NULL,attempts=CASE WHEN ai_jobs.status IN ('failed','cancelled','complete') THEN 0 ELSE ai_jobs.attempts END RETURNING id")
+    let id:Uuid=sqlx::query_scalar("INSERT INTO crm.ai_jobs(id,kind,subject,model,input_hash,input,source_versions,privacy,priority_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,CASE WHEN $2='ai.post_media' THEN ($6::jsonb#>>'{post,occurred_at}')::timestamptz WHEN $2 IN('ai.profile','ai.reconnect_one') THEN (SELECT max(c.last_message_at) FROM crm.conversations c WHERE c.profile_id=split_part($3,':',1)::uuid AND c.conversation_type='direct') ELSE now() END) ON CONFLICT(kind,subject,model,input_hash) DO UPDATE SET status=CASE WHEN ai_jobs.status IN ('failed','cancelled') OR (ai_jobs.status='complete' AND NOT EXISTS(SELECT 1 FROM crm.ai_outputs o WHERE o.kind=ai_jobs.kind AND o.subject=ai_jobs.subject AND o.input_hash=ai_jobs.input_hash)) THEN 'queued' ELSE ai_jobs.status END,error=NULL,attempts=CASE WHEN ai_jobs.status IN ('failed','cancelled','complete') THEN 0 ELSE ai_jobs.attempts END RETURNING id")
         .bind(Uuid::new_v4()).bind(kind).bind(subject).bind(&data.model).bind(&data.hash).bind(&data.input).bind(&data.versions).bind(json!({"provider":data.provider,"policy":data.privacy})).fetch_one(&mut **tx).await?;
     sqlx::query("INSERT INTO crm.ai_subject_heads VALUES($1,$2,$3) ON CONFLICT(kind,subject) DO UPDATE SET job_id=excluded.job_id").bind(kind).bind(subject).bind(id).execute(&mut **tx).await?;
     sqlx::query("UPDATE crm.ai_jobs SET status='cancelled',token=NULL,lease_until=NULL,error='superseded',completed_at=now() WHERE kind=$1 AND subject=$2 AND id<>$3 AND status IN ('queued','running')").bind(kind).bind(subject).bind(id).execute(&mut **tx).await?;
@@ -309,15 +309,16 @@ const MAX_ATTEMPTS: i32 = 3;
 /// How long one text model call may take, including its chunk and reduce calls.
 pub(crate) const TEXT_CALL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(120);
 /// Newest posts first, then this week's review and notes, then the rest of
-/// analysis, then the image backlog. Each queue has a matching partial index,
-/// so a claim reads one candidate instead of sorting every queued job.
+/// analysis, then the image backlog. Analysis about a person runs for whoever
+/// the user talked to most recently first, and last for people never talked
+/// to. Each queue has a matching partial index, so a claim reads one candidate
+/// instead of sorting every queued job.
 /// The head check is a scalar lookup on purpose: written as EXISTS the planner
 /// joins all heads to the whole queue and sorts it on every claim.
 pub async fn claim(pool: &PgPool) -> Result<Option<Lease>> {
     const POSTS: &str = "j.kind='ai.post_media' AND(coalesce((j.input->>'ingested')::boolean,false)=false OR j.created_at<=clock_timestamp()-interval '12 seconds') ORDER BY j.priority_at DESC NULLS LAST,j.created_at,j.id";
     const TIMELY: &str = "j.kind IN('ai.digest','ai.person_week') ORDER BY j.created_at,j.id";
-    const ANALYSIS: &str =
-        "j.kind NOT IN('ai.post_media','ai.image_ocr') ORDER BY j.created_at,j.id";
+    const ANALYSIS: &str = "j.kind NOT IN('ai.post_media','ai.image_ocr') ORDER BY j.priority_at DESC NULLS LAST,j.created_at,j.id";
     const IMAGES: &str = "j.kind='ai.image_ocr' AND EXISTS(SELECT 1 FROM crm.image_ocr_settings o WHERE o.id AND o.enabled AND o.daily_limit>(SELECT count(*) FROM crm.ai_call_reservations WHERE day=(now() AT TIME ZONE 'America/Chicago')::date)) ORDER BY j.created_at,j.id";
     let token = Uuid::new_v4();
     for queue in [POSTS, TIMELY, ANALYSIS, IMAGES] {
@@ -1139,6 +1140,10 @@ pub async fn dispatch_one(pool: &PgPool) -> Result<bool> {
     let mut sweep = None;
     let (child,subjects):(String,Vec<String>)=match kind.as_str(){
         "ai.digest"=>{let week=period.parse::<NaiveDate>()?-chrono::Duration::days(7);(kind.clone(),if cursor.is_none(){vec![week.to_string()]}else{vec![]})},
+        // Only people the list can show: last talked to more than 90 days
+        // ago, most recent first, and not answered yet. The list shows twelve;
+        // the rest are spare for when the user answers some.
+        "ai.reconnect"=>("ai.reconnect_one".into(),if cursor.is_none(){sqlx::query_scalar("SELECT p.id::text FROM crm.profiles p JOIN crm.weekly_contact_stats c ON c.profile_id=p.id WHERE p.archived_at IS NULL AND p.profile_type='person' AND c.last_contact_at<now()-interval '90 days' AND NOT EXISTS(SELECT 1 FROM crm.ai_reconnect_decisions d WHERE d.profile_id=p.id AND (d.until_at IS NULL OR d.until_at>now())) ORDER BY c.last_contact_at DESC,p.id LIMIT 24").fetch_all(pool).await?}else{vec![]}),
         "ai.community_names"=>("ai.community".into(),sqlx::query_scalar("SELECT community_id FROM crm.ai_community_inputs WHERE ($1::text IS NULL OR community_id>$1) ORDER BY community_id LIMIT 25").bind(&cursor).fetch_all(pool).await?),
         "ai.image_ocr"=>{
             // A bounded page of images, like the post sweep: looking for the
@@ -1149,7 +1154,7 @@ pub async fn dispatch_one(pool: &PgPool) -> Result<bool> {
             (kind.clone(),rows.into_iter().filter_map(|(id,unread)|unread.then_some(id)).collect())
         },
         "ai.post_media"=>{let (subjects,next)=post_media::pending_subjects(pool,cursor.as_deref()).await?;sweep=Some(next);(kind.clone(),subjects)},
-        _=>{let child=if kind=="ai.person_weeks"{"ai.person_week"}else if kind=="ai.reconnect"{"ai.reconnect_one"}else{"ai.profile"};let ids:Vec<String>=sqlx::query_scalar("SELECT id::text FROM crm.profiles WHERE profile_type='person' AND archived_at IS NULL AND ($1::text IS NULL OR id::text>$1) ORDER BY id::text LIMIT 25").bind(cursor.as_ref().map(|c|c.split(':').next().unwrap_or(c))).fetch_all(pool).await?;let week=if kind=="ai.person_weeks"{Some(period.parse::<NaiveDate>()?-chrono::Duration::days(7))}else{None};(child.into(),ids.into_iter().map(|id|week.map_or(id.clone(),|week|format!("{id}:{week}"))).collect())}
+        _=>{let child=if kind=="ai.person_weeks"{"ai.person_week"}else{"ai.profile"};let ids:Vec<String>=sqlx::query_scalar("SELECT id::text FROM crm.profiles WHERE profile_type='person' AND archived_at IS NULL AND ($1::text IS NULL OR id::text>$1) ORDER BY id::text LIMIT 25").bind(cursor.as_ref().map(|c|c.split(':').next().unwrap_or(c))).fetch_all(pool).await?;let week=if kind=="ai.person_weeks"{Some(period.parse::<NaiveDate>()?-chrono::Duration::days(7))}else{None};(child.into(),ids.into_iter().map(|id|week.map_or(id.clone(),|week|format!("{id}:{week}"))).collect())}
     };
     let mut errors = 0i64;
     for subject in &subjects {

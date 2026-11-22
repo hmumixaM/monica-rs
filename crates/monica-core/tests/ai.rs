@@ -492,6 +492,118 @@ async fn weekly_work_is_claimed_before_sweeps_and_abandoned_jobs_are_settled(poo
     assert!(ai::claim(&pool).await.unwrap().is_none());
 }
 
+/// A person with a direct conversation whose last message is `days` old.
+async fn contact(pool: &PgPool, name: &str, days: Option<i32>) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person',$2)")
+        .bind(id)
+        .bind(name)
+        .execute(pool)
+        .await
+        .unwrap();
+    if let Some(days) = days {
+        sqlx::query("INSERT INTO crm.conversations(id,provider,account,external_id,conversation_type,profile_id,first_message_at,last_message_at) VALUES($1,'wechat','self',$1::text,'direct',$2,now()-make_interval(days=>$3),now()-make_interval(days=>$3))")
+            .bind(Uuid::new_v4()).bind(id).bind(days).execute(pool).await.unwrap();
+    }
+    id
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn summaries_wait_for_material_and_people_run_in_order_of_last_contact(pool: PgPool) {
+    person(&pool).await;
+    // (name, changes since the last summary, hours since the last change, days since the last summary)
+    let cases = [
+        ("never summarized", None, 0, 0),
+        ("one message, summarized yesterday", Some(1), 12, 1),
+        ("one message, summarized last week", Some(1), 12, 8),
+        ("busy but still talking", Some(30), 1, 2),
+        ("busy and quiet since morning", Some(30), 7, 2),
+        ("busy all week without a pause", Some(30), 1, 4),
+        ("busy, summarized this morning", Some(30), 7, 0),
+        ("nothing new", Some(0), 100, 100),
+    ];
+    let mut people = Vec::new();
+    for (name, changes, quiet_hours, summary_days) in cases {
+        let id = contact(&pool, name, None).await;
+        sqlx::query("INSERT INTO crm.memory_heads(profile_id,generation,updated_at) VALUES($1,$2,now()-make_interval(hours=>$3))")
+            .bind(id).bind(100 + changes.unwrap_or(0) as i64).bind(quiet_hours).execute(&pool).await.unwrap();
+        if changes.is_some() {
+            sqlx::query("INSERT INTO crm.memory_current(profile_id,generation,input_hash,model,privacy_hash,output,chunk_model,generated_at) SELECT $1,100,'synthetic',s.model,$2,'{}',s.model,now()-make_interval(days=>$3)-interval '1 hour' FROM crm.ai_settings s WHERE s.id")
+                .bind(id).bind(ai::memory::policy_hash(&ai::Privacy{include_private_notes:false,include_messages:false})).bind(summary_days).execute(&pool).await.unwrap();
+        }
+        people.push((name, id));
+    }
+    ai::memory::enqueue_pending(&pool).await.unwrap();
+    let mut due = Vec::new();
+    for (name, id) in &people {
+        if sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM crm.ai_jobs WHERE kind='ai.profile' AND subject=$1::text)",
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        {
+            due.push(*name);
+        }
+    }
+    assert_eq!(
+        due,
+        [
+            "never summarized",
+            "one message, summarized last week",
+            "busy and quiet since morning",
+            "busy all week without a pause"
+        ]
+    );
+
+    // Whoever the user talked to most recently is analysed first; people never talked to, last.
+    sqlx::query("DELETE FROM crm.ai_subject_heads")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM crm.ai_jobs")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let stranger = contact(&pool, "Never talked to", None).await;
+    let old_friend = contact(&pool, "Old friend", Some(400)).await;
+    let recent = contact(&pool, "Talked yesterday", Some(1)).await;
+    for id in [stranger, old_friend, recent] {
+        ai::enqueue(&pool, "ai.profile", &id.to_string())
+            .await
+            .unwrap();
+    }
+    let mut order = Vec::new();
+    while let Some(lease) = ai::claim(&pool).await.unwrap() {
+        order.push(lease.subject);
+    }
+    assert_eq!(
+        order,
+        [recent, old_friend, stranger].map(|id| id.to_string())
+    );
+
+    // The daily reconnect sweep asks only for people the list can show.
+    let lapsed = contact(&pool, "Lapsed", Some(120)).await;
+    let answered = contact(&pool, "Lapsed and dismissed", Some(130)).await;
+    sqlx::query("INSERT INTO crm.ai_reconnect_decisions(profile_id,action) VALUES($1,'dismiss')")
+        .bind(answered)
+        .execute(&pool)
+        .await
+        .unwrap();
+    ai::enqueue_dispatch(&pool, "ai.reconnect", "2026-11-22", false)
+        .await
+        .unwrap();
+    while ai::dispatch_one(&pool).await.unwrap() {}
+    let asked: Vec<String> = sqlx::query_scalar(
+        "SELECT subject FROM crm.ai_jobs WHERE kind='ai.reconnect_one' ORDER BY priority_at DESC",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(asked, [lapsed, old_friend].map(|id| id.to_string()));
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 async fn lease_takeover_cancel_and_fake_provider(pool: PgPool) {
     let id = person(&pool).await;
