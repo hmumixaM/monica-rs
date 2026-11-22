@@ -8,6 +8,7 @@ import { type ReactNode, useDeferredValue, useEffect, useMemo, useState } from "
 import type { SearchHit } from "../../lib/api-types";
 import { useDirectorySearch, usePostSearch, useTagCounts } from "../../lib/directory";
 import { useMessageSearch, useServerSearch } from "../../lib/queries";
+import { messageText } from "../../lib/record-text";
 import { Button } from "../ui/button";
 import { ChipLink } from "../ui/chip";
 import { SearchInput } from "../ui/field";
@@ -143,7 +144,7 @@ export function SearchView() {
                 <span className={styles.text}>
                   <span className={styles.byline}><strong>{room}</strong><SourceMark provider={hit.provider} size={10} />
                     <time>{formatDateTime(hit.occurred_at, false)}</time></span>
-                  <p>{hit.conversation_type === "group" || hit.direction === "sent" ? `${from}：` : ""}<Highlight text={excerpt(hit.text, query)} query={query} /></p>
+                  <p>{hit.conversation_type === "group" || hit.direction === "sent" ? `${from}：` : ""}<Highlight text={excerpt(messageText(hit.text), query)} query={query} /></p>
                 </span>
               </Link>
             </li>;

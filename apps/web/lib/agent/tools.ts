@@ -1,5 +1,6 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { apiFetch } from '../api';
+import { messageText } from '../record-text';
 
 /** What Monica can look up. Each tool reads the same endpoints as the pages do and returns
  * only what an answer needs: names, local times, text and a link back to the original. */
@@ -24,8 +25,10 @@ function messageRow(row: Json) {
   return {
     at: minute(row.occurred_at),
     from: row.direction === 'sent' ? '我' : row.sender_name || 'TA',
-    text: cut(row.text, 600),
-    ...(row.conversation_type === 'group' ? { group: row.conversation_name } : {}),
+    text: cut(messageText(String(row.text ?? '')), 600),
+    // A hit from the search across all conversations says whose chat it is, so no second lookup is needed.
+    ...(row.conversation_type === 'group' ? { group: row.conversation_name }
+      : row.conversation_name ? { chat_with: row.conversation_name, profile_id: row.profile_id ?? undefined } : {}),
     link: row.evidence_id ? `/evidence/${row.evidence_id}?revision=${row.evidence_revision}` : `/messages?conversation=${row.conversation_id}&message=${row.id}`,
   };
 }

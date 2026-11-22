@@ -19,3 +19,12 @@ export function recordText(value: unknown): string {
   if (typeof row.frequency_type === "string" && row.frequency_type !== "one_time") lines.push(`重复：${({ year: "每年", month: "每月", week: "每周", day: "每天" } as Record<string,string>)[row.frequency_type] || row.frequency_type}`);
   return [...new Set(lines)].join("\n");
 }
+
+/** A chat body as readable text. Shared links and cards arrive as WeChat XML: show their title instead of the markup. */
+export function messageText(body: string): string {
+  const start = body.search(/<\?xml|<msg[\s>]/);
+  if (start < 0) return body;
+  const title = /<title>(?:<!\[CDATA\[)?([^<\]]+)/.exec(body)?.[1]?.trim();
+  const rest = title ? `[分享] ${title}` : body.slice(start).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return (body.slice(0, start) + rest).trim();
+}
