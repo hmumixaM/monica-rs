@@ -628,8 +628,8 @@ async fn project_revision_reserved(
     let cid = row.connection_id;
     let eid = evidence_id(cid, &row.external_id);
     lock_connection(tx, cid).await?;
-    let previous: Option<(i64, Option<Uuid>)> =
-        sqlx::query_as("SELECT revision,conversation_id FROM crm.connection_evidence WHERE id=$1")
+    let previous: Option<(i64, Option<String>)> =
+        sqlx::query_as("SELECT revision,CASE WHEN kind='contact' THEN coalesce(metadata->>'display_name',metadata#>>'{participants,0,name}') END FROM crm.connection_evidence WHERE id=$1")
             .bind(eid)
             .fetch_optional(&mut **tx)
             .await?;
@@ -691,8 +691,9 @@ async fn project_revision_reserved(
             let managed = Uuid::new_v5(&cid, format!("contact:{external}").as_bytes());
             sqlx::query("UPDATE crm.profiles p SET display_name=left($4,255),generation=generation+1 FROM crm.connection_people cp
                 WHERE cp.connection_id=$1 AND cp.external_id=$2 AND cp.resolved_profile_id=p.id AND p.id=$3
-                AND p.display_name=left(cp.display_name,255) AND p.display_name<>left($4,255)")
-                .bind(cid).bind(external).bind(managed).bind(name).execute(&mut **tx).await?;
+                AND p.display_name=left(coalesce($5,cp.display_name),255) AND p.display_name<>left($4,255)")
+                .bind(cid).bind(external).bind(managed).bind(name)
+                .bind(previous.as_ref().and_then(|(_,name)|name.as_deref())).execute(&mut **tx).await?;
         }
         sqlx::query("INSERT INTO crm.connection_people(connection_id,external_id,display_name,is_self) VALUES($1,$2,$3,$4) ON CONFLICT(connection_id,external_id) DO UPDATE SET display_name=CASE WHEN excluded.display_name=excluded.external_id AND NOT $5 THEN connection_people.display_name ELSE excluded.display_name END,is_self=excluded.is_self").bind(cid).bind(external).bind(name).bind(own).bind(directory_snapshot && !deleted).execute(&mut **tx).await?;
         let (blocked,official):(bool,bool)=sqlx::query_as("SELECT coalesce((SELECT blocked FROM crm.connection_identity_links WHERE connection_id=$1 AND external_id=$2),false),$3 AND crm.wechat_is_official($2)").bind(cid).bind(external).bind(kind == "contact" && matches!(provider, Provider::Wechat)).fetch_one(&mut **tx).await?;

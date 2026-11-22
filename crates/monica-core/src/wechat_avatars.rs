@@ -122,6 +122,15 @@ async fn finish(
     result: Result<Option<Asset>>,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
+    if let Some(cid) = sqlx::query_scalar::<_, Uuid>(
+        "SELECT connection_id FROM crm.connection_evidence WHERE id=$1",
+    )
+    .bind(account)
+    .fetch_optional(&mut *tx)
+    .await?
+    {
+        crate::connections::lock_connection(&mut tx, cid).await?;
+    }
     let request:Option<(bool,chrono::DateTime<chrono::Utc>)>=sqlx::query_as(
         "SELECT native,observed_at FROM crm.wechat_avatar_requests WHERE account_id=$1 AND token=$2 FOR UPDATE")
         .bind(account).bind(token).fetch_optional(&mut *tx).await?;
@@ -139,10 +148,26 @@ async fn finish(
     } else {
         ("source_account", "wechat_avatar_small")
     };
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
-        .bind(format!("media-slot:{entity}:{account}:{role}"))
-        .execute(&mut *tx)
-        .await?;
+    // A clear affects all WeChat sizes. Serialize with conventional manifest
+    // writers using their existing per-role locks, in one deterministic order.
+    let roles: &[&str] = if native {
+        &["wechat_avatar"]
+    } else {
+        &["wechat_avatar", "wechat_avatar_big", "wechat_avatar_small"]
+    };
+    for locked_role in roles {
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+            .bind(format!("media-slot:{entity}:{account}:{locked_role}"))
+            .execute(&mut *tx)
+            .await?;
+    }
+    if !native && sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM crm.media_slots WHERE entity_type='source_account' AND entity_id=$1 AND role=ANY($2) AND source_observed_at>$3)")
+        .bind(account).bind(roles).bind(observed).fetch_one(&mut *tx).await? {
+        sqlx::query("UPDATE crm.wechat_avatar_requests SET next_attempt=NULL WHERE account_id=$1")
+            .bind(account).execute(&mut *tx).await?;
+        tx.commit().await?;
+        return Ok(());
+    }
     if native {
         sqlx::query("SELECT id FROM crm.connection_evidence WHERE id=$1 FOR UPDATE")
             .bind(account)
@@ -302,6 +327,26 @@ mod tests {
         let prior:Uuid=sqlx::query_scalar("SELECT previous_media_id FROM crm.avatar_observations WHERE account_id=$1 AND media_id IS NULL")
             .bind(account).fetch_one(&pool).await.unwrap();
         assert_eq!(Some(prior), shown);
+
+        let delayed = observe(&pool, account, "https://wx.qlogo.cn/delayed").await;
+        let newer = shown.unwrap();
+        crate::media::set_slot(
+            &pool,
+            "source_account",
+            account,
+            "wechat_avatar_small",
+            newer,
+            Some(account),
+        )
+        .await
+        .unwrap();
+        sqlx::query("UPDATE crm.media_slots SET source_observed_at=clock_timestamp()+interval '1 second' WHERE entity_id=$1 AND role='wechat_avatar_small'").bind(account).execute(&pool).await.unwrap();
+        finish(&pool, account, delayed, Ok(old_asset))
+            .await
+            .unwrap();
+        let kept:Uuid=sqlx::query_scalar("SELECT media_id FROM crm.media_slots WHERE entity_id=$1 AND role='wechat_avatar_small'")
+            .bind(account).fetch_one(&pool).await.unwrap();
+        assert_eq!(kept, newer);
     }
     #[sqlx::test(migrations = "../../migrations")]
     async fn native_photo_and_roster_follow_connection_owner(pool: sqlx::PgPool) {
@@ -312,13 +357,16 @@ mod tests {
         sqlx::query("INSERT INTO crm.source_connections(id,provider,external_account,display_name,connection_method) VALUES($1,'wechat','fixture','Fixture','local')")
             .bind(cid).execute(&pool).await.unwrap();
         let mut contact = json!({"kind":"contact","external_id":"contact:peer","directory_version":1,"fields":{"alias":"original","big_head_url":"https://wx.qlogo.cn/same"},"avatar_checksum":"old","participants":[{"id":"peer","name":"Friend","role":"contact"}]});
-        let member = json!({"kind":"group_membership","external_id":"membership:room:peer","participants":[{"id":"r@chatroom","role":"room"},{"id":"peer","name":"Friend","role":"member"}]});
+        let mut member = json!({"kind":"group_membership","external_id":"membership:room:peer","participants":[{"id":"r@chatroom","role":"room"},{"id":"peer","name":"Friend","role":"member"}]});
         let eid = connections::evidence_id(cid, "contact:peer");
         let mut previous = None;
         for index in 0..2 {
             if index == 1 {
                 contact["avatar_checksum"] = json!("changed");
                 contact["fields"]["alias"] = json!("current");
+                // The roster is scanned before contact after a nickname change.
+                contact["participants"][0]["name"] = json!("Renamed");
+                member["participants"][1]["name"] = json!("Renamed");
             }
             let mut tx = pool.begin().await.unwrap();
             connections::commit_page(
@@ -326,7 +374,7 @@ mod tests {
                 provider,
                 cid,
                 "chatlog",
-                &[contact.clone(), member.clone()],
+                &[member.clone(), contact.clone()],
                 &json!({"position":index}),
             )
             .await
@@ -370,6 +418,12 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
+        let title: String = sqlx::query_scalar("SELECT display_name FROM crm.profiles WHERE id=$1")
+            .bind(native_owner)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(title, "Renamed");
         let source_account = Uuid::new_v4();
         sqlx::query("SELECT crm.wechat_directory_contact('peer','Friend','{}',NULL,$1)")
             .bind(source_account)

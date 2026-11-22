@@ -124,7 +124,15 @@ pub async fn resolve_dependencies(pool: &PgPool) -> Result<usize> {
                 .bind(format!("media-slot:{entity}:{target}:{role}"))
                 .execute(&mut *tx)
                 .await?;
-            let applied=sqlx::query("INSERT INTO crm.media_slots(entity_type,entity_id,role,media_id,source_observed_at,source_batch_id,source_ordinal) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(entity_type,entity_id,role) DO UPDATE SET media_id=excluded.media_id,generation=crm.media_slots.generation+CASE WHEN crm.media_slots.media_id<>excluded.media_id THEN 1 ELSE 0 END,source_observed_at=excluded.source_observed_at,source_batch_id=excluded.source_batch_id,source_ordinal=excluded.source_ordinal,updated_at=now() WHERE crm.media_slots.source_observed_at IS NULL OR (crm.media_slots.source_observed_at,crm.media_slots.source_batch_id,crm.media_slots.source_ordinal)<(excluded.source_observed_at,excluded.source_batch_id,excluded.source_ordinal)").bind(entity).bind(target).bind(role).bind(media).bind(row.get::<chrono::DateTime<chrono::Utc>,_>("observed_at")).bind(batch).bind(row.get::<i32,_>("ordinal")).execute(&mut *tx).await?.rows_affected();
+            let newer_directory_photo = entity == "source_account"
+                && matches!(role,"wechat_avatar"|"wechat_avatar_small"|"wechat_avatar_big")
+                && sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM crm.wechat_avatar_requests WHERE account_id=$1 AND NOT native AND observed_at>=$2)")
+                    .bind(target).bind(row.get::<chrono::DateTime<chrono::Utc>,_>("observed_at")).fetch_one(&mut *tx).await?;
+            let applied = if newer_directory_photo {
+                0
+            } else {
+                sqlx::query("INSERT INTO crm.media_slots(entity_type,entity_id,role,media_id,source_observed_at,source_batch_id,source_ordinal) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(entity_type,entity_id,role) DO UPDATE SET media_id=excluded.media_id,generation=crm.media_slots.generation+CASE WHEN crm.media_slots.media_id<>excluded.media_id THEN 1 ELSE 0 END,source_observed_at=excluded.source_observed_at,source_batch_id=excluded.source_batch_id,source_ordinal=excluded.source_ordinal,updated_at=now() WHERE crm.media_slots.source_observed_at IS NULL OR (crm.media_slots.source_observed_at,crm.media_slots.source_batch_id,crm.media_slots.source_ordinal)<(excluded.source_observed_at,excluded.source_batch_id,excluded.source_ordinal)").bind(entity).bind(target).bind(role).bind(media).bind(row.get::<chrono::DateTime<chrono::Utc>,_>("observed_at")).bind(batch).bind(row.get::<i32,_>("ordinal")).execute(&mut *tx).await?.rows_affected()
+            };
             sqlx::query("INSERT INTO crm.media_provenance(media_id,source,source_record_id,source_url,import_batch_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING").bind(media).bind(&provider).bind(external.unwrap_or("manifest")).bind(record["source_url"].as_str().or_else(||record["url"].as_str())).bind(batch).execute(&mut *tx).await?;
             if applied == 0 {
                 sqlx::query("UPDATE crm.media_dependencies SET state='complete',reason='superseded',media_id=$2,updated_at=now() WHERE id=$1").bind(id).bind(media).execute(&mut *tx).await?;

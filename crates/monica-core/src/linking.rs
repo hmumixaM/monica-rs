@@ -117,7 +117,7 @@ pub(crate) async fn rebuild_avatar(
           JOIN crm.connection_evidence e ON e.id=ep.evidence_id AND NOT e.deleted
           JOIN crm.media_slots s ON s.entity_type='wechat_native_contact' AND s.entity_id=e.id AND s.role='wechat_avatar'
           WHERE ep.profile_id=$1 AND ep.role='contact'
-         ) photos ORDER BY unverified,priority,observed DESC NULLS LAST,account_id,evidence_id LIMIT 1")
+         ) photos ORDER BY unverified,CASE WHEN priority<=2 THEN 0 ELSE priority END,observed DESC NULLS LAST,priority,account_id,evidence_id LIMIT 1")
         .bind(profile).fetch_optional(&mut **tx).await?;
     if selected.is_none() && current.is_some() {
         let still_owned:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.source_account_links l JOIN crm.media_links m ON m.entity_type='source_account' AND m.entity_id=l.account_id WHERE l.profile_id=$1 AND m.media_id=$2)")
