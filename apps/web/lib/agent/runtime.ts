@@ -44,13 +44,23 @@ ${focus}
 
 怎么查：
 - 先查再答。了解一个人从 get_person 开始；想知道聊天里说过什么，用 search_messages 按原文关键词搜，或用 read_messages 按时间读。
-- 一次没查到就换关键词、换时间范围，或用 before 往更早翻；确实查不到时说明查过什么。
+- 搜索是逐字匹配，一个词只能找到恰好这么写的消息。每个问题先想它在聊天里可能怎么说：同义词、口语、英文和缩写、相关的人名地名、事情的前因后果，用 | 一次搜完；第一轮的结果里出现了新的说法，就拿它再搜一轮。
+- 搜到线索后，用 read_messages 读那几天前后的聊天，看清上下文再下结论；只凭一句命中的话容易看错。
+- 结果带 earlier 说明更早还有。问题问的是「所有」「每次」「第一次」「这些年」时，用 before 一直翻到问题要求的时间范围读完，或者 earlier 为空。
+- 问题涉及好几个人或好几件事时，逐个查，不要查完一个就作答。
+- 确实查不到时，说明查过哪些说法、哪段时间。
 - 聊天里 from 为「我」的是用户本人，其余是对方或群成员。
 
 怎么答：
 - 用中文，先给结论，再写支撑它的具体内容：谁、哪一天、说了什么。不复述查询过程。
 - 提到具体的消息、动态或邮件时，用工具结果里的 link 写成 Markdown 链接，例如 [11 月 3 日的聊天](/messages?conversation=…)；提到人物时链接到 /profiles/人物ID。
-- 只根据查到的内容回答。资料里没有的，直接说没有记录。`;
+- 只根据查到的内容回答。资料里没有的，直接说没有记录。只读了一部分就说明读到哪里，不要把一部分当成全部。`;
+}
+
+/** An assistant turn that neither says anything nor asks for a lookup. */
+function wroteNothing(message?: AgentMessage) {
+  if (!message || message.role !== 'assistant' || message.errorMessage) return false;
+  return !message.content.some(part => part.type === 'toolCall' || (part.type === 'text' && part.text.trim()));
 }
 
 async function settings(signal: AbortSignal) {
@@ -72,6 +82,7 @@ export async function run(id: string, question: string, people: PickedPerson[]) 
     await navigator.locks.request(transcriptKey(id), { ifAvailable: true }, async lock => {
       if (!lock) throw new Error('这个会话正在另一个标签页里回答');
       const model = await settings(controller.signal);
+      let nudge = false;
       const agent = new Agent({ initialState: {
         model: { id: model.model, name: model.model, provider: 'monica', api: 'openai-completions',
           baseUrl: location.origin + '/api/v1/ai', reasoning: false, input: ['text'],
@@ -81,7 +92,10 @@ export async function run(id: string, question: string, people: PickedPerson[]) 
         messages: resumeContext(snapshot(id).messages),
         systemPrompt: systemPrompt(people),
         tools: tools(),
-      }, transformContext: async messages => compactContext(messages, model.context_window, model.max_tokens),
+      }, transformContext: async messages => {
+        const context = compactContext(messages, model.context_window, model.max_tokens);
+        return nudge ? [...context, { role: 'user', content: '继续：还需要查就接着查；查够了，就根据已经查到的内容写出回答。', timestamp: Date.now() }] : context;
+      },
       streamFn: (target, context, options) => streamSimple(target as Parameters<typeof streamSimple>[0], context, {
         ...options, apiKey: 'local-session', fetch: apiFetch, maxRetries: 0,
       }) });
@@ -96,7 +110,16 @@ export async function run(id: string, question: string, people: PickedPerson[]) 
       });
       try {
         await agent.prompt(question);
+        // After several lookups the model sometimes ends its turn having written nothing.
+        // Asked to go on, it answers from what it has read; the request is not kept in the transcript.
+        for (let attempt = 0; attempt < 2 && wroteNothing(agent.state.messages.at(-1)) && !controller.signal.aborted; attempt++) {
+          agent.state.messages = agent.state.messages.slice(0, -1);
+          update(id, { status: '正在整理回答…' });
+          nudge = true;
+          await agent.continue();
+        }
         if (agent.state.errorMessage) throw new Error(agent.state.errorMessage);
+        if (wroteNothing(agent.state.messages.at(-1)) && !controller.signal.aborted) throw new Error('模型这次没有写出回答，请再问一次。');
       } finally {
         unsubscribe(); agents.delete(id);
         const messages = [...agent.state.messages];

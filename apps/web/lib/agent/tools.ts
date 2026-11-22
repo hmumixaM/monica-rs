@@ -99,18 +99,32 @@ export function tools(): AgentTool[] {
       profile_id: PERSON,
     }, ['profile_id'], (a, signal) => person(a.profile_id!, signal)),
 
-    tool('search_messages', TOOL_LABELS.search_messages, '按关键词搜索聊天记录，新的在前。不给 profile_id 时搜索所有私聊和群聊；给了就只搜这个人的私聊和 TA 在群里说的话。关键词按原文匹配，换同义词多搜几次。', {
-      query: { type: 'string', description: '要匹配的原文片段，例如「面试」「offer」' },
+    tool('search_messages', TOOL_LABELS.search_messages, '按关键词搜索聊天记录，新的在前。不给 profile_id 时搜索所有私聊和群聊；给了就只搜这个人的私聊和 TA 在群里说的话。关键词按原文逐字匹配，所以同一件事的几种说法要一起搜：用 | 分隔，最多 6 个。', {
+      query: { type: 'string', description: '要匹配的原文片段，多个说法用 | 分隔，例如「面试|offer|入职|跳槽」' },
       profile_id: { ...PERSON, description: '只搜这个人的聊天（可选）' },
       chat: { type: 'string', enum: ['direct', 'group'], description: '只搜私聊或群聊（可选）' },
       since: { type: 'string', description: '起始日期 YYYY-MM-DD（可选）' },
       before: BEFORE,
     }, ['query'], async (a, signal) => {
       const limit = 40;
-      const rows = a.profile_id
-        ? await read(`/api/v1/profiles/${a.profile_id}/messages?${query({ q: a.query, include_group_speech: 'true', conversation_type: a.chat, since: instant(a.since), before: instant(a.before), limit: String(limit) })}`, signal)
-        : await read(`/api/v1/messages/search?${query({ q: a.query, conversation_type: a.chat, since: instant(a.since), before: instant(a.before), limit: String(limit) })}`, signal);
-      return messagePage(rows, limit);
+      const terms = [...new Set((a.query ?? '').split(/[|｜]/).map(term => term.trim()).filter(Boolean))].slice(0, 6);
+      const pages: Json[][] = []; const unsearched: string[] = [];
+      for (const term of terms) {
+        const path = a.profile_id
+          ? `/api/v1/profiles/${a.profile_id}/messages?${query({ q: term, include_group_speech: 'true', conversation_type: a.chat, since: instant(a.since), before: instant(a.before), limit: String(limit) })}`
+          : `/api/v1/messages/search?${query({ q: term, conversation_type: a.chat, since: instant(a.since), before: instant(a.before), limit: String(limit) })}`;
+        // A busy database fails one term, not the whole search: try it once more, then say which terms are missing.
+        try { pages.push(await read(path, signal).catch(() => read(path, signal))); }
+        catch (error) { if (signal?.aborted || terms.length === 1) throw error; unsearched.push(term); }
+      }
+      if (!pages.length) throw new Error('数据库正忙，这几个词都没有搜成，请稍后重试');
+      // A term that filled its page has older matches not read yet. Stop the merged
+      // page where the first such term stops, so turning the page skips nothing.
+      const reached = pages.filter(rows => rows.length === limit).map(rows => String(rows.at(-1)!.occurred_at)).sort().at(-1) ?? null;
+      const seen = new Set<string>();
+      const rows = pages.flat().filter(row => (!reached || String(row.occurred_at) >= reached) && !seen.has(row.id) && seen.add(row.id))
+        .sort((x, y) => String(y.occurred_at).localeCompare(String(x.occurred_at)));
+      return { messages: rows.map(messageRow), earlier: reached, ...(unsearched.length ? { not_searched: unsearched, note: 'not_searched 里的词因为数据库正忙没有搜成，需要时单独再搜' } : {}) };
     }),
 
     tool('read_messages', TOOL_LABELS.read_messages, '按时间读取和一个人的聊天（含 TA 在群里说的话），新的在前。用 since、until 读某段时间，用 before 向更早翻页。', {

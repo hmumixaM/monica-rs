@@ -32,3 +32,32 @@ test('PI browser loop executes tools, persists IndexedDB sessions, and restores 
  await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
  await page.screenshot({path:'../../.local-validation/frontend-ask-mobile.png',fullPage:true});expect(errors).toEqual([]);
 });
+test('several wordings are searched at once and a turn that says nothing is asked to go on', async ({page}) => {
+ const searched:string[]=[];let modelCalls=0;let nudged=false;
+ const sse=(chunks:object[])=>({contentType:'text/event-stream',body:chunks.map(c=>'data: '+JSON.stringify({id:'synthetic-completion',object:'chat.completion.chunk',created:1,model:'synthetic-model',...c})+'\n\n').join('')+'data: [DONE]\n\n'});
+ await page.route('**/api/**',async route=>{
+  const url=new URL(route.request().url());
+  if(url.pathname==='/api/v1/me')return route.fulfill({json:{id:'synthetic',email:'synthetic@example.invalid'}});
+  if(url.pathname==='/api/v1/auth/csrf')return route.fulfill({json:{csrf_token:'synthetic'}});
+  if(url.pathname==='/api/v1/ai/browser-model')return route.fulfill({json:{enabled:true,model:'synthetic-model',context_window:32000,max_tokens:1000}});
+  if(url.pathname==='/api/v1/messages/search'){
+   const term=url.searchParams.get('q')!;searched.push(term);
+   // The first wording fails once: the search still answers with the others and tries it again.
+   if(term==='面试'&&searched.filter(t=>t==='面试').length===1)return route.fulfill({status:503,json:{error:'busy'}});
+   return route.fulfill({json:[{id:'m-'+term,conversation_id:'room',conversation_type:'direct',conversation_name:'合成联系人',text:'说到'+term,occurred_at:term==='offer'?'2026-01-02T12:00:00Z':'2026-01-01T12:00:00Z'}]});
+  }
+  if(url.pathname==='/api/v1/ai/chat/completions'){
+   const body=route.request().postDataJSON();modelCalls++;
+   const last=body.messages.at(-1);
+   if(last.role==='user'&&String(last.content).startsWith('继续')){nudged=true;return route.fulfill(sse([{choices:[{index:0,delta:{role:'assistant',content:'两种说法都查到了。'},finish_reason:null}]},{choices:[{index:0,delta:{},finish_reason:'stop'}]}]));}
+   if(last.role==='tool')return route.fulfill(sse([{choices:[{index:0,delta:{role:'assistant'},finish_reason:null}]},{choices:[{index:0,delta:{},finish_reason:'stop'}]}]));
+   return route.fulfill(sse([{choices:[{index:0,delta:{role:'assistant',tool_calls:[{index:0,id:'synthetic-tool',type:'function',function:{name:'search_messages',arguments:JSON.stringify({query:'面试|offer'})}}]},finish_reason:null}]},{choices:[{index:0,delta:{},finish_reason:'tool_calls'}]}]));
+  }
+  return route.fulfill({json:[]});
+ });
+ await page.goto('/ask');await page.getByLabel('问题',{exact:true}).fill('聊过找工作吗');await page.getByRole('button',{name:'提问',exact:true}).click();
+ await expect(page.getByText('两种说法都查到了。',{exact:true})).toBeVisible();
+ expect(searched).toEqual(['面试','面试','offer']);expect(nudged).toBeTruthy();expect(modelCalls).toBe(3);
+ // The request to go on is not part of the saved conversation.
+ await page.reload();await expect(page.getByText('两种说法都查到了。',{exact:true})).toBeVisible();await expect(page.getByText(/^继续：/)).toHaveCount(0);
+});
