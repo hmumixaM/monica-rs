@@ -93,6 +93,7 @@ services:
       MONICA_DATABASE_URL: postgresql://monica_rust:${MONICA_DB_PASSWORD}@postgres/monica_rust
       MONICA_SESSION_SECRET: ${MONICA_SESSION_SECRET:?Set a new installation secret}
       MONICA_CONTROL_TOKEN: ${MONICA_CONTROL_TOKEN:?Set an independent control token}
+      MONICA_LINKEDIN_COLLECTION_TOKEN: ${MONICA_LINKEDIN_COLLECTION_TOKEN:-}
       MONICA_IMPORT_HMAC_SECRET: ${MONICA_IMPORT_HMAC_SECRET:?Set an independent import key}
       MONICA_COOKIE_PREFIX: monica_rs
       MONICA_ORIGIN: https://nas.tailfb022c.ts.net:9444
