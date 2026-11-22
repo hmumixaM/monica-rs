@@ -38,6 +38,23 @@ PostgreSQL 的 Unix socket 目录是数据根目录下的 `postgres-run`（宿�
 
 `MONICA_COOKIE_PREFIX=monica_rs` 覆盖登录、退出、CSRF、会话管理和 OAuth 会话读取。旧版的 `crm_*` Cookie 保持原样。前端从本服务的 CSRF 接口取得自己的 token。旧会话和采集器令牌只作为脱敏历史保存，不安装为 Rust 的有效凭据。
 
+## LinkedIn tracking 名单同步
+
+现有 LinkedIn 采集器从 `https://nas.tailfb022c.ts.net:9444/api/v1/linkedin/collection-targets`
+读取新版 Monica 中已启用 tracking 的账号。不要继续指向旧站 9443。
+
+启用前，为 Rust 单独生成一个高强度随机 `MONICA_LINKEDIN_COLLECTION_TOKEN`，写入 NAS
+私有的 `config/.env.live`。Compose 将它传给 `server`，修改后只重新创建 `server`，保持当前
+镜像和数据库容器不变。未配置该变量时，名单接口仍返回 401，其他功能可以继续运行。
+
+将同一凭证通过安全通道写入采集器私有的 token 文件（权限 0600），并把
+`data/crm-targets.json` 的 `url` 改为上述 9444 地址；`token_file` 指向该私有文件。
+凭证只用于读取名单，不复用控制、登录或导入凭证，不写入仓库、命令参数或日志。
+
+切换后，验证无凭证和错误凭证均返回 401，正确凭证返回有效的 version 1 名单。再运行采集器
+已有的 `linkedin_enrichment.crm_targets` 命令，确认名单内所有账号均已入队，重复同步不会新增
+重复目标。该同步保留已确认 connection 的采集状态；下载失败时保留上一份名单。
+
 ## 备份与恢复
 
 最终验收通过后，对新 PostgreSQL 做完整逻辑备份，将配置、镜像引用、源码提交和媒体校验清单另存到新备份目录。备份时不包含临时服务凭据、浏览器会话或 Chatlog 全局解密密钥。业务账号的密码哈希保留；TOTP 使用新安装秘密重新加密，因此恢复时应保留 Rust 自己的安装秘密。
