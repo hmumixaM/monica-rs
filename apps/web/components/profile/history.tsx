@@ -50,7 +50,7 @@ export function HistoryView({ profileId }: { profileId: string }) {
       row.previous = older.get(key);
       older.set(key, row.entry);
       return row;
-    }).reverse().filter(({ entry }) => includeBookkeeping || entry.source_type === "manual" || entry.field_key === "monica.custom_fields" || entry.operation === "manual_delete" || visibleField(entry));
+    }).reverse().filter(({ entry }) => includeBookkeeping || entry.source_type === "manual" || entry.field_key === "monica.custom_fields" || entry.operation === "manual_delete" || (entry.source_type === "wechat" && entry.value === null && visibleField({ field_key: entry.field_key, value: true })) || visibleField(entry));
   }, [versions, includeBookkeeping]);
 
   return <div className={styles.historyPanels}>
@@ -67,7 +67,7 @@ export function HistoryView({ profileId }: { profileId: string }) {
         <div className={styles.diff}>
           <span data-from={previous ? "" : undefined}>{previous ? summarizeValue(previous.value) : history.hasNextPage ? "更早版本尚未加载" : "此前没有同来源记录"}</span>
           <ArrowRight size={13} aria-hidden="true" />
-          <span data-to="">{entry.operation === "manual_delete" ? "已删除" : summarizeValue(entry.value)}</span>
+          <span data-to="">{entry.operation === "manual_delete" ? "已删除" : entry.value === null ? "已清空" : summarizeValue(entry.value)}</span>
         </div>
         <div className={styles.historyActions}><CompleteValue value={entry.value} />
           {entry.value != null && <Button size="sm" variant="ghost" onClick={() => { restore.reset(); setSelected(entry); }}>恢复此版本</Button>}

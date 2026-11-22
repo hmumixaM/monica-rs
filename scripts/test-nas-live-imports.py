@@ -296,6 +296,8 @@ class LiveImportContract(unittest.TestCase):
                 CREATE TABLE contact(id INTEGER PRIMARY KEY, username TEXT,local_type INTEGER,alias TEXT,
                     remark TEXT,nick_name TEXT,description TEXT,big_head_url TEXT,head_img_md5 TEXT,extra_buffer BLOB);
                 CREATE TABLE name2id(username TEXT);
+                CREATE TABLE contact_label(label_id_ INTEGER,label_name_ TEXT);
+                INSERT INTO contact_label VALUES(1,'Friends');
                 CREATE TABLE chatroom_member(room_id INTEGER,member_id INTEGER,UNIQUE(room_id,member_id));
                 INSERT INTO name2id VALUES('wxid_friend'),('test@chatroom'),('silent_member');
                 INSERT INTO contact VALUES(1,'wxid_friend',0,'before','Note','Friend','hello','https://wx.qlogo.cn/old','1',X'22036F6C64'),
@@ -309,7 +311,7 @@ class LiveImportContract(unittest.TestCase):
                 return [r[0] for r in self.db.execute("SELECT value FROM crm.field_revisions WHERE profile_id=%s AND field_key=%s ORDER BY revision_seq",(profile,'wechat.'+field))]
             source.executescript("""
                 UPDATE contact SET alias='after',remark='',nick_name='New name',big_head_url='https://wx.qlogo.cn/new',
-                    head_img_md5='2',extra_buffer=X'22036E6577' WHERE id=1;
+                    head_img_md5='2',extra_buffer=X'22036E65772A025553320A43616C69666F726E6961F2010131' WHERE id=1;
                 INSERT INTO chatroom_member VALUES(2,3);
             """)
             self.consumer.wechat()
@@ -317,6 +319,9 @@ class LiveImportContract(unittest.TestCase):
             self.assertEqual(history('alias'),['before','after'])
             self.assertEqual(history('remark'),['Note',None])
             self.assertEqual(history('signature'),['old','new'])
+            self.assertEqual(history('region'),['US · California'])
+            self.assertEqual(history('labels'),[['Friends']])
+            self.assertEqual(self.db.execute("SELECT username FROM crm.identities WHERE external_id='wxid_friend' AND profile_id=%s",(profile,)).fetchone(),('after',))
             self.assertEqual(history('nickname'),['Friend','New name'])
             self.assertEqual(self.db.execute("SELECT urls,checksum FROM crm.wechat_avatar_requests q JOIN crm.source_accounts a ON a.id=q.account_id WHERE a.external_id='wxid_friend'").fetchone(),(['https://wx.qlogo.cn/new'],'2'))
             self.assertEqual(self.db.execute("SELECT p.display_name FROM crm.current_group_memberships m JOIN crm.profiles p ON p.id=m.person_profile_id JOIN crm.profiles g ON g.id=m.group_profile_id WHERE g.display_name='Test group' AND m.left_at IS NULL ORDER BY 1").fetchall(),[('New name',),('Silent member',)])

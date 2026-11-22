@@ -14,7 +14,8 @@ const tables: Record<string, string> = { profiles: "人物资料", identities: "
   media_links: "图片与内容关联", accounts: "来源账户", account_identifiers: "来源标识", objects: "来源内容" };
 const fields: Record<string, string> = { display_name: "名称", summary: "简介", profile_id: "人物", status: "状态",
   username: "用户名", current_hash: "内容版本", avatar_media_id: "头像", title: "标题", body: "正文",
-  "instagram.biography": "Instagram 简介", "wechat.signature": "微信签名", "linkedin.headline": "LinkedIn 简介" };
+  "instagram.biography": "Instagram 简介", "wechat.signature": "微信签名", "wechat.alias": "微信号", "wechat.nickname": "微信昵称",
+  "wechat.remark": "微信备注", "wechat.description": "微信描述", "wechat.region": "微信地区", "wechat.labels": "微信标签", "linkedin.headline": "LinkedIn 简介" };
 const actions: Record<string, string> = { I: "新增", U: "更新", D: "删除", T: "清空" };
 const value = (item: unknown, exists: boolean) => !exists ? "—" : item === null ? "空值" : typeof item === "string" ? item : JSON.stringify(item, null, 2);
 

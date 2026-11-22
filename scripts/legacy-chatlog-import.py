@@ -481,6 +481,8 @@ class Importer:
                                         (value["room"],value["room_name"],value["member"],value["member_name"],
                                          uuid.uuid5(NS,"wechat:account:"+value["room"]),uuid.uuid5(NS,"wechat:account:"+value["member"])))
                         result=(0,0,1)
+                        self.accounts.pop(value["room"],None)
+                        self.accounts.pop(value["member"],None)
                     elif value["kind"]=="contact":
                         person=value["participants"][0];aid,pid=self.account(person["id"],value["display_name"])
                         co,h=self.content("chatlog_contact",value)
@@ -492,6 +494,7 @@ class Importer:
                             self.db.execute("SELECT crm.observe_wechat_contact(%s,%s,now(),%s)",(person["id"],Jsonb(value),digest))
                             self.db.execute("SELECT crm.wechat_directory_contact(%s,%s,%s,%s,%s)",
                                             (person["id"],value["display_name"],Jsonb(value["fields"]),value.get("avatar_checksum"),aid))
+                            self.accounts.pop(person["id"],None)
                         result=(0,1,0) if exists else (0,0,1)
                     else:raise ValueError("unmapped Chatlog record kind")
                     counts=[a+b for a,b in zip(counts,result)]

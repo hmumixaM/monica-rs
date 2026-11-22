@@ -1,6 +1,6 @@
 //! Download only avatar URLs observed in a WeChat contact snapshot.
 use super::{Asset, MediaStore};
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use std::{path::Path, time::Duration};
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
@@ -97,7 +97,9 @@ pub async fn refresh_wechat_avatar(store: &MediaStore) -> Result<()> {
     // observation invalidates the token even while the old download is in flight.
     let request:Option<(Uuid,Uuid,Vec<String>)> = sqlx::query_as(
         "WITH due AS (SELECT q.account_id FROM crm.wechat_avatar_requests q
-         JOIN crm.source_account_links l USING(account_id) WHERE next_attempt<=now()
+         WHERE next_attempt<=now() AND
+         ((q.native AND EXISTS(SELECT 1 FROM crm.connection_evidence_people ep WHERE ep.evidence_id=q.account_id))
+          OR (NOT q.native AND EXISTS(SELECT 1 FROM crm.source_account_links l WHERE l.account_id=q.account_id)))
          ORDER BY next_attempt,q.account_id FOR UPDATE OF q SKIP LOCKED LIMIT 1)
          UPDATE crm.wechat_avatar_requests q SET next_attempt=now()+interval '2 minutes',token=gen_random_uuid()
          FROM due WHERE due.account_id=q.account_id RETURNING q.account_id,q.token,q.urls"
@@ -105,7 +107,11 @@ pub async fn refresh_wechat_avatar(store: &MediaStore) -> Result<()> {
     let Some((account, token, urls)) = request else {
         return Ok(());
     };
-    let result = fetch(store, &urls, account).await;
+    let result = if urls.is_empty() {
+        Ok(None)
+    } else {
+        fetch(store, &urls, account).await.map(Some)
+    };
     finish(&store.pool, account, token, result).await
 }
 
@@ -113,46 +119,72 @@ async fn finish(
     pool: &sqlx::PgPool,
     account: Uuid,
     token: Uuid,
-    result: Result<Asset>,
+    result: Result<Option<Asset>>,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
-    let valid:Option<Uuid> = sqlx::query_scalar("SELECT account_id FROM crm.wechat_avatar_requests WHERE account_id=$1 AND token=$2 FOR UPDATE")
+    let request:Option<(bool,chrono::DateTime<chrono::Utc>)>=sqlx::query_as(
+        "SELECT native,observed_at FROM crm.wechat_avatar_requests WHERE account_id=$1 AND token=$2 FOR UPDATE")
         .bind(account).bind(token).fetch_optional(&mut *tx).await?;
-    if valid.is_none() {
+    let Some((native, observed)) = request else {
         return Ok(());
+    };
+    let Ok(asset) = result else {
+        sqlx::query("UPDATE crm.wechat_avatar_requests SET attempts=attempts+1,next_attempt=now()+interval '1 minute'*(1<<least(attempts,10)) WHERE account_id=$1")
+            .bind(account).execute(&mut *tx).await?;
+        tx.commit().await?;
+        return Ok(());
+    };
+    let (entity, role) = if native {
+        ("wechat_native_contact", "wechat_avatar")
+    } else {
+        ("source_account", "wechat_avatar_small")
+    };
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!("media-slot:{entity}:{account}:{role}"))
+        .execute(&mut *tx)
+        .await?;
+    if !native {
+        sqlx::query("INSERT INTO crm.source_avatar_projections(profile_id,media_id,source_account_id)
+            SELECT p.id,p.avatar_media_id,$1 FROM crm.source_account_links l JOIN crm.profiles p ON p.id=l.profile_id
+            WHERE l.account_id=$1 AND EXISTS(SELECT 1 FROM crm.media_links m WHERE m.media_id=p.avatar_media_id
+            AND ((m.entity_type='source_account' AND m.entity_id=$1) OR (m.entity_type='profile' AND m.entity_id=p.id AND m.source_account_id=$1))
+            AND m.role IN('wechat_avatar','wechat_avatar_small','wechat_avatar_big'))
+            ON CONFLICT(profile_id) DO NOTHING").bind(account).execute(&mut *tx).await?;
     }
-    match result {
-        Ok(asset) => {
-            // Record ownership of a migrated source-selected avatar while its
-            // old link still exists. Manual selections remain authoritative.
-            sqlx::query("INSERT INTO crm.source_avatar_projections(profile_id,media_id,source_account_id)
-                SELECT p.id,p.avatar_media_id,$1 FROM crm.source_account_links l JOIN crm.profiles p ON p.id=l.profile_id
-                WHERE l.account_id=$1 AND EXISTS(SELECT 1 FROM crm.media_links m WHERE m.media_id=p.avatar_media_id
-                    AND m.entity_type='source_account' AND m.entity_id=$1 AND m.role LIKE 'wechat_avatar%')
-                ON CONFLICT(profile_id) DO NOTHING").bind(account).execute(&mut *tx).await?;
-            sqlx::query(
-                "UPDATE crm.media_assets SET verified_at=now() WHERE id=$1 AND verified_at IS NULL",
-            )
-            .bind(asset.id)
-            .execute(&mut *tx)
-            .await?;
-            super::set_slot_tx(
-                &mut tx,
-                "source_account",
-                account,
-                "wechat_avatar_small",
-                asset.id,
-                Some(account),
-            )
-            .await?;
-            sqlx::query("UPDATE crm.wechat_avatar_requests SET next_attempt=NULL,attempts=0 WHERE account_id=$1")
-                .bind(account).execute(&mut *tx).await?;
-        }
-        Err(_) => {
-            sqlx::query("UPDATE crm.wechat_avatar_requests SET attempts=attempts+1,next_attempt=now()+interval '1 minute'*(1<<least(attempts,10)) WHERE account_id=$1")
-                .bind(account).execute(&mut *tx).await.context("reschedule WeChat avatar")?;
-        }
+    if let Some(asset) = asset {
+        sqlx::query(
+            "UPDATE crm.media_assets SET verified_at=now() WHERE id=$1 AND verified_at IS NULL",
+        )
+        .bind(asset.id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("INSERT INTO crm.media_slots AS s(entity_type,entity_id,role,media_id,source_observed_at) VALUES($1,$2,$3,$4,$5)
+            ON CONFLICT(entity_type,entity_id,role) DO UPDATE SET media_id=excluded.media_id,generation=s.generation+1,
+            source_batch_id=NULL,source_ordinal=NULL,source_observed_at=excluded.source_observed_at,updated_at=now()
+            WHERE s.media_id<>excluded.media_id").bind(entity).bind(account).bind(role).bind(asset.id).bind(observed).execute(&mut *tx).await?;
+        sqlx::query("DELETE FROM crm.media_links WHERE entity_type=$1 AND entity_id=$2 AND role=$3 AND media_id<>$4")
+            .bind(entity).bind(account).bind(role).bind(asset.id).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,role,media_id,source_account_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING")
+            .bind(entity).bind(account).bind(role).bind(asset.id).bind((!native).then_some(account)).execute(&mut *tx).await?;
+    } else {
+        sqlx::query("DELETE FROM crm.media_slots WHERE entity_type=$1 AND entity_id=$2 AND role IN('wechat_avatar','wechat_avatar_small','wechat_avatar_big')")
+            .bind(entity).bind(account).execute(&mut *tx).await?;
+        sqlx::query("DELETE FROM crm.media_links WHERE ((entity_type=$1 AND entity_id=$2) OR (entity_type='profile' AND source_account_id=$3)) AND role IN('wechat_avatar','wechat_avatar_small','wechat_avatar_big')")
+            .bind(entity).bind(account).bind((!native).then_some(account)).execute(&mut *tx).await?;
     }
+    if native {
+        sqlx::query("UPDATE crm.profiles SET generation=generation+1 WHERE id IN(SELECT profile_id FROM crm.connection_evidence_people WHERE evidence_id=$1)")
+            .bind(account).execute(&mut *tx).await?;
+    } else {
+        sqlx::query("INSERT INTO crm.media_profile_refresh(account_id) VALUES($1) ON CONFLICT(account_id) DO UPDATE SET generation=crm.media_profile_refresh.generation+1")
+            .bind(account).execute(&mut *tx).await?;
+    }
+    sqlx::query(
+        "UPDATE crm.wechat_avatar_requests SET next_attempt=NULL,attempts=0 WHERE account_id=$1",
+    )
+    .bind(account)
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(())
 }
@@ -187,6 +219,7 @@ mod tests {
         }
         let old = observe(&pool, account, "https://wx.qlogo.cn/old").await;
         let mut shown = None;
+        let mut old_asset = None;
         for color in [1, 2] {
             let file = root.path().join("fixture.png");
             image::RgbImage::from_pixel(2, 2, image::Rgb([color, 0, 0]))
@@ -210,11 +243,13 @@ mod tests {
             } else {
                 observe(&pool, account, "https://wx.qlogo.cn/new").await
             };
-            finish(&pool, account, token, Ok(saved.clone()))
+            finish(&pool, account, token, Ok(Some(saved.clone())))
                 .await
                 .unwrap();
-            if color == 2 {
-                finish(&pool, account, old, Err(anyhow::anyhow!("stale download")))
+            if color == 1 {
+                old_asset = Some(saved.clone());
+            } else {
+                finish(&pool, account, old, Ok(old_asset.clone()))
                     .await
                     .unwrap();
             }
@@ -228,5 +263,14 @@ mod tests {
             );
             shown = Some(current);
         }
+        let count:i64=sqlx::query_scalar("SELECT count(*) FROM crm.avatar_observations WHERE account_id=$1 AND observed_at IS NOT NULL")
+            .bind(account).fetch_one(&pool).await.unwrap();
+        assert_eq!(count, 2);
+        observe(&pool, account, "").await;
+        refresh_wechat_avatar(&store).await.unwrap();
+        crate::media::refresh_profiles(&pool).await.unwrap();
+        let cleared:Option<Uuid>=sqlx::query_scalar("SELECT p.avatar_media_id FROM crm.source_account_links l JOIN crm.profiles p ON p.id=l.profile_id WHERE l.account_id=$1")
+            .bind(account).fetch_one(&pool).await.unwrap();
+        assert!(cleared.is_none());
     }
 }

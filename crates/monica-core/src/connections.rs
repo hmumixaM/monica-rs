@@ -643,28 +643,10 @@ async fn project_revision_reserved(
     let deleted = truth(value.get("deleted"), false);
     let included = truth(value.get("included"), true) && !deleted;
     let kind = string(&value, "kind", "message");
-    let wechat_directory_contact = matches!(provider, Provider::Wechat)
+    let roster = matches!(provider, Provider::Wechat) && kind == "group_membership";
+    let directory_snapshot = matches!(provider, Provider::Wechat)
         && kind == "contact"
         && value["directory_version"].as_i64() == Some(1);
-    if matches!(provider, Provider::Wechat) && kind == "group_membership" && included {
-        let member = value["member"].as_str().context("missing roster member")?;
-        let room = value["room"].as_str().context("missing roster room")?;
-        let (profile,blocked) = sqlx::query_as::<_,(Option<Uuid>,bool)>(
-            "SELECT profile_id,blocked FROM crm.connection_identity_links WHERE connection_id=$1 AND external_id=$2 AND confirmed"
-        ).bind(cid).bind(member).fetch_optional(&mut **tx).await?.unwrap_or_default();
-        if !blocked {
-            sqlx::query("SELECT crm.wechat_directory_member($1,$2,$3,$4,$5,$6,$7)")
-                .bind(room)
-                .bind(value["room_name"].as_str())
-                .bind(member)
-                .bind(value["member_name"].as_str())
-                .bind(identity::account_id(provider, room)?)
-                .bind(identity::account_id(provider, member)?)
-                .bind(profile)
-                .execute(&mut **tx)
-                .await?;
-        }
-    }
     let mut metadata = value.clone();
     for key in ["body", "raw_body", "raw_message", "raw_revoke"] {
         metadata
@@ -705,43 +687,41 @@ async fn project_revision_reserved(
         }
         let name = string(p, "name", external);
         let own = truth(p.get("is_self"), false);
-        sqlx::query("INSERT INTO crm.connection_people(connection_id,external_id,display_name,is_self) VALUES($1,$2,$3,$4) ON CONFLICT(connection_id,external_id) DO UPDATE SET display_name=CASE WHEN excluded.display_name=excluded.external_id THEN connection_people.display_name ELSE excluded.display_name END,is_self=excluded.is_self").bind(cid).bind(external).bind(name).bind(own).execute(&mut **tx).await?;
+        if directory_snapshot && !deleted {
+            let managed = Uuid::new_v5(&cid, format!("contact:{external}").as_bytes());
+            sqlx::query("UPDATE crm.profiles p SET display_name=left($4,255),generation=generation+1 FROM crm.connection_people cp
+                WHERE cp.connection_id=$1 AND cp.external_id=$2 AND cp.resolved_profile_id=p.id AND p.id=$3
+                AND p.display_name=left(cp.display_name,255) AND p.display_name<>left($4,255)")
+                .bind(cid).bind(external).bind(managed).bind(name).execute(&mut **tx).await?;
+        }
+        sqlx::query("INSERT INTO crm.connection_people(connection_id,external_id,display_name,is_self) VALUES($1,$2,$3,$4) ON CONFLICT(connection_id,external_id) DO UPDATE SET display_name=CASE WHEN excluded.display_name=excluded.external_id AND NOT $5 THEN connection_people.display_name ELSE excluded.display_name END,is_self=excluded.is_self").bind(cid).bind(external).bind(name).bind(own).bind(directory_snapshot && !deleted).execute(&mut **tx).await?;
         let (blocked,official):(bool,bool)=sqlx::query_as("SELECT coalesce((SELECT blocked FROM crm.connection_identity_links WHERE connection_id=$1 AND external_id=$2),false),$3 AND crm.wechat_is_official($2)").bind(cid).bind(external).bind(kind == "contact" && matches!(provider, Provider::Wechat)).fetch_one(&mut **tx).await?;
         let directory_contact = kind == "contact" && !official;
         let mut person = resolve_person(tx, cid, p, directory_contact).await?;
-        if wechat_directory_contact && directory_contact && !blocked && !deleted {
-            sqlx::query("SELECT crm.wechat_directory_contact($1,$2,$3,$4,$5,$6)")
-                .bind(external)
-                .bind(name)
-                .bind(&value["fields"])
-                .bind(value["avatar_checksum"].as_str())
-                .bind(identity::account_id(provider, external)?)
-                .bind(person)
-                .execute(&mut **tx)
-                .await?;
-            if person.is_none() {
-                person = sqlx::query_scalar("SELECT l.profile_id FROM crm.source_accounts a JOIN crm.source_account_links l ON l.account_id=a.id WHERE a.provider='wechat' AND a.external_id=$1")
-                    .bind(external).fetch_optional(&mut **tx).await?;
-            }
-        }
-        if person.is_none()
+        let room = roster && p["role"] == "room" && external.trim_end().ends_with("@chatroom");
+        let directory_person = directory_contact || (roster && (room || p["role"] == "member"));
+        if (directory_snapshot || roster)
+            && person.is_none()
             && !blocked
-            && directory_contact
+            && directory_person
             && !deleted
-            && !wechat_directory_contact
         {
+            person=sqlx::query_scalar("SELECT l.profile_id FROM crm.source_accounts a JOIN crm.source_account_links l ON l.account_id=a.id JOIN crm.profiles p ON p.id=l.profile_id WHERE a.provider='wechat' AND a.external_id=$1 AND p.archived_at IS NULL AND p.profile_type=$2")
+                .bind(external).bind(if room {"group"} else {"person"}).fetch_optional(&mut **tx).await?;
+        }
+        if person.is_none() && !blocked && directory_person && !deleted {
             let id = Uuid::new_v5(&cid, format!("contact:{external}").as_bytes());
-            sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person',$2) ON CONFLICT DO NOTHING").bind(id).bind(name.chars().take(255).collect::<String>()).execute(&mut **tx).await?;
+            sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,$2,$3) ON CONFLICT DO NOTHING").bind(id).bind(if room { "group" } else { "person" }).bind(name.chars().take(255).collect::<String>()).execute(&mut **tx).await?;
             person = Some(id);
         }
         if let Some(profile) = person {
-            if directory_contact && !deleted {
+            if directory_person && !deleted {
                 sqlx::query("INSERT INTO crm.connection_identity_links(connection_id,external_id,profile_id,confirmed) VALUES($1,$2,$3,true) ON CONFLICT DO NOTHING").bind(cid).bind(external).bind(profile).execute(&mut **tx).await?;
                 for (kind, value) in identifiers(p) {
                     sqlx::query("INSERT INTO crm.connection_identifiers VALUES($1,$2,$3,$4,$5,true) ON CONFLICT(connection_id,external_id,kind,value) DO UPDATE SET active=true,profile_id=excluded.profile_id").bind(cid).bind(&row.external_id).bind(profile).bind(&kind).bind(&value).execute(&mut **tx).await?;
                     changed_ids.insert((kind, value));
                 }
-                if !wechat_directory_contact {
+                if directory_contact {
                     import_contact_fields(tx, provider, profile, row, &value).await?;
                 }
             }
@@ -751,6 +731,24 @@ async fn project_revision_reserved(
             sqlx::query("INSERT INTO crm.connection_evidence_people VALUES($1,$2,$3) ON CONFLICT DO NOTHING").bind(eid).bind(profile).bind(role).execute(&mut **tx).await?;
         }
         sqlx::query("UPDATE crm.connection_people SET resolved_profile_id=$3 WHERE connection_id=$1 AND external_id=$2").bind(cid).bind(external).bind(person).execute(&mut **tx).await?;
+    }
+    if directory_snapshot && !deleted && !people.is_empty() {
+        let fields = &value["fields"];
+        if fields.get("big_head_url").is_some() || fields.get("small_head_url").is_some() {
+            let urls: Vec<&str> = ["big_head_url", "small_head_url"]
+                .iter()
+                .filter_map(|key| fields[key].as_str())
+                .filter(|u| !u.is_empty())
+                .collect();
+            sqlx::query("SELECT crm.queue_wechat_avatar($1,$2,$3,$4,$5::text::timestamptz)")
+                .bind(eid)
+                .bind(true)
+                .bind(urls)
+                .bind(value["avatar_checksum"].as_str())
+                .bind(&row.observed_at)
+                .execute(&mut **tx)
+                .await?;
+        }
     }
     if let Some(binding) = &row.binding {
         for (profile, role) in [
@@ -895,6 +893,39 @@ async fn import_contact_fields(
                     .map(|v| (format!("apple_contacts.{key}"), v.clone()))
             })
             .collect(),
+        Provider::Wechat if value["directory_version"].as_i64() == Some(1) => {
+            let mut fields = Vec::new();
+            for key in [
+                "alias",
+                "remark",
+                "nick_name",
+                "description",
+                "signature",
+                "country",
+                "province",
+                "city",
+                "region",
+                "labels",
+                "add_source",
+                "moments_cover_url",
+            ] {
+                if let Some(v) = value["fields"].get(key) {
+                    let name = if key == "nick_name" { "nickname" } else { key };
+                    fields.push((format!("wechat.{name}"), v.clone()));
+                }
+            }
+            let source = &value["fields"];
+            if source.get("big_head_url").is_some() || source.get("small_head_url").is_some() {
+                fields.push((
+                    "wechat.avatar_url".into(),
+                    source["big_head_url"]
+                        .as_str()
+                        .or_else(|| source["small_head_url"].as_str())
+                        .into(),
+                ));
+            }
+            fields
+        }
         Provider::Wechat => [
             ("alias", "alias"),
             ("remark", "remark"),
@@ -929,6 +960,9 @@ async fn import_contact_fields(
     .await?;
     for ((key, value), object) in fields.into_iter().zip(objects) {
         let previous:Option<(Uuid,String,String)>=sqlx::query_as("SELECT r.id,r.content_hash,r.source_type FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1 AND c.field_key=$2").bind(profile).bind(&key).fetch_optional(&mut **tx).await?;
+        if value.is_null() && previous.is_none() {
+            continue;
+        }
         if previous
             .as_ref()
             .is_some_and(|(_, hash, _)| hash == &object.hash)

@@ -111,7 +111,30 @@ def _parse_fields(buffer: bytes | None) -> dict[int, list[int | bytes]] | None:
 
 
 
-def contact_details(row):
+FRIEND_SOURCE_LABELS = {
+    0: "未记录来源",
+    1: "QQ 号搜索",
+    3: "微信号搜索",
+    4: "QQ 好友",
+    6: "邮箱搜索",
+    8: "群聊",
+    9: "手机通讯录",
+    10: "手机通讯录",
+    12: "QQ 好友",
+    13: "手机通讯录",
+    14: "群聊",
+    15: "手机号搜索",
+    17: "名片分享",
+    18: "附近的人",
+    22: "摇一摇",
+    25: "漂流瓶",
+    29: "摇一摇",
+    30: "扫一扫二维码",
+    48: "雷达加朋友",
+}
+
+
+def contact_details(row, label_names):
     # A missing column is unknown. An empty value in a known column is a clear.
     fields = {key: row[key] or None for key in (
         'alias', 'remark', 'nick_name', 'description', 'big_head_url', 'small_head_url',
@@ -128,6 +151,28 @@ def contact_details(row):
                     fields[key] = raw.decode('utf-8').replace('\0', '') or None
                 except UnicodeDecodeError:
                     pass
+            code = next((v for v in parsed.get(8, []) if isinstance(v, int)), None)
+            fields['add_source'] = FRIEND_SOURCE_LABELS.get(code, str(code)) if code is not None else None
+            if label_names is not None:
+                raw = next((v for v in parsed.get(30, []) if isinstance(v, bytes)), b'')
+                ids = [int(part) for part in raw.split(b',') if part.isdigit() and len(part)<20]
+                fields['labels'] = sorted({label_names[i] for i in ids if i in label_names}) or None
+            for raw in parsed.get(27, []):
+                if isinstance(raw, bytes):
+                    nested = _parse_fields(raw)
+                    if nested is None:
+                        continue
+                    cover = next((v for v in nested.get(2, []) if isinstance(v,bytes)), b'')
+                    if cover.startswith((b'https://', b'http://')):
+                        try:
+                            fields['moments_cover_url'] = cover.decode('utf-8').replace('\0', '')
+                            break
+                        except UnicodeDecodeError:
+                            continue
+            if not parsed.get(27):
+                fields['moments_cover_url'] = None
+    if all(k in fields for k in ('country','province','city')):
+        fields['region'] = ' · '.join(v for v in (fields['country'],fields['province'],fields['city']) if v) or None
     return fields
 
 
@@ -137,10 +182,12 @@ def member_record(row):
         return None
     return dict(kind='group_membership', external_id='membership:'+encode([room, member]),
                 room=room, member=member, room_name=row['room_name'] or room,
-                member_name=row['member_name'] or member, participants=[])
+                member_name=row['member_name'] or member,
+                participants=[dict(id=room,name=row['room_name'] or room,role='room'),
+                              dict(id=member,name=row['member_name'] or member,role='member')])
 
 
-def contact(row, directory=True):
+def contact(row, directory=True, label_names=None):
     row=dict(row)
     if row.get('username') is not None and not isinstance(row['username'],str):raise ValueError('Chatlog contact identity is not UTF-8')
     external=str(row.get('username') or '').strip()
@@ -148,7 +195,7 @@ def contact(row, directory=True):
     if external.endswith('@chatroom') or external.startswith('@') or external in SYSTEM:return None
     if not external.endswith('@openim') and row.get('local_type') in (2,3,5,6):return None
     name=row.get('remark') or row.get('nick_name') or row.get('alias') or external
-    fields=contact_details(row) if directory else {k:row[k] for k in ("alias","remark","nick_name","description","big_head_url","small_head_url") if row.get(k)}
+    fields=contact_details(row, label_names) if directory else {k:row[k] for k in ("alias","remark","nick_name","description","big_head_url","small_head_url") if row.get(k)}
     # Keep classification evidence in the source journal. The Rust directory
     # excludes official accounts without deleting their contact/message history.
     raw_contact={k:row[k] for k in ['verify_flag','local_type','delete_flag'] if k in row}
@@ -361,6 +408,9 @@ class Reader:
                         names={r['id']:r['username'] for r in self.db.execute('SELECT id,username FROM names WHERE file=? AND id IN ('+','.join('?' for _ in ids)+')',[file,*ids])}
                 changed=[];known=[];size=0
                 rows=source.execute('SELECT rowid AS _row_id,* FROM "'+table+'" WHERE rowid IN ('+','.join('?' for _ in selected)+') ORDER BY rowid',[item['_row_id'] for item in selected]) if selected else []
+                label_names = None
+                if table=='contact' and self.directory and 'contact_label' in tables:
+                    label_names = dict(source.execute("SELECT label_id_,label_name_ FROM contact_label WHERE label_name_<>''"))
                 if table=='chatroom_member' and selected:
                     rows=source.execute("""
                         SELECT r.rowid AS _row_id,g.username AS room,p.username AS member,
@@ -372,7 +422,7 @@ class Reader:
                         WHERE r.rowid IN ("""+','.join('?' for _ in selected)+") ORDER BY r.rowid",
                         [item['_row_id'] for item in selected])
                 for row in rows:
-                    value=member_record(row) if table=='chatroom_member' else contact(row,self.directory) if table=='contact' else post(row) if table=='SnsTimeLine' else message(row,names,talker,file,table,self.own_id,self.allow_unknown_source_sender)
+                    value=member_record(row) if table=='chatroom_member' else contact(row,self.directory,label_names) if table=='contact' else post(row) if table=='SnsTimeLine' else message(row,names,talker,file,table,self.own_id,self.allow_unknown_source_sender)
                     row_size=len(encode(value).encode()) if value else 0
                     if row_size>MAX_PAGE:raise ValueError('Single Chatlog record exceeds page budget')
                     if size+row_size>MAX_PAGE:break

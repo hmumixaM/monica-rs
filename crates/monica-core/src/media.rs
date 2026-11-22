@@ -684,30 +684,18 @@ pub async fn set_slot(
     media: Uuid,
     source_account: Option<Uuid>,
 ) -> Result<()> {
-    let mut tx = pool.begin().await?;
-    set_slot_tx(&mut tx, entity, id, role, media, source_account).await?;
-    tx.commit().await?;
-    Ok(())
-}
-
-async fn set_slot_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    entity: &str,
-    id: Uuid,
-    role: &str,
-    media: Uuid,
-    source_account: Option<Uuid>,
-) -> Result<()> {
     ensure!(!role.is_empty() && role.len() <= 120, "invalid media role");
+    let mut tx = pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("media-slot:{entity}:{id}:{role}"))
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await?;
-    sqlx::query("INSERT INTO crm.media_slots(entity_type,entity_id,role,media_id) VALUES($1,$2,$3,$4) ON CONFLICT(entity_type,entity_id,role) DO UPDATE SET media_id=excluded.media_id,generation=crm.media_slots.generation+1,updated_at=now() WHERE crm.media_slots.media_id<>excluded.media_id").bind(entity).bind(id).bind(role).bind(media).execute(&mut **tx).await?;
-    sqlx::query("DELETE FROM crm.media_links WHERE entity_type=$1 AND entity_id=$2 AND role=$3 AND media_id<>$4").bind(entity).bind(id).bind(role).bind(media).execute(&mut **tx).await?;
-    sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role,source_account_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING").bind(entity).bind(id).bind(media).bind(role).bind(source_account).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO crm.media_slots(entity_type,entity_id,role,media_id) VALUES($1,$2,$3,$4) ON CONFLICT(entity_type,entity_id,role) DO UPDATE SET media_id=excluded.media_id,generation=crm.media_slots.generation+1,updated_at=now() WHERE crm.media_slots.media_id<>excluded.media_id").bind(entity).bind(id).bind(role).bind(media).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM crm.media_links WHERE entity_type=$1 AND entity_id=$2 AND role=$3 AND media_id<>$4").bind(entity).bind(id).bind(role).bind(media).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role,source_account_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING").bind(entity).bind(id).bind(media).bind(role).bind(source_account).execute(&mut *tx).await?;
     if entity == "source_account" {
-        sqlx::query("INSERT INTO crm.media_profile_refresh(account_id) VALUES($1) ON CONFLICT(account_id) DO UPDATE SET generation=crm.media_profile_refresh.generation+1").bind(id).execute(&mut **tx).await?;
+        sqlx::query("INSERT INTO crm.media_profile_refresh(account_id) VALUES($1) ON CONFLICT(account_id) DO UPDATE SET generation=crm.media_profile_refresh.generation+1").bind(id).execute(&mut *tx).await?;
     }
+    tx.commit().await?;
     Ok(())
 }

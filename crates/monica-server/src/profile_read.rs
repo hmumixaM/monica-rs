@@ -22,7 +22,7 @@ pub fn routes() -> Router<AppState> {
 }
 
 pub(super) async fn header(tx: &mut Transaction<'_, Postgres>, requested: Uuid) -> Result<Value> {
-    sqlx::query_scalar("WITH RECURSIVE chain(id,depth,seen) AS (SELECT $1::uuid,0,ARRAY[$1::uuid] UNION ALL SELECT r.new_profile_id,c.depth+1,c.seen||r.new_profile_id FROM crm.profile_redirects r JOIN chain c ON r.old_profile_id=c.id WHERE c.depth<32 AND NOT r.new_profile_id=ANY(c.seen)) SELECT to_jsonb(p)-'generation' FROM chain c JOIN crm.profiles p ON p.id=c.id WHERE p.archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM crm.profile_redirects r WHERE r.old_profile_id=p.id)")
+    sqlx::query_scalar("WITH RECURSIVE chain(id,depth,seen) AS (SELECT $1::uuid,0,ARRAY[$1::uuid] UNION ALL SELECT r.new_profile_id,c.depth+1,c.seen||r.new_profile_id FROM crm.profile_redirects r JOIN chain c ON r.old_profile_id=c.id WHERE c.depth<32 AND NOT r.new_profile_id=ANY(c.seen)) SELECT (to_jsonb(p)-'generation')||jsonb_build_object('avatar_media_id',coalesce(crm.native_wechat_photo(p.id),p.avatar_media_id)) FROM chain c JOIN crm.profiles p ON p.id=c.id WHERE p.archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM crm.profile_redirects r WHERE r.old_profile_id=p.id)")
         .bind(requested).fetch_optional(&mut **tx).await?.ok_or_else(missing)
 }
 
