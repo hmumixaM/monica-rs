@@ -455,6 +455,44 @@ async fn input_dedupe_privacy_and_stale_output_fencing(pool: PgPool) {
     );
 }
 #[sqlx::test(migrations = "../../migrations")]
+async fn weekly_work_is_claimed_before_sweeps_and_abandoned_jobs_are_settled(pool: PgPool) {
+    person(&pool).await;
+    let [abandoned, sweep, weekly] = [Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()];
+    // An older sweep job that lost its lease three times, an ordinary sweep
+    // job, and a newer weekly note.
+    for (id, kind, age, status, attempts) in [
+        (abandoned, "ai.profile", 3, "running", 3),
+        (sweep, "ai.profile", 2, "queued", 0),
+        (weekly, "ai.person_week", 1, "queued", 0),
+    ] {
+        sqlx::query("INSERT INTO crm.ai_jobs(id,kind,subject,model,input_hash,input,source_versions,privacy,status,attempts,lease_until,created_at) VALUES($1,$2,$1::text,'synthetic',$1::text,'{}','{}','{}',$3,$4,now()-interval '1 minute',now()-$5*interval '1 hour')")
+            .bind(id).bind(kind).bind(status).bind(attempts).bind(age).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.ai_subject_heads VALUES($1,$2::text,$2)")
+            .bind(kind)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    assert_eq!(ai::claim(&pool).await.unwrap().unwrap().id, weekly);
+    assert_eq!(ai::claim(&pool).await.unwrap().unwrap().id, sweep);
+    let settled: (String, Option<String>) =
+        sqlx::query_as("SELECT status,error FROM crm.ai_jobs WHERE id=$1")
+            .bind(abandoned)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        settled,
+        (
+            "failed".into(),
+            Some("gave up after repeated attempts".into())
+        )
+    );
+    assert!(ai::claim(&pool).await.unwrap().is_none());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn lease_takeover_cancel_and_fake_provider(pool: PgPool) {
     let id = person(&pool).await;
     let jid = ai::enqueue(&pool, "ai.profile", &id.to_string())

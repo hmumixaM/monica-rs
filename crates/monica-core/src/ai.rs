@@ -308,18 +308,19 @@ pub struct Lease {
 const MAX_ATTEMPTS: i32 = 3;
 /// How long one text model call may take, including its chunk and reduce calls.
 pub(crate) const TEXT_CALL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(120);
-/// Newest posts first, then analysis, then the image backlog. Each queue has a
-/// matching partial index, so a claim reads one candidate instead of sorting
-/// every queued job.
+/// Newest posts first, then this week's review and notes, then the rest of
+/// analysis, then the image backlog. Each queue has a matching partial index,
+/// so a claim reads one candidate instead of sorting every queued job.
 /// The head check is a scalar lookup on purpose: written as EXISTS the planner
 /// joins all heads to the whole queue and sorts it on every claim.
 pub async fn claim(pool: &PgPool) -> Result<Option<Lease>> {
     const POSTS: &str = "j.kind='ai.post_media' AND(coalesce((j.input->>'ingested')::boolean,false)=false OR j.created_at<=clock_timestamp()-interval '12 seconds') ORDER BY j.priority_at DESC NULLS LAST,j.created_at,j.id";
+    const TIMELY: &str = "j.kind IN('ai.digest','ai.person_week') ORDER BY j.created_at,j.id";
     const ANALYSIS: &str =
         "j.kind NOT IN('ai.post_media','ai.image_ocr') ORDER BY j.created_at,j.id";
     const IMAGES: &str = "j.kind='ai.image_ocr' AND EXISTS(SELECT 1 FROM crm.image_ocr_settings o WHERE o.id AND o.enabled AND o.daily_limit>(SELECT count(*) FROM crm.ai_call_reservations WHERE day=(now() AT TIME ZONE 'America/Chicago')::date)) ORDER BY j.created_at,j.id";
     let token = Uuid::new_v4();
-    for queue in [POSTS, ANALYSIS, IMAGES] {
+    for queue in [POSTS, TIMELY, ANALYSIS, IMAGES] {
         let row = sqlx::query(&format!("WITH candidate AS (SELECT j.id FROM crm.ai_jobs j WHERE EXISTS(SELECT 1 FROM crm.ai_settings s WHERE s.id AND s.enabled AND s.execution_enabled) AND j.status IN('queued','running') AND(j.status='queued' OR j.lease_until<clock_timestamp()) AND (SELECT h.job_id FROM crm.ai_subject_heads h WHERE h.kind=j.kind AND h.subject=j.subject)=j.id AND {queue} FOR UPDATE OF j SKIP LOCKED LIMIT 1) UPDATE crm.ai_jobs j SET status='running',token=$1,lease_until=clock_timestamp()+interval '90 seconds',attempts=attempts+1 FROM candidate c WHERE j.id=c.id RETURNING j.*")).bind(token).fetch_optional(pool).await?;
         if let Some(r) = row {
             if r.get::<i32, _>("attempts") > MAX_ATTEMPTS {
