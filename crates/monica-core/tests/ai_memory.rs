@@ -63,6 +63,19 @@ async fn run_idle(pool: &PgPool, provider: &Counting) {
     }
     panic!("Memory did not finish bounded turns")
 }
+/// New material waits for a quiet spell before it is summarized. These tests
+/// are about what a summary reads, so they let that wait pass.
+async fn enqueue_due(pool: &PgPool) {
+    sqlx::query("UPDATE crm.memory_heads SET updated_at=now()-interval '7 hours'")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE crm.memory_current SET generated_at=now()-interval '8 days'")
+        .execute(pool)
+        .await
+        .unwrap();
+    ai::memory::enqueue_pending(pool).await.unwrap();
+}
 async fn add(pool: &PgPool, id: Uuid, value: &str) -> bool {
     let mut tx = pool.begin().await.unwrap();
     let changed = memory::replace_sources(
@@ -107,7 +120,7 @@ async fn incremental_cache_noop_aba_privacy_and_generation_fences(pool: PgPool) 
     let provider = Counting {
         inputs: Mutex::new(Vec::new()),
     };
-    ai::memory::enqueue_pending(&pool).await.unwrap();
+    enqueue_due(&pool).await;
     run_idle(&pool, &provider).await;
     let initial = provider.inputs.lock().unwrap().len();
     assert!(initial > 0);
@@ -119,7 +132,7 @@ async fn incremental_cache_noop_aba_privacy_and_generation_fences(pool: PgPool) 
             .iter()
             .any(|(_, v)| v.to_string().contains("PRIVATE-CHAT-MARKER"))
     );
-    ai::memory::enqueue_pending(&pool).await.unwrap();
+    enqueue_due(&pool).await;
     run_idle(&pool, &provider).await;
     assert_eq!(
         provider.inputs.lock().unwrap().len(),
@@ -127,12 +140,12 @@ async fn incremental_cache_noop_aba_privacy_and_generation_fences(pool: PgPool) 
         "unchanged inputs must not call the model"
     );
     assert!(add(&pool, id, "Synthetic B").await);
-    ai::memory::enqueue_pending(&pool).await.unwrap();
+    enqueue_due(&pool).await;
     run_idle(&pool, &provider).await;
     let changed = provider.inputs.lock().unwrap().len();
     assert!(changed > initial);
     assert!(add(&pool, id, "Synthetic A").await);
-    ai::memory::enqueue_pending(&pool).await.unwrap();
+    enqueue_due(&pool).await;
     run_idle(&pool, &provider).await;
     assert_eq!(
         provider.inputs.lock().unwrap().len(),
@@ -143,7 +156,7 @@ async fn incremental_cache_noop_aba_privacy_and_generation_fences(pool: PgPool) 
         .execute(&pool)
         .await
         .unwrap();
-    ai::memory::enqueue_pending(&pool).await.unwrap();
+    enqueue_due(&pool).await;
     run_idle(&pool, &provider).await;
     assert!(
         provider

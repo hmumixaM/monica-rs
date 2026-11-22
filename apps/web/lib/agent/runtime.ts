@@ -68,8 +68,20 @@ async function settings(signal: AbortSignal) {
   if (!response.ok) throw new Error(`无法读取模型设置 (${response.status})`);
   const value = await response.json();
   if (!value.enabled) throw new Error('问答还没有开启。请在「设置 → 模型」里启用模型服务和问 Monica。');
-  return value as { model: string; context_window: number; max_tokens: number };
+  return value as { model: string; models?: string[]; context_window: number; max_tokens: number };
 }
+
+const MODEL_KEY = 'monica:ask:model';
+/** The models a question can be answered with, the configured one first, and the one chosen in this browser. */
+export async function modelChoices(): Promise<{ models: string[]; chosen: string }> {
+  const response = await apiFetch('/api/v1/ai/browser-model');
+  if (!response.ok) return { models: [], chosen: '' };
+  const value = await response.json();
+  const models: string[] = value.enabled ? value.models ?? [value.model] : [];
+  const saved = localStorage.getItem(MODEL_KEY) ?? '';
+  return { models, chosen: models.includes(saved) ? saved : models[0] ?? '' };
+}
+export function chooseModel(model: string) { localStorage.setItem(MODEL_KEY, model); }
 
 export async function run(id: string, question: string, people: PickedPerson[]) {
   if (snapshot(id).running) return;
@@ -82,9 +94,12 @@ export async function run(id: string, question: string, people: PickedPerson[]) 
     await navigator.locks.request(transcriptKey(id), { ifAvailable: true }, async lock => {
       if (!lock) throw new Error('这个会话正在另一个标签页里回答');
       const model = await settings(controller.signal);
+      // The server answers with the configured model unless this one is among its choices.
+      const chosen = localStorage.getItem(MODEL_KEY) ?? '';
+      const modelId = (model.models ?? []).includes(chosen) ? chosen : model.model;
       let nudge = false;
       const agent = new Agent({ initialState: {
-        model: { id: model.model, name: model.model, provider: 'monica', api: 'openai-completions',
+        model: { id: modelId, name: modelId, provider: 'monica', api: 'openai-completions',
           baseUrl: location.origin + '/api/v1/ai', reasoning: false, input: ['text'],
           contextWindow: model.context_window, maxTokens: model.max_tokens,
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

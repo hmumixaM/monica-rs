@@ -72,6 +72,11 @@
   border-block-start: 1px solid var(--color-rule);
   & small { color: var(--color-text-faint); font-size: 11px; }
 }
+.footnote { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.model { display: inline-flex; align-items: center; gap: 6px; color: var(--color-text-faint); font-size: 11px;
+  & select { min-block-size: 26px; max-inline-size: 200px; padding: 0 6px; border: 1px solid var(--color-rule); border-radius: var(--radius-control);
+    background: var(--color-surface); color: var(--color-text-soft); font: inherit; font-size: var(--text-xs); }
+  & select:focus-visible { outline: var(--focus-ring); outline-offset: 2px; } }
 .people { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .person {
   display: inline-flex; align-items: center; gap: 6px; min-block-size: 28px; padding: 0 4px 0 4px; border-radius: var(--radius-chip);

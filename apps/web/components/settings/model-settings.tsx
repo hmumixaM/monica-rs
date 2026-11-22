@@ -11,7 +11,7 @@ import styles from './settings.module.css';
 type Settings = {
   enabled: boolean; execution_enabled: boolean; qa_enabled: boolean; model: string; base_url: string | null; has_key: boolean;
   include_messages: boolean; include_private_notes: boolean; context_window: number; max_tokens: number;
-  model_routes: Record<string,string>; vision_model: string;
+  model_routes: Record<string,string>; qa_models?: string[]; vision_model: string;
 };
 export function ModelSettings() {
   const client = useQueryClient();
@@ -32,6 +32,7 @@ export function ModelSettings() {
             enabled: data.execution_enabled===false ? data.enabled : values.has('enabled'), qa_enabled: data.execution_enabled===false ? data.qa_enabled : values.has('qa_enabled'),
             model: values.get('model'), ...(values.get('base_url') ? {base_url: values.get('base_url')} : {}),
             model_routes: Object.fromEntries(['batch','person','writer','qa'].map(role=>[role,String(values.get(`model_${role}`)||'').trim()])),
+            qa_models: String(values.get('qa_models') || '').split(/[,，\s]+/).filter(Boolean),
             vision_model: values.get('vision_model'),
             ...(key ? { api_key: key } : {}), clear_key: values.has('clear_key'),
             include_messages: values.has('include_messages'), include_private_notes: values.has('include_private_notes'),
@@ -50,7 +51,8 @@ export function ModelSettings() {
         </fieldset>
         <fieldset className={styles.formGroup}><legend>各功能使用的模型</legend>
         <div className={styles.formGrid}>{Object.entries({batch:['批量整理','处理素材与 Memory 分片'],person:['人物分析','人物 Memory 与每周近况'],writer:['写作','生成每周回顾'],qa:['问 Monica','留空时优先沿用写作模型']}).map(([role,[label,hint]])=><Field key={role} label={label} hint={hint}><Input name={`model_${role}`} maxLength={255} defaultValue={data.model_routes?.[role]||''} placeholder={data.model+'…'} autoComplete="off"/></Field>)}
-        <Field label="识图与 OCR" hint="需要支持图片输入的模型。"><Input name="vision_model" required maxLength={255} defaultValue={data.vision_model} autoComplete="off"/></Field></div>
+        <Field label="识图与 OCR" hint="需要支持图片输入的模型。"><Input name="vision_model" required maxLength={255} defaultValue={data.vision_model} autoComplete="off"/></Field>
+        <Field label="问 Monica 的其他可选模型" hint="用逗号分隔。提问时可以在输入框下面切换。"><Input name="qa_models" maxLength={2000} defaultValue={(data.qa_models ?? []).join(', ')} placeholder="例如 deepseek-v4-pro, gpt-6.2-sol…" autoComplete="off"/></Field></div>
         </fieldset>
         <fieldset className={styles.formGroup}><legend>允许读取的内容</legend>
         <Checkbox name="qa_enabled" defaultChecked={data.qa_enabled} disabled={data.execution_enabled===false}>启用浏览器问答</Checkbox>

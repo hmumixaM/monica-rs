@@ -5,7 +5,7 @@ import { ArrowUp, Check, CircleAlert, Download, Ellipsis, MessageSquarePlus, Sea
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { useSearchParams } from "@/router/navigation";
-import { exportConversation, forget, importConversation, restore, run, snapshot, stop, subscribe } from "../../lib/agent/runtime";
+import { chooseModel, exportConversation, forget, importConversation, modelChoices, restore, run, snapshot, stop, subscribe } from "../../lib/agent/runtime";
 import {
   activeConversation, type Conversation, createConversation, deleteConversation, listConversations, saveConversation, selectConversation,
 } from "../../lib/agent/sessions";
@@ -73,6 +73,9 @@ export function AskView() {
   const [question, setQuestion] = useState("");
   const [failure, setFailure] = useState("");
   const [picking, setPicking] = useState(false);
+  const [models, setModels] = useState<string[]>([]);
+  const [model, setModel] = useState("");
+  useEffect(() => { void modelChoices().then((value) => { setModels(value.models); setModel(value.chosen); }).catch(() => undefined); }, []);
   const fileInput = useRef<HTMLInputElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const end = useRef<HTMLDivElement>(null);
@@ -225,7 +228,14 @@ export function AskView() {
               ? <IconButton label="停止回答" className={styles.send} onClick={() => stop(id)}><Square size={15} /></IconButton>
               : <button type="submit" className={styles.send} aria-label="提问" title="提问（Enter）" disabled={!ready || !question.trim()}><ArrowUp size={17} /></button>}
           </div>
-          <small>Enter 发送，Shift + Enter 换行。会话只保存在这个浏览器里。</small>
+          <div className={styles.footnote}>
+            <small>Enter 发送，Shift + Enter 换行。会话只保存在这个浏览器里。</small>
+            {models.length > 1 && <label className={styles.model}>模型
+              <select aria-label="回答用的模型" value={model} disabled={state.running}
+                onChange={(event) => { setModel(event.target.value); chooseModel(event.target.value); }}>
+                {models.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select></label>}
+          </div>
         </form>
       </section>
     </div>

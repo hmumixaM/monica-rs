@@ -21,11 +21,22 @@ const minute = (value?: string | null) => value ? new Date(value).toLocaleString
 /** Model dates are local calendar days; the API takes instants. */
 const instant = (value?: string) => value ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? value + 'T00:00:00' : value).toISOString() : undefined;
 
-function messageRow(row: Json) {
+/** The part of a long message around the first term that matched. */
+function around(text: string, terms: string[], length: number) {
+  if (text.length <= length) return text;
+  const lower = text.toLowerCase();
+  const at = Math.min(...terms.map(term => lower.indexOf(term.toLowerCase())).filter(index => index >= 0), text.length);
+  const start = at === text.length ? 0 : Math.max(0, at - Math.floor(length / 3));
+  return (start ? '…' : '') + text.slice(start, start + length).trim() + (start + length < text.length ? '…' : '');
+}
+
+/** A search hit carries the passage that matched, so many hits fit in one page; a read carries the message. */
+function messageRow(row: Json, terms?: string[]) {
+  const text = messageText(String(row.text ?? ''));
   return {
     at: minute(row.occurred_at),
     from: row.direction === 'sent' ? '我' : row.sender_name || 'TA',
-    text: cut(messageText(String(row.text ?? '')), 600),
+    text: terms ? around(text, terms, 240) : cut(text, 600),
     // A hit from the search across all conversations says whose chat it is, so no second lookup is needed.
     ...(row.conversation_type === 'group' ? { group: row.conversation_name }
       : row.conversation_name ? { chat_with: row.conversation_name, profile_id: row.profile_id ?? undefined } : {}),
@@ -35,7 +46,7 @@ function messageRow(row: Json) {
 
 /** Rows arrive newest first; `earlier` is the `before` value for the next page. */
 function messagePage(rows: Json[], limit: number) {
-  return { messages: rows.map(messageRow), earlier: rows.length === limit ? rows.at(-1)!.occurred_at : null };
+  return { messages: rows.map(row => messageRow(row)), earlier: rows.length === limit ? rows.at(-1)!.occurred_at : null };
 }
 
 async function person(id: string, signal?: AbortSignal) {
@@ -124,7 +135,7 @@ export function tools(): AgentTool[] {
       const seen = new Set<string>();
       const rows = pages.flat().filter(row => (!reached || String(row.occurred_at) >= reached) && !seen.has(row.id) && seen.add(row.id))
         .sort((x, y) => String(y.occurred_at).localeCompare(String(x.occurred_at)));
-      return { messages: rows.map(messageRow), earlier: reached, ...(unsearched.length ? { not_searched: unsearched, note: 'not_searched 里的词因为数据库正忙没有搜成，需要时单独再搜' } : {}) };
+      return { messages: rows.map(row => messageRow(row, terms)), earlier: reached, ...(unsearched.length ? { not_searched: unsearched, note: 'not_searched 里的词因为数据库正忙没有搜成，需要时单独再搜' } : {}) };
     }),
 
     tool('read_messages', TOOL_LABELS.read_messages, '按时间读取和一个人的聊天（含 TA 在群里说的话），新的在前。用 since、until 读某段时间，用 before 向更早翻页。', {

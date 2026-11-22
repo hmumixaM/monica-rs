@@ -15,12 +15,12 @@ pub(super) fn routes() -> Router<AppState> {
 }
 async fn read(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     user(&s, &h).await?;
-    let row = sqlx::query("SELECT a.enabled,a.execution_enabled,a.qa_enabled,a.model,a.model_routes,o.model AS vision_model,a.base_url,a.include_messages,a.include_private_notes,a.context_window,a.max_tokens,a.credential_ciphertext IS NOT NULL AS has_key FROM crm.ai_settings a CROSS JOIN crm.image_ocr_settings o WHERE a.id AND o.id")
+    let row = sqlx::query("SELECT a.enabled,a.execution_enabled,a.qa_enabled,a.model,a.model_routes,a.qa_models,o.model AS vision_model,a.base_url,a.include_messages,a.include_private_notes,a.context_window,a.max_tokens,a.credential_ciphertext IS NOT NULL AS has_key FROM crm.ai_settings a CROSS JOIN crm.image_ocr_settings o WHERE a.id AND o.id")
         .fetch_one(&s.pool).await?;
     Ok(Json(json!({
         "enabled":row.get::<bool,_>("enabled"),"execution_enabled":row.get::<bool,_>("execution_enabled"),"qa_enabled":row.get::<bool,_>("qa_enabled"),
         "model":row.get::<String,_>("model"),"base_url":row.get::<Option<String>,_>("base_url"),
-        "model_routes":row.get::<Value,_>("model_routes"),"vision_model":row.get::<String,_>("vision_model"),
+        "model_routes":row.get::<Value,_>("model_routes"),"qa_models":row.get::<Vec<String>,_>("qa_models"),"vision_model":row.get::<String,_>("vision_model"),
         "include_messages":row.get::<bool,_>("include_messages"),"include_private_notes":row.get::<bool,_>("include_private_notes"),
         "context_window":row.get::<i32,_>("context_window"),"max_tokens":row.get::<i32,_>("max_tokens"),
         "has_key":row.get::<bool,_>("has_key") || std::env::var("MONICA_AI_API_KEY").is_ok_and(|key| !key.is_empty()),
@@ -33,6 +33,7 @@ struct Settings {
     qa_enabled: Option<bool>,
     model: Option<String>,
     model_routes: Option<Value>,
+    qa_models: Option<Vec<String>>,
     vision_model: Option<String>,
     base_url: Option<String>,
     api_key: Option<String>,
@@ -135,6 +136,20 @@ async fn save(
     if let Some(routes) = routes {
         sqlx::query("UPDATE crm.ai_settings SET model_routes=$1 WHERE id")
             .bind(routes)
+            .execute(&mut *tx)
+            .await?;
+    }
+    if let Some(models) = v.qa_models {
+        let models: Vec<String> = models
+            .iter()
+            .map(|model| model.trim().to_owned())
+            .filter(|model| !model.is_empty())
+            .collect();
+        if models.len() > 20 || models.iter().any(|model| model.len() > 255) {
+            return Err(invalid("问 Monica 的可选模型无效"));
+        }
+        sqlx::query("UPDATE crm.ai_settings SET qa_models=$1 WHERE id")
+            .bind(models)
             .execute(&mut *tx)
             .await?;
     }
