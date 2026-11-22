@@ -13,6 +13,10 @@ Run the worker as UID/GID **10001:10001**, matching the Rust server. The CLI rej
 
 - Existing Next `data` → `/source`, **read-only**.
 - Existing Chatlog `work/db_storage` → `/chatlog`, **read-only**.
+- Instagram archives on the SSD, `/volumeUSB1/usbshare/monica-collectors/staging` → `/instagram`,
+  **read-only**, passed as `--instagram-source /instagram`. The archive host publishes
+  `instagram-current`, `instagram-stories`, `instagram-highlights` and `instagram-archive`
+  there directly; nothing is read from the hard disks for Instagram.
 - Rust SSD `data/media` → `/data/media`, writable.
 - New Rust SSD `data/live-imports` → `/data/live-imports`, writable, private.
 - Rust SSD `data/.monica-rs-ssd-target` → `/data/.monica-rs-ssd-target`, read-only.
@@ -29,7 +33,7 @@ Example command inside the isolated worker:
 
 ```sh
 python3 -u scripts/nas-live-imports.py --run \
-  --source /source --chatlog /chatlog --wechat-self VERIFIED_EXISTING_SELF_ID \
+  --source /source --chatlog /chatlog --instagram-source /instagram --wechat-self VERIFIED_EXISTING_SELF_ID \
   --linkedin-self VERIFIED_LINKEDIN_OWNER_URN --linkedin-connection ARCHIVE_CONNECTION_UUID \
   --media /data/media --state /data/live-imports \
   --expected-system-id VERIFIED_POSTGRES_SYSTEM_ID \
