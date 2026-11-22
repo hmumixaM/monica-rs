@@ -185,12 +185,25 @@ class Consumer:
                 if signature(path)!=before or hashlib.sha256(raw).hexdigest()!=key:
                     raise ValueError('source JSON changed before archival')
                 atomic(archive,raw)
-            objects.append(dict(kind='existing_collector_archive',collector_kind=kind,relative_path=path.relative_to(self.args.source).as_posix(),sha256=key,archive_relative_path='raw-json/'+key+'.json'))
+            objects.append(dict(kind='existing_collector_archive',collector_kind=kind,relative_path=self.source_relative(path),sha256=key,archive_relative_path='raw-json/'+key+'.json'))
         return objects
+
+    def instagram_root(self):
+        # Instagram archives arrive either in the old collector tree or, when
+        # --instagram-source is given, in a directory of their own.
+        return getattr(self.args,'instagram_source',None) or self.args.source/'staging'
+
+    def source_relative(self, path):
+        # Recorded paths keep the layout of the old collector tree, wherever
+        # the Instagram archives are read from.
+        root = self.instagram_root()
+        if path.is_relative_to(root):
+            return 'staging/'+path.relative_to(root).as_posix()
+        return path.relative_to(self.args.source).as_posix()
 
     def deferred_media(self, path, entity, external, role, expected=None):
         path = path.resolve(strict=True)
-        if not path.is_relative_to(self.args.source) or not path.is_file():
+        if not (path.is_relative_to(self.args.source) or path.is_relative_to(self.instagram_root())) or not path.is_file():
             raise ValueError('collector media escapes explicit read-only source')
         return dict(entity_type=entity, external_id=str(external), role=role,
                     _path=str(path), _signature=signature(path), _expected=expected)
@@ -333,7 +346,7 @@ class Consumer:
     def social(self, provider):
         self.guard()
         self.active_provider=provider
-        destinations = [('linkedin', self.args.source/'raw/linkedin')] if provider == 'linkedin' else [(k,self.args.source/'staging'/('instagram-'+k)) for k in ('current','stories','highlights')]
+        destinations = [('linkedin', self.args.source/'raw/linkedin')] if provider == 'linkedin' else [(k,self.instagram_root()/('instagram-'+k)) for k in ('current','stories','highlights')]
         for kind, destination in destinations:
             if not destination.is_dir():
                 continue
@@ -517,6 +530,7 @@ def main():
     parser.add_argument('--run',action='store_true',required=True)
     parser.add_argument('--source',type=Path,required=True)
     parser.add_argument('--chatlog',type=Path)
+    parser.add_argument('--instagram-source',type=Path,help='directory holding instagram-current, instagram-stories and instagram-highlights')
     parser.add_argument('--wechat-self')
     parser.add_argument('--linkedin-self')
     parser.add_argument('--linkedin-connection',type=uuid.UUID)
@@ -536,10 +550,10 @@ def main():
         parser.error('NAS worker must run as the Rust server UID 10001')
     if args.interval < 30 or not args.since.endswith(('Z','+00:00')):
         parser.error('UTC cutoff and interval >=30 seconds required')
-    for path in (args.source,args.state,args.media,*([args.chatlog] if args.chatlog else [])):
+    for path in (args.source,args.state,args.media,*([args.chatlog] if args.chatlog else []),*([args.instagram_source] if args.instagram_source else [])):
         if not path.is_absolute() or path.resolve() != path:
             parser.error('canonical absolute roots required')
-    if args.source in args.state.parents or args.source in args.media.parents:
+    if any(root in args.state.parents or root in args.media.parents or root in (args.state,args.media) for root in (args.source,args.instagram_source) if root):
         parser.error('collector source and Rust writable roots must be separate')
     if args.state.name!='live-imports' or args.media.name!='media' or args.state.parent != args.media.parent or not (args.media.parent/'.monica-rs-ssd-target').is_file():
         parser.error('state and media must use the existing isolated Rust data root')

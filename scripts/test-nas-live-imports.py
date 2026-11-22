@@ -247,6 +247,20 @@ class LiveImportContract(unittest.TestCase):
         self.assertEqual((self.args.state/received[0]['raw_objects'][0]['archive_relative_path']).read_bytes(),raw)
         self.assertEqual(path.read_bytes(),raw)
 
+    def test_instagram_archives_can_be_read_from_their_own_directory(self):
+        # The archives live outside the old collector tree; recorded paths keep its layout.
+        self.args.instagram_source=self.args.source.parent/'instagram-staging'
+        folder=self.args.instagram_source/'instagram-current'
+        folder.mkdir(parents=True)
+        path=folder/'profile.json'
+        path.write_bytes(json.dumps(dict(node=dict(__typename='GraphUser',id='synthetic-ssd',username='ssd'))).encode())
+        os.utime(path,(self.consumer.cutoff+1,self.consumer.cutoff+1))
+        received=[]
+        with patch.object(self.consumer,'accept',side_effect=lambda batch:received.append(batch)or str(uuid.uuid4())):
+            self.consumer.social('instagram')
+        self.assertEqual(len(received),1)
+        self.assertEqual(received[0]['raw_objects'][0]['relative_path'],'staging/instagram-current/profile.json')
+
     def test_invalid_new_capture_is_archived_and_nested_ids_are_not_changed(self):
         folder=self.args.source/'raw/linkedin';folder.mkdir(parents=True)
         path=folder/'linkedin_enrichment.incoming.json'
