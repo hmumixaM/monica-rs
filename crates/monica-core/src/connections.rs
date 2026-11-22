@@ -643,6 +643,28 @@ async fn project_revision_reserved(
     let deleted = truth(value.get("deleted"), false);
     let included = truth(value.get("included"), true) && !deleted;
     let kind = string(&value, "kind", "message");
+    let wechat_directory_contact = matches!(provider, Provider::Wechat)
+        && kind == "contact"
+        && value["directory_version"].as_i64() == Some(1);
+    if matches!(provider, Provider::Wechat) && kind == "group_membership" && included {
+        let member = value["member"].as_str().context("missing roster member")?;
+        let room = value["room"].as_str().context("missing roster room")?;
+        let (profile,blocked) = sqlx::query_as::<_,(Option<Uuid>,bool)>(
+            "SELECT profile_id,blocked FROM crm.connection_identity_links WHERE connection_id=$1 AND external_id=$2 AND confirmed"
+        ).bind(cid).bind(member).fetch_optional(&mut **tx).await?.unwrap_or_default();
+        if !blocked {
+            sqlx::query("SELECT crm.wechat_directory_member($1,$2,$3,$4,$5,$6,$7)")
+                .bind(room)
+                .bind(value["room_name"].as_str())
+                .bind(member)
+                .bind(value["member_name"].as_str())
+                .bind(identity::account_id(provider, room)?)
+                .bind(identity::account_id(provider, member)?)
+                .bind(profile)
+                .execute(&mut **tx)
+                .await?;
+        }
+    }
     let mut metadata = value.clone();
     for key in ["body", "raw_body", "raw_message", "raw_revoke"] {
         metadata
@@ -687,7 +709,27 @@ async fn project_revision_reserved(
         let (blocked,official):(bool,bool)=sqlx::query_as("SELECT coalesce((SELECT blocked FROM crm.connection_identity_links WHERE connection_id=$1 AND external_id=$2),false),$3 AND crm.wechat_is_official($2)").bind(cid).bind(external).bind(kind == "contact" && matches!(provider, Provider::Wechat)).fetch_one(&mut **tx).await?;
         let directory_contact = kind == "contact" && !official;
         let mut person = resolve_person(tx, cid, p, directory_contact).await?;
-        if person.is_none() && !blocked && directory_contact && !deleted {
+        if wechat_directory_contact && directory_contact && !blocked && !deleted {
+            sqlx::query("SELECT crm.wechat_directory_contact($1,$2,$3,$4,$5,$6)")
+                .bind(external)
+                .bind(name)
+                .bind(&value["fields"])
+                .bind(value["avatar_checksum"].as_str())
+                .bind(identity::account_id(provider, external)?)
+                .bind(person)
+                .execute(&mut **tx)
+                .await?;
+            if person.is_none() {
+                person = sqlx::query_scalar("SELECT l.profile_id FROM crm.source_accounts a JOIN crm.source_account_links l ON l.account_id=a.id WHERE a.provider='wechat' AND a.external_id=$1")
+                    .bind(external).fetch_optional(&mut **tx).await?;
+            }
+        }
+        if person.is_none()
+            && !blocked
+            && directory_contact
+            && !deleted
+            && !wechat_directory_contact
+        {
             let id = Uuid::new_v5(&cid, format!("contact:{external}").as_bytes());
             sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person',$2) ON CONFLICT DO NOTHING").bind(id).bind(name.chars().take(255).collect::<String>()).execute(&mut **tx).await?;
             person = Some(id);
@@ -699,7 +741,9 @@ async fn project_revision_reserved(
                     sqlx::query("INSERT INTO crm.connection_identifiers VALUES($1,$2,$3,$4,$5,true) ON CONFLICT(connection_id,external_id,kind,value) DO UPDATE SET active=true,profile_id=excluded.profile_id").bind(cid).bind(&row.external_id).bind(profile).bind(&kind).bind(&value).execute(&mut **tx).await?;
                     changed_ids.insert((kind, value));
                 }
-                import_contact_fields(tx, provider, profile, row, &value).await?;
+                if !wechat_directory_contact {
+                    import_contact_fields(tx, provider, profile, row, &value).await?;
+                }
             }
             let role = string(p, "role", "participant");
             people.push((profile, role, own));

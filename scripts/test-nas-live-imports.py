@@ -286,6 +286,46 @@ class LiveImportContract(unittest.TestCase):
                 self.assertEqual(live.main(),1)
             self.assertEqual(live.main(),0)
 
+    def test_wechat_directory_reimport_updates_same_profile_and_silent_member(self):
+        self.db.execute("INSERT INTO crm.legacy_migrations(id,manifest_hash,source_manifest,status) VALUES(%s,'fixture','{}','database_ready')",(uuid.uuid4(),))
+        self.db.execute("INSERT INTO crm.legacy_chatlog_snapshots(id,manifest,own_id,status) VALUES(%s,'{}','synthetic-self','converted')",(uuid.uuid4(),))
+        folder=self.args.chatlog/'contact'
+        folder.mkdir()
+        with closing(sqlite3.connect(folder/'contact.db')) as source:
+            source.executescript("""
+                CREATE TABLE contact(id INTEGER PRIMARY KEY, username TEXT,local_type INTEGER,alias TEXT,
+                    remark TEXT,nick_name TEXT,description TEXT,big_head_url TEXT,head_img_md5 TEXT,extra_buffer BLOB);
+                CREATE TABLE name2id(username TEXT);
+                CREATE TABLE chatroom_member(room_id INTEGER,member_id INTEGER,UNIQUE(room_id,member_id));
+                INSERT INTO name2id VALUES('wxid_friend'),('test@chatroom'),('silent_member');
+                INSERT INTO contact VALUES(1,'wxid_friend',0,'before','Note','Friend','hello','https://wx.qlogo.cn/old','1',X'22036F6C64'),
+                    (2,'test@chatroom',2,NULL,NULL,'Test group',NULL,NULL,NULL,NULL),
+                    (3,'silent_member',3,NULL,NULL,'Silent member',NULL,NULL,NULL,NULL);
+                INSERT INTO chatroom_member VALUES(2,1);
+            """)
+            self.consumer.wechat()
+            profile=self.db.execute("SELECT l.profile_id FROM crm.source_accounts a JOIN crm.source_account_links l ON l.account_id=a.id WHERE a.external_id='wxid_friend'").fetchone()[0]
+            def history(field):
+                return [r[0] for r in self.db.execute("SELECT value FROM crm.field_revisions WHERE profile_id=%s AND field_key=%s ORDER BY revision_seq",(profile,'wechat.'+field))]
+            source.executescript("""
+                UPDATE contact SET alias='after',remark='',nick_name='New name',big_head_url='https://wx.qlogo.cn/new',
+                    head_img_md5='2',extra_buffer=X'22036E6577' WHERE id=1;
+                INSERT INTO chatroom_member VALUES(2,3);
+            """)
+            self.consumer.wechat()
+            self.consumer.wechat()
+            self.assertEqual(history('alias'),['before','after'])
+            self.assertEqual(history('remark'),['Note',None])
+            self.assertEqual(history('signature'),['old','new'])
+            self.assertEqual(history('nickname'),['Friend','New name'])
+            self.assertEqual(self.db.execute("SELECT urls,checksum FROM crm.wechat_avatar_requests q JOIN crm.source_accounts a ON a.id=q.account_id WHERE a.external_id='wxid_friend'").fetchone(),(['https://wx.qlogo.cn/new'],'2'))
+            self.assertEqual(self.db.execute("SELECT p.display_name FROM crm.current_group_memberships m JOIN crm.profiles p ON p.id=m.person_profile_id JOIN crm.profiles g ON g.id=m.group_profile_id WHERE g.display_name='Test group' AND m.left_at IS NULL ORDER BY 1").fetchall(),[('New name',),('Silent member',)])
+            self.assertEqual(self.db.execute('SELECT count(*) FROM crm.message_search').fetchone()[0],0)
+            source.execute("UPDATE contact SET alias='before' WHERE id=1")
+            source.commit()
+            self.consumer.wechat()
+            self.assertEqual(history('alias'),['before','after','before'])
+
     def test_wechat_live_wal_backup_edit_replay_and_existing_identity(self):
         self.db.execute("INSERT INTO crm.legacy_migrations(id,manifest_hash,source_manifest,status) VALUES(%s,'synthetic','{}','database_ready')",(uuid.uuid4(),))
         self.db.execute("INSERT INTO crm.legacy_chatlog_snapshots(id,manifest,own_id,status) VALUES(%s,'{}','synthetic-self','converted')",(uuid.uuid4(),))

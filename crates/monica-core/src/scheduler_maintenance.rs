@@ -100,6 +100,7 @@ pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
                 }
                 crate::media::consume_imports(&shared.background).await?;
                 crate::media::resolve_dependencies(&shared.background).await?;
+                crate::media::refresh_wechat_avatar(media).await?;
                 crate::media::refresh_profiles(&shared.background).await?;
                 crate::adapter::consume_media(&shared.background, &media.root, &shared.resources).await?;
                 media.recover_publications().await?;

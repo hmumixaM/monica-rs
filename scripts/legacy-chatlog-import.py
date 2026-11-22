@@ -176,6 +176,10 @@ class Importer:
         if external not in self.accounts:
             if self.verifying:raise ValueError("Chatlog account is missing from the Rust copy")
             aid=uuid.uuid5(NS,"chatlog-account:"+external)
+            existing=self.db.execute("SELECT a.id,l.profile_id FROM crm.source_accounts a LEFT JOIN crm.source_account_links l ON l.account_id=a.id WHERE a.provider='wechat' AND a.external_id=%s",(external,)).fetchone()
+            if existing:
+                self.accounts[external]=existing
+                return existing
             self.db.execute("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES(%s,'wechat',%s,%s,%s)",(aid,external,"group" if reader.is_group_identity(external) else "person",name or external))
             self.db.execute("INSERT INTO wechat.accounts(id,external_id,object_kind,display_name) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",(aid,external,"group" if reader.is_group_identity(external) else "person",name or external))
             self.accounts[external]=(aid,None)
@@ -472,6 +476,11 @@ class Importer:
             else:
                 for value in values:
                     if value["kind"]=="post":result=self.post(value)
+                    elif value["kind"]=="group_membership":
+                        self.db.execute("SELECT crm.wechat_directory_member(%s,%s,%s,%s,%s,%s)",
+                                        (value["room"],value["room_name"],value["member"],value["member_name"],
+                                         uuid.uuid5(NS,"wechat:account:"+value["room"]),uuid.uuid5(NS,"wechat:account:"+value["member"])))
+                        result=(0,0,1)
                     elif value["kind"]=="contact":
                         person=value["participants"][0];aid,pid=self.account(person["id"],value["display_name"])
                         co,h=self.content("chatlog_contact",value)
@@ -479,7 +488,11 @@ class Importer:
                         if self.verifying and not exists:raise ValueError("Chatlog contact version is missing")
                         if not exists:
                             self.db.execute("INSERT INTO crm.legacy_chatlog_versions(entity_type,entity_id,revision,content_object_id,saved_row,snapshot_id) SELECT 'contact',%s,coalesce(max(revision),0)+1,%s,%s,%s FROM crm.legacy_chatlog_versions WHERE entity_type='contact' AND entity_id=%s",(aid,co,Jsonb(value),self.id,aid))
-                        result=(0,1,0)
+                        if value.get("directory_version") and not value.get("deleted") and not self.verifying:
+                            self.db.execute("SELECT crm.observe_wechat_contact(%s,%s,now(),%s)",(person["id"],Jsonb(value),digest))
+                            self.db.execute("SELECT crm.wechat_directory_contact(%s,%s,%s,%s,%s)",
+                                            (person["id"],value["display_name"],Jsonb(value["fields"]),value.get("avatar_checksum"),aid))
+                        result=(0,1,0) if exists else (0,0,1)
                     else:raise ValueError("unmapped Chatlog record kind")
                     counts=[a+b for a,b in zip(counts,result)]
             if not self.verifying:
@@ -535,7 +548,7 @@ def main():
                 if json.loads(completed.read_text())!={'snapshot_id':str(importer.id)}:raise ValueError('reconcile state belongs to another snapshot')
                 shutil.rmtree(reader_state)  # Only this operation's recomputable scan state, never source or business data.
             reader_state.mkdir(mode=0o700,exist_ok=True)
-        scan=reader.Reader(reader_state,source,own,atomic,lambda path:json.loads(Path(path).read_text()),own_id=own,allow_unknown_source_sender=True,immutable_scan=verifying or reconciling)
+        scan=reader.Reader(reader_state,source,own,atomic,lambda path:json.loads(Path(path).read_text()),own_id=own,allow_unknown_source_sender=True,immutable_scan=verifying or reconciling,directory=False)
         def emit(frame):
             if shutil.disk_usage(state).free<FLOOR:raise ValueError("Mac free-space floor reached")
             importer.page(frame)

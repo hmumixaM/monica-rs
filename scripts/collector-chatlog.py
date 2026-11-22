@@ -6,6 +6,7 @@ Each bounded source page remains pending until the Rust journal receipt is ACKed
 The active exported inode is pinned across passes so source replacement cannot
 shift pagination. A later snapshot is fully reconciled, including corrections.
 """
+from __future__ import annotations
 import base64
 from contextlib import closing
 import fcntl
@@ -69,7 +70,77 @@ def is_group_identity(value):
     # exact identity, while retaining group privacy for the protocol suffix.
     return value.rstrip().endswith('@chatroom')
 
-def contact(row):
+def _read_varint(buffer: bytes, position: int) -> tuple[int, int]:
+    value = shift = 0
+    while True:
+        if position >= len(buffer) or shift > 63:
+            raise ValueError("invalid protobuf varint")
+        byte = buffer[position]
+        position += 1
+        value |= (byte & 0x7F) << shift
+        if not byte & 0x80:
+            return value, position
+        shift += 7
+
+
+def _parse_fields(buffer: bytes | None) -> dict[int, list[int | bytes]] | None:
+    fields: dict[int, list[int | bytes]] = {}
+    position = 0
+    try:
+        while buffer and position < len(buffer):
+            key, position = _read_varint(buffer, position)
+            field_number, wire_type = key >> 3, key & 0x07
+            if not field_number:
+                raise ValueError("invalid protobuf field")
+            if wire_type == 0:
+                value, position = _read_varint(buffer, position)
+            elif wire_type in (1, 5):
+                length = 8 if wire_type == 1 else 4
+                value, position = buffer[position : position + length], position + length
+            elif wire_type == 2:
+                length, position = _read_varint(buffer, position)
+                value, position = buffer[position : position + length], position + length
+            else:
+                raise ValueError("unsupported protobuf wire type")
+            if position > len(buffer):
+                raise ValueError("truncated protobuf field")
+            fields.setdefault(field_number, []).append(value)
+    except (IndexError, ValueError):
+        return None
+    return fields
+
+
+
+def contact_details(row):
+    # A missing column is unknown. An empty value in a known column is a clear.
+    fields = {key: row[key] or None for key in (
+        'alias', 'remark', 'nick_name', 'description', 'big_head_url', 'small_head_url',
+        'signature', 'country', 'province', 'city',
+    ) if key in row}
+    if 'extra_buffer' in row and isinstance(row['extra_buffer'], (bytes, type(None))):
+        parsed = _parse_fields(row['extra_buffer'])
+        if parsed is not None:
+            for number, key in [(4, 'signature'), (5, 'country'), (6, 'province'), (7, 'city')]:
+                if key in fields:
+                    continue
+                raw = next((v for v in parsed.get(number, []) if isinstance(v, bytes)), b'')
+                try:
+                    fields[key] = raw.decode('utf-8').replace('\0', '') or None
+                except UnicodeDecodeError:
+                    pass
+    return fields
+
+
+def member_record(row):
+    room, member = row['room'], row['member']
+    if not room or not member or not is_group_identity(room) or is_group_identity(member):
+        return None
+    return dict(kind='group_membership', external_id='membership:'+encode([room, member]),
+                room=room, member=member, room_name=row['room_name'] or room,
+                member_name=row['member_name'] or member, participants=[])
+
+
+def contact(row, directory=True):
     row=dict(row)
     if row.get('username') is not None and not isinstance(row['username'],str):raise ValueError('Chatlog contact identity is not UTF-8')
     external=str(row.get('username') or '').strip()
@@ -77,11 +148,14 @@ def contact(row):
     if external.endswith('@chatroom') or external.startswith('@') or external in SYSTEM:return None
     if not external.endswith('@openim') and row.get('local_type') in (2,3,5,6):return None
     name=row.get('remark') or row.get('nick_name') or row.get('alias') or external
-    fields={k:row.get(k) for k in ['alias','remark','nick_name','description','big_head_url','small_head_url'] if row.get(k)}
+    fields=contact_details(row) if directory else {k:row[k] for k in ("alias","remark","nick_name","description","big_head_url","small_head_url") if row.get(k)}
     # Keep classification evidence in the source journal. The Rust directory
     # excludes official accounts without deleting their contact/message history.
     raw_contact={k:row[k] for k in ['verify_flag','local_type','delete_flag'] if k in row}
-    return dict(external_id='contact:'+external,kind='contact',deleted=bool(row.get('delete_flag')),display_name=name,fields=fields,raw_contact=raw_contact,participants=[dict(id=external,name=name,is_self=False,role='contact')])
+    record = dict(external_id='contact:'+external,kind='contact',deleted=bool(row.get('delete_flag')),display_name=name,fields=fields,raw_contact=raw_contact,participants=[dict(id=external,name=name,is_self=False,role='contact')])
+    if directory:
+        record.update(directory_version=1, avatar_checksum=row.get('head_img_md5') or None)
+    return record
 
 def message(row,names,talker,file,table,own_id,allow_unknown_source_sender=False):
     row=dict(row);sender=names.get(row.get('real_sender_id'))
@@ -132,11 +206,12 @@ def post(row):
     return dict(parsed,external_id='post:'+external,kind='post',body=parsed['text'],occurred_at=at.isoformat(),participants=people,raw_content=raw,coordinate_format='chatlog_sns_xml')
 
 class Reader:
-    def __init__(self,root,snapshots,account,atomic_document,load_json,own_id=None,allow_unknown_source_sender=False,immutable_scan=False):
+    def __init__(self,root,snapshots,account,atomic_document,load_json,own_id=None,allow_unknown_source_sender=False,immutable_scan=False,directory=True):
         if not root.is_absolute() or not snapshots.is_absolute() or not account or len(account)>1024:raise ValueError('Explicit Chatlog snapshot root and account anchor required')
         self.root=root.resolve(strict=True);self.snapshots=snapshots.resolve(strict=True);self.account=account;self.own_id=own_id
         self.allow_unknown_source_sender=allow_unknown_source_sender
         self.immutable_scan=immutable_scan
+        self.directory=directory
         self.atomic=atomic_document;self.load=load_json
         digest=hashlib.sha256(account.encode()).hexdigest();self.folder=self.root/'raw/wechat'/digest;self.folder.mkdir(parents=True,exist_ok=True)
         if not self.folder.resolve().is_relative_to(self.root):raise ValueError('Chatlog state escapes data root')
@@ -189,7 +264,8 @@ class Reader:
         found=[*self.snapshots.glob('contact/contact.db'),*self.snapshots.glob('message/message_[0-9]*.db'),*self.snapshots.glob('message/biz_message_[0-9]*.db'),*self.snapshots.glob('sns/sns.db')]
         if len(found)>1024:raise ValueError('Chatlog exported shard budget exceeded')
         for path in sorted(found):
-            safe_file(self.snapshots,path);name=path.relative_to(self.snapshots).as_posix();current=stamp(path)
+            safe_file(self.snapshots,path);name=path.relative_to(self.snapshots).as_posix();physical_stamp=stamp(path);current=physical_stamp
+            if name=='contact/contact.db' and self.directory:current += ':directory-v1'
             row=self.db.execute('SELECT * FROM files WHERE name=?',(name,)).fetchone()
             if self.immutable_scan and row and row['stamp']!=current:raise ValueError('frozen Chatlog input changed')
             if row and (not row['done'] or row['stamp']==current):continue
@@ -204,7 +280,7 @@ class Reader:
                     try:
                         with path.open('rb') as original,temporary.open('wb') as output:
                             shutil.copyfileobj(original,output,length=1024*1024);output.flush();os.fsync(output.fileno())
-                        if stamp(path)!=current:raise ValueError('Chatlog export changed while copying')
+                        if stamp(path)!=physical_stamp:raise ValueError('Chatlog export changed while copying')
                         os.replace(temporary,pin)
                     finally:temporary.unlink(missing_ok=True)
             directory=os.open(pin.parent,os.O_RDONLY)
@@ -252,7 +328,7 @@ class Reader:
             state.update(phase='scan',row_id=0)
         if file.startswith('contact/') and 'contact' not in tables:raise ValueError('Chatlog contact schema is missing')
         if file.startswith('sns/') and 'SnsTimeLine' not in tables:raise ValueError('Chatlog Moments schema is missing')
-        allowed=[t for t in tables if (t=='contact' and file.startswith('contact/')) or (re.fullmatch('Msg_[0-9a-fA-F]{32}',t) and file.startswith('message/')) or (t=='SnsTimeLine' and file.startswith('sns/'))]
+        allowed=[t for t in tables if ((t=='contact' or (t=='chatroom_member' and self.directory)) and file.startswith('contact/')) or (re.fullmatch('Msg_[0-9a-fA-F]{32}',t) and file.startswith('message/')) or (t=='SnsTimeLine' and file.startswith('sns/'))]
         if state['phase']=='scan':
             candidates=[t for t in allowed if t>=state['table_name']]
             if not candidates:
@@ -285,8 +361,18 @@ class Reader:
                         names={r['id']:r['username'] for r in self.db.execute('SELECT id,username FROM names WHERE file=? AND id IN ('+','.join('?' for _ in ids)+')',[file,*ids])}
                 changed=[];known=[];size=0
                 rows=source.execute('SELECT rowid AS _row_id,* FROM "'+table+'" WHERE rowid IN ('+','.join('?' for _ in selected)+') ORDER BY rowid',[item['_row_id'] for item in selected]) if selected else []
+                if table=='chatroom_member' and selected:
+                    rows=source.execute("""
+                        SELECT r.rowid AS _row_id,g.username AS room,p.username AS member,
+                               coalesce(nullif(gc.remark,''),gc.nick_name) AS room_name,
+                               coalesce(nullif(pc.remark,''),pc.nick_name) AS member_name
+                        FROM chatroom_member r
+                        LEFT JOIN name2id g ON g.rowid=r.room_id LEFT JOIN name2id p ON p.rowid=r.member_id
+                        LEFT JOIN contact gc ON gc.id=r.room_id LEFT JOIN contact pc ON pc.id=r.member_id
+                        WHERE r.rowid IN ("""+','.join('?' for _ in selected)+") ORDER BY r.rowid",
+                        [item['_row_id'] for item in selected])
                 for row in rows:
-                    value=contact(row) if table=='contact' else post(row) if table=='SnsTimeLine' else message(row,names,talker,file,table,self.own_id,self.allow_unknown_source_sender)
+                    value=member_record(row) if table=='chatroom_member' else contact(row,self.directory) if table=='contact' else post(row) if table=='SnsTimeLine' else message(row,names,talker,file,table,self.own_id,self.allow_unknown_source_sender)
                     row_size=len(encode(value).encode()) if value else 0
                     if row_size>MAX_PAGE:raise ValueError('Single Chatlog record exceeds page budget')
                     if size+row_size>MAX_PAGE:break
@@ -294,7 +380,7 @@ class Reader:
                     if value is None:continue
                     digest=hashlib.sha256(encode(value).encode()).hexdigest()
                     old=self.db.execute('SELECT hash,external,context,deleted FROM known WHERE file=? AND table_name=? AND row_id=?',(file,table,row['_row_id'])).fetchone()
-                    context={k:value[k] for k in ['kind','thread_id','occurred_at','message_type','is_group'] if k in value}
+                    context={k:value[k] for k in ['kind','thread_id','occurred_at','message_type','is_group','room','member'] if k in value}
                     known.append([file,table,row['_row_id'],value['external_id'],digest,cycle,int(value.get('deleted',False)),encode(context)])
                     if old and old['external']!=value['external_id'] and not old['deleted']:
                         changed.append(dict(json.loads(old['context']),external_id=old['external'],deleted=True,participants=[]))
