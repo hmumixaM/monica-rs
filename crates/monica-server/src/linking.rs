@@ -851,7 +851,7 @@ async fn avatar_history(
     let id = linking::resolve_profile(&s.pool, id)
         .await
         .map_err(failure)?;
-    let rows:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(o)||jsonb_build_object('provider',coalesce(a.provider,'wechat'),'time_meaning','observation_only') FROM crm.avatar_observations o LEFT JOIN crm.source_accounts a ON a.id=o.account_id WHERE (EXISTS(SELECT 1 FROM crm.source_account_links l WHERE l.account_id=o.account_id AND l.profile_id=$1) OR EXISTS(SELECT 1 FROM crm.connection_evidence_people ep WHERE ep.evidence_id=o.evidence_id AND ep.role='contact' AND ep.profile_id=$1)) AND ($2::bigint IS NULL OR o.sequence<$2) ORDER BY o.sequence DESC LIMIT 40")
+    let rows:Vec<Value>=sqlx::query_scalar("SELECT (to_jsonb(o)-'profile_id')||jsonb_build_object('time_meaning','observation_only') FROM crm.profile_avatar_observations o WHERE o.profile_id=$1 AND ($2::bigint IS NULL OR o.sequence<$2) ORDER BY o.sequence DESC LIMIT 40")
         .bind(id).bind(q.before).fetch_all(&s.pool).await?;
     Ok(Json(json!(rows)))
 }

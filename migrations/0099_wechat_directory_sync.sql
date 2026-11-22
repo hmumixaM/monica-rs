@@ -22,10 +22,16 @@ $$;
 ALTER TABLE crm.source_avatar_projections ALTER COLUMN source_account_id DROP NOT NULL,
  ADD COLUMN evidence_id uuid REFERENCES crm.connection_evidence(id),
  ADD CHECK (num_nonnulls(source_account_id,evidence_id)=1);
-ALTER TABLE crm.avatar_observations ALTER COLUMN account_id DROP NOT NULL,
+ALTER TABLE crm.avatar_observations ALTER COLUMN account_id DROP NOT NULL, ALTER COLUMN media_id DROP NOT NULL,
  ADD COLUMN evidence_id uuid REFERENCES crm.connection_evidence(id),
  ADD CHECK (num_nonnulls(account_id,evidence_id)=1);
 CREATE INDEX native_avatar_history ON crm.avatar_observations(evidence_id,sequence DESC) WHERE evidence_id IS NOT NULL;
+
+CREATE VIEW crm.profile_avatar_observations AS
+ SELECT o.*,l.profile_id,a.provider FROM crm.avatar_observations o JOIN crm.source_accounts a ON a.id=o.account_id
+ JOIN crm.source_account_links l ON l.account_id=o.account_id
+ UNION ALL SELECT o.*,ep.profile_id,'wechat' FROM crm.avatar_observations o
+ JOIN crm.connection_evidence_people ep ON ep.evidence_id=o.evidence_id AND ep.role='contact';
 
 -- Resolve memberships through the same current connection evidence as native
 -- contact fields, so explicit reassignment and unlink are reflected on replay.
@@ -42,7 +48,7 @@ CREATE VIEW crm.native_wechat_memberships AS
 
 CREATE FUNCTION crm.wechat_directory_account(external text, label text, kind text, candidate uuid, authoritative boolean DEFAULT false)
 RETURNS uuid LANGUAGE plpgsql AS $$
-DECLARE a uuid; owner uuid; prior_name text;
+DECLARE a uuid; owner uuid; prior_name text; candidates uuid[];
 BEGIN
  SELECT id,display_name INTO a,prior_name FROM crm.source_accounts WHERE provider='wechat' AND external_id=external FOR UPDATE;
  IF a IS NULL THEN
@@ -62,6 +68,14 @@ BEGIN
    WHERE provider IN('wechat','wechat_group') AND external_id=external AND status IN('active','confirmed') AND profile_id IS NOT NULL
    ORDER BY (provider='wechat') DESC LIMIT 1;
 
+   IF owner IS NULL THEN
+     SELECT array_agg(DISTINCT p.id) INTO candidates FROM crm.connection_identity_links i
+       JOIN crm.source_connections c ON c.id=i.connection_id AND c.provider='wechat'
+       JOIN crm.profiles p ON p.id=i.profile_id AND p.archived_at IS NULL AND p.profile_type=kind
+       WHERE i.external_id=external AND i.confirmed AND NOT i.blocked;
+     IF cardinality(candidates)>1 THEN RETURN a; END IF;
+     owner=candidates[1];
+   END IF;
    IF owner IS NULL THEN
      INSERT INTO crm.profiles(id,profile_type,display_name)
      VALUES(gen_random_uuid(),kind,left(coalesce(nullif(label,''),external),255)) RETURNING id INTO owner;
@@ -170,7 +184,10 @@ CREATE OR REPLACE VIEW crm.current_group_memberships AS
  FROM crm.source_group_memberships s
  JOIN crm.source_account_links gl ON gl.account_id=s.group_account_id
  JOIN crm.source_account_links pl ON pl.account_id=s.person_account_id
- WHERE gl.profile_id<>pl.profile_id AND NOT EXISTS(
+ WHERE gl.profile_id<>pl.profile_id
+ AND (s.left_at IS NULL OR NOT EXISTS(SELECT 1 FROM crm.native_wechat_memberships n
+      WHERE (n.group_profile_id,n.person_profile_id)=(gl.profile_id,pl.profile_id)))
+ AND NOT EXISTS(
    SELECT 1 FROM crm.group_memberships m WHERE m.group_profile_id=gl.profile_id AND m.person_profile_id=pl.profile_id))
  SELECT * FROM existing UNION ALL SELECT n.* FROM crm.native_wechat_memberships n
  WHERE NOT EXISTS(SELECT 1 FROM existing e WHERE (e.group_profile_id,e.person_profile_id)=(n.group_profile_id,n.person_profile_id));

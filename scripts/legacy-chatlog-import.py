@@ -467,6 +467,12 @@ class Importer:
             seen=not self.verifying and bool(self.db.execute("SELECT 1 FROM crm.legacy_chatlog_pages WHERE snapshot_id=%s AND digest=%s",(self.id,digest)).fetchone())
             if seen and not self.reconciling:return
             records=[r["content"] for r in frame["batch"]["records"]]
+            # Share the native projector's stable-identifier lock order before
+            # choosing a profile for contacts and roster members in this page.
+            ids=sorted({p['id'] for value in records if value.get('directory_version') or value['kind']=='group_membership'
+                        for p in value.get('participants',[])})
+            if ids:
+                self.db.execute("SELECT pg_advisory_xact_lock(hashtextextended('identifier:source:'||external,0)) FROM unnest(%s::text[]) WITH ORDINALITY AS people(external,pos) ORDER BY pos",(ids,))
             values=[]
             for value in records:
                 if value.get("deleted") and not value.get("participants"):

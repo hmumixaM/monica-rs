@@ -179,11 +179,23 @@ async fn finish(
         sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,role,media_id,source_account_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING")
             .bind(entity).bind(account).bind(role).bind(asset.id).bind((!native).then_some(account)).execute(&mut *tx).await?;
     } else {
+        sqlx::query("INSERT INTO crm.avatar_observations(account_id,evidence_id,role,previous_media_id,media_id,observed_at,evidence_key)
+            SELECT $1,$2,'wechat_avatar',prior.media_id,NULL,$3,$4 FROM (
+                SELECT media_id FROM (
+                  SELECT media_id,role,1 source FROM crm.media_slots WHERE entity_type=$5 AND entity_id=$6
+                  UNION ALL SELECT media_id,role,2 FROM crm.media_links WHERE (entity_type=$5 AND entity_id=$6) OR (entity_type='profile' AND source_account_id=$1)
+                ) candidates WHERE role IN('wechat_avatar_small','wechat_avatar','wechat_avatar_big')
+                ORDER BY source,CASE role WHEN 'wechat_avatar_small' THEN 0 WHEN 'wechat_avatar' THEN 1 ELSE 2 END,media_id LIMIT 1
+            ) prior ON CONFLICT(evidence_key) DO NOTHING")
+            .bind((!native).then_some(account)).bind(native.then_some(account)).bind(observed)
+            .bind(format!("wechat-clear:{token}")).bind(entity).bind(account).execute(&mut *tx).await?;
         sqlx::query("DELETE FROM crm.media_slots WHERE entity_type=$1 AND entity_id=$2 AND role IN('wechat_avatar','wechat_avatar_small','wechat_avatar_big')")
             .bind(entity).bind(account).execute(&mut *tx).await?;
         sqlx::query("DELETE FROM crm.media_links WHERE ((entity_type=$1 AND entity_id=$2) OR (entity_type='profile' AND source_account_id=$3)) AND role IN('wechat_avatar','wechat_avatar_small','wechat_avatar_big')")
             .bind(entity).bind(account).bind((!native).then_some(account)).execute(&mut *tx).await?;
     }
+    sqlx::query("INSERT INTO crm.memory_profile_refresh SELECT profile_id FROM crm.connection_evidence_people WHERE $2 AND evidence_id=$1 AND role='contact' UNION SELECT profile_id FROM crm.source_account_links WHERE NOT $2 AND account_id=$1 ON CONFLICT DO NOTHING")
+        .bind(account).bind(native).execute(&mut *tx).await?;
     if native {
         let owners:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM crm.profiles WHERE id IN(SELECT profile_id FROM crm.connection_evidence_people WHERE evidence_id=$1) ORDER BY id FOR UPDATE")
             .bind(account).fetch_all(&mut *tx).await?;
@@ -287,6 +299,9 @@ mod tests {
         let cleared:Option<Uuid>=sqlx::query_scalar("SELECT p.avatar_media_id FROM crm.source_account_links l JOIN crm.profiles p ON p.id=l.profile_id WHERE l.account_id=$1")
             .bind(account).fetch_one(&pool).await.unwrap();
         assert!(cleared.is_none());
+        let prior:Uuid=sqlx::query_scalar("SELECT previous_media_id FROM crm.avatar_observations WHERE account_id=$1 AND media_id IS NULL")
+            .bind(account).fetch_one(&pool).await.unwrap();
+        assert_eq!(Some(prior), shown);
     }
     #[sqlx::test(migrations = "../../migrations")]
     async fn native_photo_and_roster_follow_connection_owner(pool: sqlx::PgPool) {
@@ -348,6 +363,29 @@ mod tests {
             assert_eq!(row, (asset.id, previous));
             previous = Some(asset.id);
         }
+        let native_owner: Uuid = sqlx::query_scalar(
+            "SELECT profile_id FROM crm.connection_evidence_people WHERE evidence_id=$1",
+        )
+        .bind(eid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let source_account = Uuid::new_v4();
+        sqlx::query("SELECT crm.wechat_directory_contact('peer','Friend','{}',NULL,$1)")
+            .bind(source_account)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            sqlx::query_scalar::<_, Uuid>(
+                "SELECT profile_id FROM crm.source_account_links WHERE account_id=$1"
+            )
+            .bind(source_account)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            native_owner
+        );
         sqlx::query("UPDATE crm.connection_identity_links SET blocked=true,profile_id=NULL WHERE connection_id=$1 AND external_id='peer'").bind(cid).execute(&pool).await.unwrap();
         // Reproject the same records, as the connection-person unlink endpoint does.
         sqlx::query("INSERT INTO crm.connection_relink(evidence_id) SELECT id FROM crm.connection_evidence WHERE connection_id=$1 ON CONFLICT DO NOTHING").bind(cid).execute(&pool).await.unwrap();

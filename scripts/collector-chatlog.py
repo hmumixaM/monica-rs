@@ -162,8 +162,10 @@ def contact_details(row, label_names):
                     nested = _parse_fields(raw)
                     if nested is None:
                         continue
-                    cover = next((v for v in nested.get(2, []) if isinstance(v,bytes)), b'')
-                    if cover.startswith((b'https://', b'http://')):
+                    cover = next((v for v in nested.get(2, []) if isinstance(v,bytes)), None)
+                    if cover == b'':
+                        fields['moments_cover_url'] = None
+                    if cover and cover.startswith((b'https://', b'http://')):
                         try:
                             fields['moments_cover_url'] = cover.decode('utf-8').replace('\0', '')
                             break
