@@ -1309,6 +1309,56 @@ async fn notebook_owner_corrections_move_memory_and_keep_message_direction(pool:
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn a_linked_account_avatar_is_used_even_when_its_bytes_were_never_checked(pool: PgPool) {
+    let person = profile(&pool, "Archived avatar person").await;
+    let account = Uuid::new_v4();
+    let [archived, checked] = [Uuid::new_v4(), Uuid::new_v4()];
+    sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'wechat','archived-avatar-peer','person','Archived peer')").bind(account).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.source_account_links(account_id,profile_id) VALUES($1,$2)")
+        .bind(account)
+        .bind(person)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,source_type,verified_at) VALUES($1,$2,'image/jpeg',1,'synthetic','archive',NULL),($3,$4,'image/jpeg',1,'synthetic','wechat',now())")
+        .bind(archived).bind("c".repeat(64)).bind(checked).bind("d".repeat(64)).execute(&pool).await.unwrap();
+    let shown = || async {
+        sqlx::query_scalar::<_, Option<Uuid>>(
+            "SELECT avatar_media_id FROM crm.profiles WHERE id=$1",
+        )
+        .bind(person)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+    };
+    monica_core::media::set_slot(
+        &pool,
+        "source_account",
+        account,
+        "wechat_avatar_small",
+        archived,
+        Some(account),
+    )
+    .await
+    .unwrap();
+    linking::refresh_account(&pool, account).await.unwrap();
+    assert_eq!(shown().await, Some(archived));
+    // A checked avatar wins over an unchecked one of a preferred size.
+    monica_core::media::set_slot(
+        &pool,
+        "source_account",
+        account,
+        "wechat_avatar_big",
+        checked,
+        Some(account),
+    )
+    .await
+    .unwrap();
+    linking::refresh_account(&pool, account).await.unwrap();
+    assert_eq!(shown().await, Some(checked));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn avatar_history_tracks_bytes_and_preserves_manual_choice(pool: PgPool) {
     let person = profile(&pool, "Avatar person").await;
     let account = Uuid::new_v4();

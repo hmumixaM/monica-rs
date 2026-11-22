@@ -100,7 +100,10 @@ async fn rebuild_avatar(tx: &mut Transaction<'_, Postgres>, profile: Uuid) -> Re
     if manual.is_some() || (current != previous && !proven_source) {
         return Ok(());
     }
-    let selected:Option<(Uuid,Uuid)>=sqlx::query_as("SELECT m.media_id,l.account_id FROM crm.source_account_links l JOIN crm.media_slots m ON m.entity_type='source_account' AND m.entity_id=l.account_id JOIN crm.media_assets a ON a.id=m.media_id WHERE l.profile_id=$1 AND a.verified_at IS NOT NULL AND m.role IN ('wechat_avatar_small','wechat_avatar','wechat_avatar_big','instagram_avatar','linkedin_avatar') ORDER BY CASE m.role WHEN 'wechat_avatar_small' THEN 0 WHEN 'wechat_avatar' THEN 1 WHEN 'wechat_avatar_big' THEN 2 WHEN 'instagram_avatar' THEN 3 ELSE 4 END,l.account_id LIMIT 1").bind(profile).fetch_optional(&mut **tx).await?;
+    // Any avatar a linked account has is better than initials. Archived
+    // avatars were copied without the import-time byte check, so they count
+    // too; a checked one is preferred when the person has both.
+    let selected:Option<(Uuid,Uuid)>=sqlx::query_as("SELECT m.media_id,l.account_id FROM crm.source_account_links l JOIN crm.media_slots m ON m.entity_type='source_account' AND m.entity_id=l.account_id JOIN crm.media_assets a ON a.id=m.media_id WHERE l.profile_id=$1 AND m.role IN ('wechat_avatar_small','wechat_avatar','wechat_avatar_big','instagram_avatar','linkedin_avatar') ORDER BY (a.verified_at IS NULL),CASE m.role WHEN 'wechat_avatar_small' THEN 0 WHEN 'wechat_avatar' THEN 1 WHEN 'wechat_avatar_big' THEN 2 WHEN 'instagram_avatar' THEN 3 ELSE 4 END,l.account_id LIMIT 1").bind(profile).fetch_optional(&mut **tx).await?;
     if selected.is_none() && current.is_some() {
         let still_owned:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.source_account_links l JOIN crm.media_links m ON m.entity_type='source_account' AND m.entity_id=l.account_id WHERE l.profile_id=$1 AND m.media_id=$2)")
             .bind(profile).bind(current).fetch_one(&mut **tx).await?;
