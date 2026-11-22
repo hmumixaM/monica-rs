@@ -286,8 +286,7 @@ async fn call<P: Provider>(
     let mut part = lease.clone();
     part.kind = kind.into();
     part.input = input;
-    let request =
-        tokio::time::timeout(std::time::Duration::from_secs(45), provider.complete(&part));
+    let request = tokio::time::timeout(super::TEXT_CALL_DEADLINE, provider.complete(&part));
     tokio::pin!(request);
     let output = loop {
         tokio::select! {result=&mut request=>break result.context("Memory provider deadline")??,_=tokio::time::sleep(std::time::Duration::from_secs(20))=>ensure!(super::heartbeat(pool,lease).await?,"Memory lease lost")}

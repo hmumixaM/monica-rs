@@ -306,6 +306,8 @@ pub struct Lease {
 }
 /// A job is tried this many times: a lost lease and a failed model call both count.
 const MAX_ATTEMPTS: i32 = 3;
+/// How long one text model call may take, including its chunk and reduce calls.
+pub(crate) const TEXT_CALL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(120);
 /// Newest posts first, then analysis, then the image backlog. Each queue has a
 /// matching partial index, so a claim reads one candidate instead of sorting
 /// every queued job.
@@ -790,7 +792,17 @@ pub async fn run_with_media<P: provider::Provider>(
         let mut tx = pool.begin().await?;
         memory::profile_facts(&mut tx, lease.subject.parse()?).await?;
         tx.commit().await?;
-        match memory::refresh(pool, provider, &lease).await? {
+        let refreshed = match memory::refresh(pool, provider, &lease).await {
+            Ok(refreshed) => refreshed,
+            Err(error) => {
+                // Settle the job here: an error left to the lane would keep it
+                // running until its lease ran out, with the cause unrecorded.
+                tracing::warn!(kind = %lease.kind, subject = %lease.subject, error = format!("{error:#}"), "profile memory processing failed");
+                retry_or_fail(pool, &lease, "profile memory processing failed").await?;
+                return Ok(true);
+            }
+        };
+        match refreshed {
             memory::Refresh::NoInputs => {}
             memory::Refresh::Pending => {
                 sqlx::query("UPDATE crm.ai_jobs SET status='queued',token=NULL,lease_until=NULL,attempts=greatest(0,attempts-1) WHERE id=$1 AND token=$2 AND lease_until>clock_timestamp()").bind(lease.id).bind(lease.token).execute(pool).await?;
@@ -829,13 +841,11 @@ pub async fn run_with_media<P: provider::Provider>(
         }
     }
     let call = tokio::time::timeout(
-        std::time::Duration::from_secs(
-            if matches!(lease.kind.as_str(), "ai.image_ocr" | "ai.post_media") {
-                180
-            } else {
-                120
-            },
-        ),
+        if matches!(lease.kind.as_str(), "ai.image_ocr" | "ai.post_media") {
+            std::time::Duration::from_secs(180)
+        } else {
+            TEXT_CALL_DEADLINE
+        },
         provider.complete(&submitted),
     );
     tokio::pin!(call);

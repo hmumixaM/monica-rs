@@ -300,10 +300,7 @@ async fn part<P: Provider>(
     submitted.kind = "ai.week_chunk".into();
     submitted.model = model.into();
     submitted.input = input.clone();
-    let request = tokio::time::timeout(
-        std::time::Duration::from_secs(45),
-        provider.complete(&submitted),
-    );
+    let request = tokio::time::timeout(super::TEXT_CALL_DEADLINE, provider.complete(&submitted));
     tokio::pin!(request);
     let output = loop {
         tokio::select! {

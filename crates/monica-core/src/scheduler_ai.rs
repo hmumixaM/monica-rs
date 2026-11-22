@@ -30,10 +30,10 @@ pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
         drop(gate);
         // The provider boundary owns background+global permits, exactly once. Pause
         // also cancels a task waiting for permits or an in-flight network response.
-        // Model work owns its 45/180-second call deadline and lease heartbeat;
+        // Model work owns its 120/180-second call deadline and lease heartbeat;
         // the generic object-task deadline must not cancel a valid vision call.
         tokio::select! {
-         result=crate::ai::run_configured(&shared.background,&media.root,&shared.resources,shared.credentials.as_ref())=>{if result.is_err(){shared.failed.fetch_add(1,Ordering::Relaxed);}},
+         result=crate::ai::run_configured(&shared.background,&media.root,&shared.resources,shared.credentials.as_ref())=>{if let Err(error)=result{tracing::warn!(error=format!("{error:#}"),"model turn failed");shared.failed.fetch_add(1,Ordering::Relaxed);}},
          result=mode.changed()=>{result?;}
         }
         drop(active);
