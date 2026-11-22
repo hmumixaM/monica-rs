@@ -5,6 +5,8 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
 from .browser import assert_access
 from .models import MutualConnection, MutualPreview
 
@@ -187,6 +189,7 @@ async def scrape_mutual_connections(
 
     connections: list[MutualConnection] = []
     seen_urls: set[str] = set()
+    recognized = False
     for page_number in range(1, max_pages + 1):
         await page.goto(
             _search_page_url(preview.browse_url, page_number),
@@ -196,32 +199,27 @@ async def scrape_mutual_connections(
         await assert_access(page)
         await page.wait_for_selector("main", timeout=10_000)
         await assert_access(page, expected_selector="main")
+        try:
+            await page.wait_for_selector('main a[href*="/in/"]', timeout=15_000)
+        except PlaywrightTimeoutError:
+            pass  # an empty result list has no profile link; the page says so below
         payload = await page.evaluate(
             """() => {
-              const cards = [...document.querySelectorAll(
-                'main [data-view-name*="search-entity-result"], '
-                + 'main .reusable-search__result-container, main li'
-              )];
+              // Each result is a list item. Its first link with a plain name is the
+              // person; the links that follow name the people they have in common.
               const rows = [];
-              for (const card of cards) {
-                const link = card.querySelector('a[href*="/in/"]');
-                if (!link) continue;
-                const nameNode = card.querySelector(
-                  '[aria-hidden="true"], .entity-result__title-text'
-                );
-                rows.push({
-                  display_name: (
-                    nameNode?.innerText || link.innerText
-                    || link.getAttribute('aria-label') || ''
-                  ).trim(),
-                  profile_url: link.href
+              for (const card of document.querySelectorAll('main [role="listitem"]')) {
+                const named = [...card.querySelectorAll('a[href*="/in/"]')].find(a => {
+                  const text = (a.innerText || '').trim();
+                  return text && !text.includes('\\n') && !/mutual|共同/i.test(text);
                 });
+                if (named) rows.push({display_name: named.innerText.trim(), profile_url: named.href});
               }
-              const next = document.querySelector(
-                'button[aria-label*="Next"], button[aria-label*="下一页"]'
-              );
+              const next = [...document.querySelectorAll('main button')].find(button =>
+                /^(next|下一页)$/i.test((button.getAttribute('aria-label') || button.innerText || '').trim()));
               return {
                 rows,
+                empty: /no results found|没有找到结果|未找到结果/i.test(document.querySelector('main')?.innerText || ''),
                 has_next: Boolean(
                   next && !next.disabled
                   && next.getAttribute('aria-disabled') !== 'true'
@@ -229,6 +227,7 @@ async def scrape_mutual_connections(
               };
             }"""
         )
+        recognized = recognized or bool(payload.get("rows")) or bool(payload.get("empty"))
         for connection in parse_mutual_search_results(payload.get("rows", [])):
             if connection.profile_url in seen_urls:
                 continue
@@ -247,11 +246,14 @@ async def scrape_mutual_connections(
         ):
             break
 
+    # A page that showed neither results nor "no results" was not understood:
+    # report nothing rather than "no mutual connections".
+    if not recognized:
+        return preview
     # Without a count from the profile page, a result list that ended is the whole list.
-    count = preview.count if preview.count is not None else len(connections)
-    is_complete = len(connections) >= count and (
-        preview.count is not None or not payload.get("has_next", False)
-    )
+    ended = not payload.get("has_next", False) and len(connections) < max_connections
+    count = preview.count if preview.count is not None else (len(connections) if ended else None)
+    is_complete = ended or (count is not None and len(connections) >= count)
     return preview.model_copy(
         update={"count": count, "connections": connections, "is_complete": is_complete}
     )
