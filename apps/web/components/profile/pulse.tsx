@@ -44,7 +44,7 @@ export function RelationshipPulse({ profileId, overview, dates, groupCount }: {
           <p className={styles.legend}>
             <span data-series="sent">我发的</span><span data-series="received">对方发的</span><span data-series="peak">高峰月</span>
             {months.data.months.some((month) => month.calls) && <span data-series="call">通话</span>}
-            {months.data.months.some((month) => month.interactions) && <span data-series="interaction" title="对方在朋友圈的点赞和评论">朋友圈互动</span>}
+            {months.data.months.some((month) => month.interactions) && <span data-series="interaction" title="对方在朋友圈和 Instagram 的点赞和评论">动态互动</span>}
           </p>
         </>}
     </div>}

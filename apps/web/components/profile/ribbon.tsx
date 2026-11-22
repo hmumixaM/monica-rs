@@ -105,7 +105,7 @@ export function Ribbon({ profileId, data }: { profileId: string; data: RibbonDat
       <span><i data-series="sent" />我 {shown.sent.toLocaleString("zh-CN")}</span>
       <span><i data-series="received" />对方 {shown.received.toLocaleString("zh-CN")}</span>
       {(shown.calls ?? 0) > 0 && <span>通话 {shown.calls}</span>}
-      {(shown.interactions ?? 0) > 0 && <span>朋友圈互动 {shown.interactions}</span>}
+      {(shown.interactions ?? 0) > 0 && <span>动态互动 {shown.interactions}</span>}
       {markers.filter((marker) => marker.month === shown.month).map((marker) => <span key={marker.label}>{marker.label}</span>)}
     </div>}
   </figure>;

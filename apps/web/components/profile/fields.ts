@@ -106,7 +106,7 @@ export function groupRelationships(rows: Relationship[]): [string, Relationship[
 }
 
 const RELATIONSHIP_LABELS: Record<string, string> = {
-  wechat_contact_card_friend: "微信名片推荐", moments_interaction: "朋友圈互动", friend: "朋友", colleague: "同事", family: "家人", member: "群成员", owner: "群主",
+  wechat_contact_card_friend: "微信名片推荐", linkedin_connection: "LinkedIn 好友", moments_interaction: "朋友圈互动", friend: "朋友", colleague: "同事", family: "家人", member: "群成员", owner: "群主",
 };
 export const relationshipLabel = (type: string) => RELATIONSHIP_LABELS[type] || type;
 

@@ -84,6 +84,16 @@ class BridgeTests(unittest.TestCase):
         snapshot=self.snapshot('raw/linkedin');document=dict(profiles=[],conversations=[dict(conversation_urn='urn:li:conversation:synthetic',participants=[dict(id='synthetic-peer')],messages=[dict(message_urn='urn:li:message:synthetic',sender_urn='urn:li:member:synthetic',delivered_at='2026-01-01T01:02:03+00:00',body='Synthetic message',incoming=True)])]);(snapshot/'linkedin_enrichment.incoming.json').write_text(json.dumps(document))
         with self.assertRaises(ValueError):self.frames('linkedin')
         rows=list(bridge.linkedin_records(snapshot,'synthetic-own-account'));self.assertEqual(rows[0][0],'messages');self.assertEqual(rows[0][1]['content']['account'],'synthetic-own-account');self.assertEqual(rows[0][1]['content']['sender'],'urn:li:member:synthetic');self.assertEqual(rows[0][1]['content']['sent_at_ms'],1767229323000)
+    def test_linkedin_profiles_carry_mutual_connections_and_messages_name_participants(self):
+        snapshot=self.snapshot('raw/linkedin');mutuals=dict(count=1,is_complete=True,connections=[dict(display_name='Synthetic Peer',profile_url='https://www.linkedin.com/in/synthetic-peer')])
+        document=dict(profiles=[dict(provider_user_id='synthetic-contact',profile_url='https://www.linkedin.com/in/synthetic-contact',profile=dict(name='Synthetic Contact'),mutuals=mutuals),
+                                dict(provider_user_id='synthetic-other',profile=dict(name='Synthetic Other'),mutuals=dict(count=4,connections=[]))],
+                      conversations=[dict(conversation_urn='urn:li:conversation:synthetic',participants=['urn:li:member:peer'],participant_names={'urn:li:member:peer':'Synthetic Peer'},participant_urls={'urn:li:member:peer':'https://www.linkedin.com/in/synthetic-peer'},
+                                          messages=[dict(message_urn='urn:li:message:synthetic',sender_urn='urn:li:member:peer',delivered_at='2026-01-01T01:02:03+00:00',body='Synthetic message',incoming=True)])])
+        (snapshot/'linkedin_enrichment.incoming.json').write_text(json.dumps(document))
+        rows=[row['content'] for _,row in bridge.linkedin_records(snapshot,'synthetic-own-account')]
+        self.assertEqual(rows[0]['mutuals'],mutuals);self.assertNotIn('mutuals',rows[1])
+        self.assertEqual(rows[2]['participants'],[dict(id='urn:li:member:peer',name='Synthetic Peer',profile_url='https://www.linkedin.com/in/synthetic-peer')])
     def test_spool_pages_are_fsynced_hashed_and_media_paths_are_relative(self):
         media=self.root/'synthetic.png';media.write_bytes(PNG);writer=bridge.SpoolWriter(self.root/'spool',self.root)
         writer.emit(dict(type='media',path=str(media),sha256=bridge.hashlib.sha256(PNG).hexdigest(),byte_length=len(PNG)))

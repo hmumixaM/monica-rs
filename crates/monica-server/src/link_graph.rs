@@ -88,17 +88,19 @@ async fn projection(pool: &PgPool, limit: i64, focus: Option<Uuid>) -> Result<Va
     let mut pairs: BTreeMap<(Uuid, Uuid), Pair> = BTreeMap::new();
     let mut ids = BTreeSet::new();
     let rows=sqlx::query(r#"WITH resolved AS (
- SELECT coalesce(s.author_profile_id,al.profile_id,ai.profile_id) a,p.profile_id owner,s.interaction_type,
+ SELECT coalesce(s.author_profile_id,al.profile_id,ai.profile_id) a,p.profile_id owner,s.provider,s.interaction_type,
  coalesce(s.content->>'target_external_id',s.metadata->>'target_external_id') target,
  coalesce(s.content->>'ref_author_external_id',s.metadata->>'ref_author_external_id') reference,s.occurred_at
  FROM crm.social_interactions s JOIN crm.timeline_events p ON p.id=s.post_id
  LEFT JOIN crm.source_account_links al ON al.account_id=s.author_account_id
  LEFT JOIN crm.identities ai ON ai.provider='wechat' AND ai.external_id=s.author_external_id AND ai.status NOT IN ('invalid','merged')
- WHERE s.provider='wechat' AND NOT s.is_deleted
+ WHERE s.provider IN ('wechat','instagram') AND NOT s.is_deleted
  ), facts AS (
- SELECT r.a,CASE WHEN interaction_type='mention' THEN i.profile_id ELSE owner END b,
+ SELECT r.a,CASE WHEN interaction_type='mention' THEN coalesce(i.profile_id,tl.profile_id) ELSE owner END b,
  CASE WHEN interaction_type='reply' THEN 'comment' ELSE interaction_type END kind,occurred_at
- FROM resolved r LEFT JOIN crm.identities i ON i.provider='wechat' AND i.external_id=r.target AND i.status NOT IN ('invalid','merged')
+ FROM resolved r LEFT JOIN crm.identities i ON r.provider='wechat' AND i.provider='wechat' AND i.external_id=r.target AND i.status NOT IN ('invalid','merged')
+ LEFT JOIN crm.source_accounts ta ON r.provider<>'wechat' AND ta.provider=r.provider AND ta.external_id=r.target
+ LEFT JOIN crm.source_account_links tl ON tl.account_id=ta.id
  UNION ALL SELECT r.a,i.profile_id,'reply',r.occurred_at FROM resolved r JOIN crm.identities i ON i.provider='wechat' AND i.external_id=r.reference AND i.status NOT IN ('invalid','merged') WHERE r.interaction_type='reply')
  SELECT f.a,f.b,f.kind,count(*) n,max(f.occurred_at)::date::text last FROM facts f
  JOIN crm.directory_profiles a ON a.id=f.a AND a.archived_at IS NULL AND a.profile_type='person'
@@ -155,7 +157,7 @@ async fn projection(pool: &PgPool, limit: i64, focus: Option<Uuid>) -> Result<Va
         e.direct += 1;
         e.relationships.push(name);
     }
-    let audience:Vec<(Uuid,Uuid)>=sqlx::query_as("SELECT DISTINCT p.profile_id,coalesce(s.author_profile_id,l.profile_id,i.profile_id) FROM crm.social_interactions s JOIN crm.timeline_events p ON p.id=s.post_id LEFT JOIN crm.source_account_links l ON l.account_id=s.author_account_id LEFT JOIN crm.identities i ON i.provider='wechat' AND i.external_id=s.author_external_id AND i.status NOT IN ('invalid','merged') JOIN crm.directory_profiles author ON author.id=coalesce(s.author_profile_id,l.profile_id,i.profile_id) AND author.archived_at IS NULL AND author.profile_type='person' WHERE s.provider='wechat' AND NOT s.is_deleted AND p.profile_id=ANY($1) AND p.profile_id<>author.id").bind(ids.iter().copied().collect::<Vec<_>>()).fetch_all(pool).await?;
+    let audience:Vec<(Uuid,Uuid)>=sqlx::query_as("SELECT DISTINCT p.profile_id,coalesce(s.author_profile_id,l.profile_id,i.profile_id) FROM crm.social_interactions s JOIN crm.timeline_events p ON p.id=s.post_id LEFT JOIN crm.source_account_links l ON l.account_id=s.author_account_id LEFT JOIN crm.identities i ON i.provider='wechat' AND i.external_id=s.author_external_id AND i.status NOT IN ('invalid','merged') JOIN crm.directory_profiles author ON author.id=coalesce(s.author_profile_id,l.profile_id,i.profile_id) AND author.archived_at IS NULL AND author.profile_type='person' WHERE s.provider IN ('wechat','instagram') AND NOT s.is_deleted AND p.profile_id=ANY($1) AND p.profile_id<>author.id").bind(ids.iter().copied().collect::<Vec<_>>()).fetch_all(pool).await?;
     let mut audiences: BTreeMap<Uuid, BTreeSet<Uuid>> = BTreeMap::new();
     for (owner, author) in audience {
         audiences.entry(owner).or_default().insert(author);

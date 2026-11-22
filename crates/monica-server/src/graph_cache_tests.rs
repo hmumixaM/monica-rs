@@ -237,3 +237,157 @@ async fn concurrent_classification_invalidates_cached_graph_for_previously_invis
         "the committed classification must hide the official-only owner"
     );
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn instagram_posts_and_linkedin_mutuals_join_the_relationship_graph(pool: sqlx::PgPool) {
+    let (state, actor, alice, _root) = super::tests::fixture(&pool).await;
+    sqlx::query("INSERT INTO crm.sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 hour')").bind(Uuid::new_v4()).bind(actor).bind(monica_core::identity::bytes_hash(b"graph-cache-session")).execute(&pool).await.unwrap();
+    let [bob, carol] = [Uuid::new_v4(), Uuid::new_v4()];
+    sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Bob'),($2,'person','Carol')").bind(bob).bind(carol).execute(&pool).await.unwrap();
+    // Each person has an Instagram and a LinkedIn account; Carol joins LinkedIn later.
+    let account = |provider: &'static str, external: &'static str, person: Uuid| {
+        let pool = pool.clone();
+        async move {
+            let id = Uuid::new_v4();
+            sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name,username) VALUES($1,$2,$3,'person',$3,$4)").bind(id).bind(provider).bind(external).bind(external.trim_start_matches("ig-")).execute(&pool).await.unwrap();
+            sqlx::query(
+                "INSERT INTO crm.source_account_links(account_id,profile_id) VALUES($1,$2)",
+            )
+            .bind(id)
+            .bind(person)
+            .execute(&pool)
+            .await
+            .unwrap();
+            id
+        }
+    };
+    let alice_ig = account("instagram", "1001", alice).await;
+    let bob_ig = account("instagram", "1002", bob).await;
+    account("instagram", "1003", carol).await;
+    sqlx::query("UPDATE crm.source_accounts SET username=v.name FROM (VALUES('1001','alice'),('1002','bob'),('1003','carol')) v(id,name) WHERE provider='instagram' AND external_id=v.id").execute(&pool).await.unwrap();
+    let [post, story] = [Uuid::new_v4(), Uuid::new_v4()];
+    // Bob liked Alice's post; Carol is tagged in it; the caption names both.
+    sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,source_account_id,profile_id,event_type,external_id,occurred_at,content,content_hash,version) VALUES($1,'instagram',$1,$2,$3,'post','synthetic-post',now(),$4,'synthetic',1)")
+        .bind(post).bind(alice_ig).bind(alice)
+        .bind(json!({"people_preview":{"likers":[{"external_id":"1002","username":"bob"},{"external_id":"1001","username":"alice"}]},
+            "tagged_users":[{"external_id":"1003","username":"carol"}],"caption_mentions":[{"username":"carol"},{"username":"Bob"},{"username":"stranger"}]}))
+        .execute(&pool).await.unwrap();
+    // Bob's story mentions Carol.
+    sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,source_account_id,profile_id,event_type,external_id,occurred_at,content,content_hash,version) VALUES($1,'instagram',$1,$2,$3,'story','synthetic-story',now(),$4,'synthetic',1)")
+        .bind(story).bind(bob_ig).bind(bob)
+        .bind(json!({"archive_manifest":{"raw_metadata":{"iphone_struct":{"reel_mentions":[{"user":{"pk":1003,"username":"carol"}}]}}}}))
+        .execute(&pool).await.unwrap();
+    let recorded = || async {
+        sqlx::query_scalar::<_, Vec<String>>("SELECT coalesce(array_agg(interaction_type||' '||external_id||' '||coalesce(metadata->>'target_external_id','') ORDER BY external_id),'{}') FROM crm.social_interactions WHERE provider='instagram' AND NOT is_deleted")
+            .fetch_one(&pool).await.unwrap()
+    };
+    assert_eq!(
+        recorded().await,
+        [
+            "mention caption:bob 1002",
+            "mention caption:stranger username:stranger",
+            "like like:1002 ",
+            "mention mention:1003 1003",
+            "mention tag:1003 1003"
+        ]
+    );
+    let liker: Option<Uuid> = sqlx::query_scalar(
+        "SELECT author_profile_id FROM crm.social_interactions WHERE external_id='like:1002'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(liker, Some(bob));
+    // The tag is removed: the caption is then the only evidence for Carol.
+    sqlx::query(
+        "UPDATE crm.timeline_events SET content=content-'tagged_users',version=2 WHERE id=$1",
+    )
+    .bind(post)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(
+        recorded()
+            .await
+            .contains(&"mention caption:carol 1003".to_owned())
+    );
+    assert!(
+        !recorded()
+            .await
+            .contains(&"mention tag:1003 1003".to_owned())
+    );
+
+    let alice_li = account("linkedin", "alice-li", alice).await;
+    account("linkedin", "bob-li", bob).await;
+    let mutuals = |value: Value| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query("INSERT INTO crm.source_fields(account_id,field_key,value,content_hash,object_id,source_version) VALUES($1,'linkedin.mutuals',$2,'synthetic',$3,1) ON CONFLICT(account_id,field_key) DO UPDATE SET value=excluded.value").bind(alice_li).bind(value).bind(Uuid::new_v4()).execute(&pool).await.unwrap();
+        }
+    };
+    let connected = || async {
+        sqlx::query_scalar::<_, Vec<String>>("SELECT coalesce(array_agg(b.display_name ORDER BY b.display_name),'{}') FROM crm.presented_relationship_edges e JOIN crm.profiles b ON b.id=CASE WHEN e.from_profile_id=$1 THEN e.to_profile_id ELSE e.from_profile_id END WHERE e.relationship_type='linkedin_connection' AND $1 IN (e.from_profile_id,e.to_profile_id)")
+            .bind(alice).fetch_one(&pool).await.unwrap()
+    };
+    mutuals(json!({"count":2,"is_complete":false,"connections":[
+        {"display_name":"Bob","profile_url":"https://www.linkedin.com/in/Bob-Li/"},
+        {"display_name":"Carol","profile_url":"https://www.linkedin.com/in/carol-li?miniProfileUrn=x"}]})).await;
+    assert_eq!(connected().await, ["Bob"]);
+    account("linkedin", "carol-li", carol).await;
+    assert_eq!(
+        connected().await,
+        ["Bob", "Carol"],
+        "a later account is found on earlier lists"
+    );
+
+    let app = crate::auth::routes(state);
+    let (_, value) = graph(&app, "/api/v1/relationships/graph?format=monica").await;
+    let name = |index: &Value| {
+        value["nodes"][index.as_u64().unwrap() as usize]["name"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let mut pairs = value["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|edge| {
+            let mut ends = [name(&edge["a"]), name(&edge["b"])];
+            ends.sort();
+            (
+                ends.join("-"),
+                edge["direct"].as_i64().unwrap(),
+                edge["relationship_types"].clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    pairs.sort_by(|a, b| a.0.cmp(&b.0));
+    let alice_name: String =
+        sqlx::query_scalar("SELECT display_name FROM crm.profiles WHERE id=$1")
+            .bind(alice)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let pair = |other: &str| {
+        let mut ends = [alice_name.clone(), other.to_owned()];
+        ends.sort();
+        ends.join("-")
+    };
+    let found = |key: String| {
+        pairs
+            .iter()
+            .find(|(k, _, _)| *k == key)
+            .cloned()
+            .unwrap_or_else(|| panic!("no edge {key} in {pairs:?}"))
+    };
+    // Alice-Bob: his like, her caption mention and the LinkedIn connection.
+    assert_eq!(found(pair("Bob")).1, 3);
+    assert_eq!(found(pair("Bob")).2, json!(["linkedin_connection"]));
+    assert_eq!(found(pair("Carol")).1, 2);
+    assert_eq!(found("Bob-Carol".into()).1, 1, "the story mention");
+
+    // A list captured in full retires the connection it no longer contains.
+    mutuals(json!({"count":1,"is_complete":true,"connections":[{"display_name":"Carol","profile_url":"https://www.linkedin.com/in/carol-li"}]})).await;
+    assert_eq!(connected().await, ["Carol"]);
+}

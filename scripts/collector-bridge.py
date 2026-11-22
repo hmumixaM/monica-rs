@@ -159,6 +159,8 @@ def linkedin_records(snapshot,owner_account=None):
         profile=item.get('profile') or {}
         content=dict(profile,profile_url=item.get('profile_url'),username=account,
                      display_name=profile.get('name') or profile.get('full_name') or account)
+        # Who else in the address book this person is connected to.
+        if (item.get('mutuals') or {}).get('connections'):content['mutuals']=item['mutuals']
         profile_slots=[('linkedin_avatar',profile.get('avatar_url')),('linkedin_cover',profile.get('background_url'))]
         yield 'profiles',record(account,account,'profile',content,item.get('captured_at'),manifests(profile_slots,'source_account',account))
         for post in item.get('posts',[]):

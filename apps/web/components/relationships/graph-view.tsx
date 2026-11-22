@@ -85,7 +85,7 @@ export function GraphView({ focus }: { focus?: string | null }) {
     </div>
     <div className={styles.body}>
       <div className={styles.canvasWrap}>
-        <canvas className={styles.canvas} data-graph-canvas tabIndex={0} role="img" aria-label="朋友圈互动关系图，可搜索节点，方向键平移，回车打开选中的人" />
+        <canvas className={styles.canvas} data-graph-canvas tabIndex={0} role="img" aria-label="动态互动关系图，可搜索节点，方向键平移，回车打开选中的人" />
       </div>
       <aside className={styles.details} data-graph-details aria-live="polite">加载后，将指针移到节点上查看互动明细。</aside>
     </div>

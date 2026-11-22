@@ -12,7 +12,7 @@ import styles from "./relationships.module.css";
 type View = "orbit" | "graph" | "map";
 const VIEWS: { value: View; label: string; description: string }[] = [
   { value: "orbit", label: "亲疏圈", description: "按最近的私聊和通话，把人排进 5 / 15 / 50 / 150 四层圈子。" },
-  { value: "graph", label: "关系图", description: "朋友圈里的点赞、评论和提醒，以及共同的群。" },
+  { value: "graph", label: "关系图", description: "朋友圈和 Instagram 里的点赞、评论和提到，LinkedIn 好友，以及共同的群。" },
   { value: "map", label: "足迹地图", description: "资料城市和带地点的动态，可以按月回放。" },
 ];
 
