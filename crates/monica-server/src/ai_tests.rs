@@ -53,6 +53,19 @@ async fn home_highlights_read_latest_saved_week_and_respect_visibility(pool: sql
             .all(|p| p["summary"] == "Saved summary" && p.get("sources").is_none())
     );
     assert!(saved.get("weeks").is_none());
+    // Ten people have a note and eight are shown: visits draw different people.
+    let mut seen = std::collections::BTreeSet::new();
+    for _ in 0..6 {
+        let draw = response(&app, "GET", route, Value::Null, StatusCode::OK).await;
+        seen.extend(
+            draw["people"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|p| p["profile_id"].as_str().unwrap().to_owned()),
+        );
+    }
+    assert!(seen.len() > 8, "every visit showed the same eight people");
     sqlx::query("UPDATE crm.ai_settings SET include_messages=true")
         .execute(&pool)
         .await

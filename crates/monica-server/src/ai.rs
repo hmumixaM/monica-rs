@@ -579,8 +579,8 @@ async fn highlights(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Valu
     let requested = ai::previous_week_for(&s.pool).await.map_err(service)?;
     // Home needs eight saved summaries, not the full weekly index, source
     // evidence, population count and pagination contract of the archive page.
-    // It shows the people with the most to tell: weeks backed by more
-    // evidence first, counting private conversation twice.
+    // Each visit draws a different eight. A week backed by more evidence is
+    // more likely to be drawn, counting private conversation twice.
     let result: Value = sqlx::query_scalar(r#"WITH chosen AS MATERIALIZED(
  SELECT w.week_start FROM crm.person_weekly_updates w JOIN crm.profiles p ON p.id=w.profile_id
  WHERE w.week_start<=$1 AND p.archived_at IS NULL AND p.profile_type='person'
@@ -591,8 +591,8 @@ async fn highlights(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Valu
  WHERE p.archived_at IS NULL AND p.profile_type='person'
  AND btrim(coalesce(w.output->>'summary',''))<>''
  AND EXISTS(SELECT 1 FROM crm.ai_visible_outputs o WHERE o.kind='ai.person_week' AND o.subject=w.profile_id::text||':'||w.week_start::text AND o.input_hash=w.input_hash)
- ORDER BY (SELECT count(*)+count(*) FILTER(WHERE source->>'kind'='direct') FROM jsonb_array_elements(CASE WHEN jsonb_typeof(w.output->'sources')='array' THEN w.output->'sources' ELSE '[]'::jsonb END) source) DESC,p.id LIMIT 8)
- SELECT jsonb_build_object('enabled',true,'week_start',(SELECT week_start FROM chosen),'people',coalesce((SELECT jsonb_agg(jsonb_build_object('profile_id',id,'name',display_name,'avatar_media_id',avatar_media_id,'week_start',week_start,'summary',summary) ORDER BY id) FROM people),'[]'::jsonb))"#)
+ ORDER BY power(random(),1.0/(1+(SELECT count(*)+count(*) FILTER(WHERE source->>'kind'='direct') FROM jsonb_array_elements(CASE WHEN jsonb_typeof(w.output->'sources')='array' THEN w.output->'sources' ELSE '[]'::jsonb END) source))) DESC LIMIT 8)
+ SELECT jsonb_build_object('enabled',true,'week_start',(SELECT week_start FROM chosen),'people',coalesce((SELECT jsonb_agg(jsonb_build_object('profile_id',id,'name',display_name,'avatar_media_id',avatar_media_id,'week_start',week_start,'summary',summary)) FROM people),'[]'::jsonb))"#)
         .bind(requested).fetch_one(&s.pool).await?;
     Ok(Json(result))
 }
