@@ -8,7 +8,7 @@ from linkedin_scraper import CompanyPostsScraper, PersonScraper
 
 from .browser import AccessBlocked, AccessSignal, assert_access
 from .models import ExtendedPerson, ExtendedPost
-from .mutuals import scrape_mutual_connections, scrape_mutual_preview
+from .mutuals import mutual_search_url, scrape_mutual_connections, scrape_mutual_preview
 from .profile_media import profile_dom_media
 from .voyager import scrape_voyager_profile
 
@@ -290,6 +290,12 @@ async def scrape_extended_person(
         }
     )
     mutual = await scrape_mutual_preview(page)
+    # The profile page often shows no mutual-connection link. The search for the
+    # member's first-degree connections does not depend on that layout.
+    if not mutual.browse_url and mutual.count != 0 and person.member_urn:
+        mutual = mutual.model_copy(
+            update={"browse_url": mutual_search_url(person.member_urn)}
+        )
     mutual = await scrape_mutual_connections(page, mutual)
     person = person.model_copy(
         update={

@@ -158,6 +158,16 @@ def _search_page_url(url: str, page_number: int) -> str:
     )
 
 
+def mutual_search_url(member_urn: str) -> str:
+    """People search for first-degree connections of the member: the mutual connections."""
+
+    member = member_urn.rsplit(":", 1)[-1]
+    query = urlencode(
+        {"connectionOf": f'["{member}"]', "network": '["F"]', "origin": "MEMBER_PROFILE_CANNED_SEARCH"}
+    )
+    return f"https://www.linkedin.com/search/results/people/?{query}"
+
+
 async def scrape_mutual_connections(
     page: Any,
     preview: MutualPreview,
@@ -237,9 +247,13 @@ async def scrape_mutual_connections(
         ):
             break
 
-    is_complete = preview.count is not None and len(connections) >= preview.count
+    # Without a count from the profile page, a result list that ended is the whole list.
+    count = preview.count if preview.count is not None else len(connections)
+    is_complete = len(connections) >= count and (
+        preview.count is not None or not payload.get("has_next", False)
+    )
     return preview.model_copy(
-        update={"connections": connections, "is_complete": is_complete}
+        update={"count": count, "connections": connections, "is_complete": is_complete}
     )
 
 

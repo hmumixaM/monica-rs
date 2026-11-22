@@ -29,6 +29,7 @@ class ExtendedPerson(Person):
     educations: list[ExtendedEducation] = Field(default_factory=list)
     avatar_url: str | None = None
     background_url: str | None = None
+    member_urn: str | None = None
     mutual_count: int | None = None
     mutual_preview_names: list[str] = Field(default_factory=list)
     mutual_browse_url: str | None = None

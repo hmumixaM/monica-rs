@@ -242,5 +242,23 @@ async def scrape_voyager_profile(page: Any, profile_url: str) -> ExtendedPerson:
         update={
             "avatar_url": avatar_url or person.avatar_url,
             "background_url": background_url,
+            "member_urn": member_urn(raw, public_identifier),
         }
     )
+
+
+def member_urn(raw: dict[str, Any], public_identifier: str) -> str | None:
+    """The profile's own ``urn:li:fsd_profile`` id: the one messages and searches use."""
+
+    for entity in raw.get("included", []):
+        if not isinstance(entity, dict):
+            continue
+        urn = entity.get("entityUrn")
+        if (
+            isinstance(urn, str)
+            and urn.startswith("urn:li:fsd_profile:")
+            and str(entity.get("publicIdentifier", "")).casefold()
+            == public_identifier.casefold()
+        ):
+            return urn
+    return None
