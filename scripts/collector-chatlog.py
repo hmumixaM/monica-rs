@@ -413,7 +413,9 @@ class Reader:
                 rows=source.execute('SELECT rowid AS _row_id,* FROM "'+table+'" WHERE rowid IN ('+','.join('?' for _ in selected)+') ORDER BY rowid',[item['_row_id'] for item in selected]) if selected else []
                 label_names = None
                 if table=='contact' and self.directory and 'contact_label' in tables:
-                    label_names = dict(source.execute("SELECT label_id_,label_name_ FROM contact_label WHERE label_name_<>''"))
+                    label_columns = {r[1] for r in source.execute("PRAGMA table_info(contact_label)")}
+                    if {'label_id_', 'label_name_'} <= label_columns:
+                        label_names = dict(source.execute("SELECT label_id_,label_name_ FROM contact_label WHERE label_name_<>''"))
                 if table=='chatroom_member' and selected:
                     rows=source.execute("""
                         SELECT r.rowid AS _row_id,g.username AS room,p.username AS member,

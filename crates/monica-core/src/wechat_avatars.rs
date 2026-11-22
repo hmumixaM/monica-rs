@@ -196,9 +196,9 @@ async fn finish(
         .execute(&mut *tx)
         .await?;
         sqlx::query("INSERT INTO crm.media_slots AS s(entity_type,entity_id,role,media_id,source_observed_at) VALUES($1,$2,$3,$4,$5)
-            ON CONFLICT(entity_type,entity_id,role) DO UPDATE SET media_id=excluded.media_id,generation=s.generation+1,
+            ON CONFLICT(entity_type,entity_id,role) DO UPDATE SET media_id=excluded.media_id,generation=s.generation+CASE WHEN s.media_id<>excluded.media_id THEN 1 ELSE 0 END,
             source_batch_id=NULL,source_ordinal=NULL,source_observed_at=excluded.source_observed_at,updated_at=now()
-            WHERE s.media_id<>excluded.media_id").bind(entity).bind(account).bind(role).bind(asset.id).bind(observed).execute(&mut *tx).await?;
+            WHERE s.media_id<>excluded.media_id OR s.source_observed_at IS DISTINCT FROM excluded.source_observed_at").bind(entity).bind(account).bind(role).bind(asset.id).bind(observed).execute(&mut *tx).await?;
         sqlx::query("DELETE FROM crm.media_links WHERE entity_type=$1 AND entity_id=$2 AND role=$3 AND media_id<>$4")
             .bind(entity).bind(account).bind(role).bind(asset.id).execute(&mut *tx).await?;
         sqlx::query("INSERT INTO crm.media_links(entity_type,entity_id,role,media_id,source_account_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING")
@@ -207,10 +207,11 @@ async fn finish(
         sqlx::query("INSERT INTO crm.avatar_observations(account_id,evidence_id,role,previous_media_id,media_id,observed_at,evidence_key)
             SELECT $1,$2,'wechat_avatar',prior.media_id,NULL,$3,$4 FROM (
                 SELECT media_id FROM (
-                  SELECT media_id,role,1 source FROM crm.media_slots WHERE entity_type=$5 AND entity_id=$6
-                  UNION ALL SELECT media_id,role,2 FROM crm.media_links WHERE (entity_type=$5 AND entity_id=$6) OR (entity_type='profile' AND source_account_id=$1)
-                ) candidates WHERE role IN('wechat_avatar_small','wechat_avatar','wechat_avatar_big')
-                ORDER BY source,CASE role WHEN 'wechat_avatar_small' THEN 0 WHEN 'wechat_avatar' THEN 1 ELSE 2 END,media_id LIMIT 1
+                  SELECT media_id,role,1 source,source_observed_at observed FROM crm.media_slots WHERE entity_type=$5 AND entity_id=$6
+                  UNION ALL SELECT media_id,role,2,created_at FROM crm.media_links WHERE (entity_type=$5 AND entity_id=$6) OR (entity_type='profile' AND source_account_id=$1)
+                ) candidates JOIN crm.media_assets a ON a.id=candidates.media_id
+                WHERE role IN('wechat_avatar_small','wechat_avatar','wechat_avatar_big')
+                ORDER BY source,(a.verified_at IS NULL),observed DESC NULLS LAST,CASE role WHEN 'wechat_avatar_small' THEN 0 WHEN 'wechat_avatar' THEN 1 ELSE 2 END,media_id LIMIT 1
             ) prior ON CONFLICT(evidence_key) DO NOTHING")
             .bind((!native).then_some(account)).bind(native.then_some(account)).bind(observed)
             .bind(format!("wechat-clear:{token}")).bind(entity).bind(account).execute(&mut *tx).await?;
@@ -318,6 +319,35 @@ mod tests {
         let count:i64=sqlx::query_scalar("SELECT count(*) FROM crm.avatar_observations WHERE account_id=$1 AND observed_at IS NOT NULL")
             .bind(account).fetch_one(&pool).await.unwrap();
         assert_eq!(count, 2);
+        // A more recent observation of the same bytes must outrank a different
+        // size that an intervening manifest supplied.
+        let saved = store.asset(shown.unwrap()).await.unwrap();
+        crate::media::set_slot(
+            &pool,
+            "source_account",
+            account,
+            "wechat_avatar_big",
+            old_asset.as_ref().unwrap().id,
+            Some(account),
+        )
+        .await
+        .unwrap();
+        sqlx::query("UPDATE crm.media_slots SET source_observed_at=clock_timestamp() WHERE entity_id=$1 AND role='wechat_avatar_big'")
+            .bind(account).execute(&pool).await.unwrap();
+        let same_photo = observe(&pool, account, "https://wx.qlogo.cn/rotated").await;
+        finish(&pool, account, same_photo, Ok(Some(saved)))
+            .await
+            .unwrap();
+        crate::media::refresh_profiles(&pool).await.unwrap();
+        let selected:Option<Uuid>=sqlx::query_scalar("SELECT p.avatar_media_id FROM crm.source_account_links l JOIN crm.profiles p ON p.id=l.profile_id WHERE l.account_id=$1")
+            .bind(account).fetch_one(&pool).await.unwrap();
+        assert_eq!(selected, shown);
+        sqlx::query("UPDATE crm.media_slots SET source_observed_at=clock_timestamp() WHERE entity_id=$1 AND role='wechat_avatar_big'")
+            .bind(account).execute(&pool).await.unwrap();
+        crate::media::refresh_profiles(&pool).await.unwrap();
+        let before_clear:Uuid=sqlx::query_scalar("SELECT p.avatar_media_id FROM crm.source_account_links l JOIN crm.profiles p ON p.id=l.profile_id WHERE l.account_id=$1")
+            .bind(account).fetch_one(&pool).await.unwrap();
+        assert_eq!(before_clear, old_asset.as_ref().unwrap().id);
         observe(&pool, account, "").await;
         refresh_wechat_avatar(&store).await.unwrap();
         crate::media::refresh_profiles(&pool).await.unwrap();
@@ -326,7 +356,7 @@ mod tests {
         assert!(cleared.is_none());
         let prior:Uuid=sqlx::query_scalar("SELECT previous_media_id FROM crm.avatar_observations WHERE account_id=$1 AND media_id IS NULL")
             .bind(account).fetch_one(&pool).await.unwrap();
-        assert_eq!(Some(prior), shown);
+        assert_eq!(prior, before_clear);
 
         let delayed = observe(&pool, account, "https://wx.qlogo.cn/delayed").await;
         let newer = shown.unwrap();
@@ -367,6 +397,7 @@ mod tests {
                 // The roster is scanned before contact after a nickname change.
                 contact["participants"][0]["name"] = json!("Renamed");
                 member["participants"][1]["name"] = json!("Renamed");
+                member["participants"][0]["name"] = json!("Renamed room");
             }
             let mut tx = pool.begin().await.unwrap();
             connections::commit_page(
@@ -424,6 +455,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(title, "Renamed");
+        let group_title:String=sqlx::query_scalar("SELECT display_name FROM crm.profiles WHERE id=(SELECT group_profile_id FROM crm.current_group_memberships WHERE person_profile_id=$1)")
+            .bind(native_owner).fetch_one(&pool).await.unwrap();
+        assert_eq!(group_title, "Renamed room");
         let source_account = Uuid::new_v4();
         sqlx::query("SELECT crm.wechat_directory_contact('peer','Friend','{}',NULL,$1)")
             .bind(source_account)

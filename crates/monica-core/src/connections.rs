@@ -687,7 +687,7 @@ async fn project_revision_reserved(
         }
         let name = string(p, "name", external);
         let own = truth(p.get("is_self"), false);
-        if directory_snapshot && !deleted {
+        if !force && !deleted && (directory_snapshot || (roster && name != external)) {
             let managed = Uuid::new_v5(&cid, format!("contact:{external}").as_bytes());
             sqlx::query("UPDATE crm.profiles p SET display_name=left($4,255),generation=generation+1 FROM crm.connection_people cp
                 WHERE cp.connection_id=$1 AND cp.external_id=$2 AND cp.resolved_profile_id=p.id AND p.id=$3
