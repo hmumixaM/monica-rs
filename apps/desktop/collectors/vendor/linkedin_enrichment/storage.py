@@ -98,6 +98,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   backend_urn TEXT,
   title TEXT,
   participants_json TEXT NOT NULL,
+  participant_names_json TEXT NOT NULL DEFAULT '{}',
+  participant_urls_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT,
   last_activity_at TEXT,
   last_read_at TEXT,
@@ -376,6 +378,15 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            conversation_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(conversations)")
+            }
+            for column in ("participant_names_json", "participant_urls_json"):
+                if column not in conversation_columns:
+                    connection.execute(
+                        f"ALTER TABLE conversations ADD COLUMN {column} TEXT NOT NULL DEFAULT '{{}}'"
+                    )
             target_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(targets)")
             }
@@ -782,13 +793,18 @@ class Store:
                 connection.execute(
                     """INSERT INTO conversations
                        (conversation_urn, backend_urn, title, participants_json,
+                        participant_names_json, participant_urls_json,
                         created_at, last_activity_at, last_read_at, unread_count,
                         is_read, checked_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                        ON CONFLICT(conversation_urn) DO UPDATE SET
                          backend_urn=excluded.backend_urn,
                          title=excluded.title,
                          participants_json=excluded.participants_json,
+                         participant_names_json=CASE WHEN excluded.participant_names_json='{}'
+                           THEN conversations.participant_names_json ELSE excluded.participant_names_json END,
+                         participant_urls_json=CASE WHEN excluded.participant_urls_json='{}'
+                           THEN conversations.participant_urls_json ELSE excluded.participant_urls_json END,
                          last_activity_at=excluded.last_activity_at,
                          last_read_at=excluded.last_read_at,
                          unread_count=excluded.unread_count,
@@ -799,6 +815,8 @@ class Store:
                         conversation.get("backend_urn"),
                         conversation.get("title"),
                         canonical_json(conversation.get("participants", [])),
+                        canonical_json(conversation.get("participant_names", {})),
+                        canonical_json(conversation.get("participant_urls", {})),
                         conversation.get("created_at"),
                         conversation.get("last_activity_at"),
                         conversation.get("last_read_at"),
@@ -857,6 +875,12 @@ class Store:
                         "title": conversation["title"],
                         "participants": json.loads(
                             conversation["participants_json"]
+                        ),
+                        "participant_names": json.loads(
+                            conversation["participant_names_json"]
+                        ),
+                        "participant_urls": json.loads(
+                            conversation["participant_urls_json"]
                         ),
                         "created_at": conversation["created_at"],
                         "last_activity_at": conversation["last_activity_at"],

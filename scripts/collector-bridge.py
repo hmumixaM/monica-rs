@@ -174,6 +174,8 @@ def linkedin_records(snapshot,owner_account=None):
         account=conversation.get('account') or conversation.get('owner_id') or owner_account
         external=conversation.get('id') or conversation.get('external_id') or conversation.get('conversation_id') or conversation.get('conversation_urn')
         if not account or not external:raise ValueError('LinkedIn conversation lacks owner/identity')
+        # Newer captures name each participant and give their profile address.
+        names=conversation.get('participant_names') or {};urls=conversation.get('participant_urls') or {}
         for message in conversation.get('messages',[]):
             mid=message.get('id') or message.get('external_id') or message.get('message_urn')
             if not mid:raise ValueError('LinkedIn message lacks identity')
@@ -185,7 +187,7 @@ def linkedin_records(snapshot,owner_account=None):
                 stamp=int(parsed.timestamp()*1000)
             else:raise ValueError('LinkedIn message has no delivered time')
             content=dict(message,account=account,conversation=external,body=message.get('body') or message.get('text') or '',sender=message.get('sender_urn') or message.get('sender') or '',sent_at_ms=stamp,
-                         participants=conversation.get('participants',[]),conversation_title=conversation.get('title'))
+                         participants=[dict(id=person,name=names.get(person) or person,**({'profile_url':urls[person]} if person in urls else {})) if isinstance(person,str) else person for person in conversation.get('participants',[])],conversation_title=conversation.get('title'))
             row=record(mid,account,'message',content,at)
             row['conversation_type']='group' if len(conversation.get('participants',[]))>2 else 'direct'
             yield 'messages',row

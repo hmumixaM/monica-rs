@@ -62,6 +62,26 @@ def parse_conversation(
         if isinstance(participant, dict)
         and isinstance(participant.get("hostIdentityUrn"), str)
     ]
+    participant_names: dict[str, str] = {}
+    participant_urls: dict[str, str] = {}
+    for participant in row.get("conversationParticipants", []):
+        if not isinstance(participant, dict):
+            continue
+        urn = participant.get("hostIdentityUrn")
+        kind = participant.get("participantType")
+        member = kind.get("member") if isinstance(kind, dict) else None
+        if not isinstance(urn, str) or not isinstance(member, dict):
+            continue
+        name = " ".join(
+            part
+            for part in (_text(member.get("firstName")), _text(member.get("lastName")))
+            if part
+        )
+        if name:
+            participant_names[urn] = name
+        url = member.get("profileUrl")
+        if isinstance(url, str) and "/in/" in url:
+            participant_urls[urn] = url.split("?", 1)[0]
     messages = row.get("messages", {})
     message_rows = (
         messages.get("elements", []) if isinstance(messages, dict) else []
@@ -94,6 +114,8 @@ def parse_conversation(
         "backend_urn": row.get("backendUrn"),
         "title": _text(row.get("title")),
         "participants": participants,
+        "participant_names": participant_names,
+        "participant_urls": participant_urls,
         "created_at": _timestamp(row.get("createdAt")),
         "last_activity_at": _timestamp(row.get("lastActivityAt")),
         "last_read_at": _timestamp(row.get("lastReadAt")),
