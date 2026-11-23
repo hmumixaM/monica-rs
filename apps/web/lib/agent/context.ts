@@ -39,11 +39,11 @@ export function resumeContext(messages: AgentMessage[]): AgentMessage[] {
   return result;
 }
 
-function excerpt(text: string, tokens: number, note: string) {
+function excerpt(text: string, tokens: number, note: string, keepEnding = false) {
   const size = estimateTokens(text);
   if (size <= tokens) return text;
   const keep = Math.max(0, Math.floor(text.length * (tokens - estimateTokens(note)) / size));
-  const tail = Math.floor(keep / 4);
+  const tail = keepEnding ? keep : Math.floor(keep / 4);
   return text.slice(0, keep - tail) + note + (tail ? text.slice(-tail) : '');
 }
 
@@ -96,11 +96,23 @@ function newestRounds(turn: AgentMessage[], budget: number): AgentMessage[] {
   let reduced = false;
   for (const round of rounds.toReversed()) {
     let copy = round;
-    if (used + estimateTokens(copy) > budget && round.some(message => message.role === 'toolResult')) {
-      // A large parallel batch can fill the window on its own. Share the remaining
-      // space among its results before deciding whether the whole batch fits.
-      copy = round.map(message => clip(message, Math.max(32, Math.floor((budget - used) / round.length) - 96)));
-      reduced = true;
+    if (used + estimateTokens(copy) > budget) {
+      const first = round[0];
+      const room = budget - used;
+      if (round.some(message => message.role === 'toolResult')) {
+        // Share the remaining space without separating the calls and their results.
+        copy = round.map(message => clip(message, Math.max(32, Math.floor(room / round.length) - 96)));
+        reduced = true;
+      } else if (first.role === 'assistant' && first.stopReason === 'length' && !first.content.some(part => part.type === 'toolCall')) {
+        const text = first.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('');
+        const envelope = { ...first, content: [] };
+        const tokens = room - estimateTokens(envelope) - 64;
+        if (text.trim() && tokens > 96) {
+          copy = [{ ...envelope, content: [{ type: 'text',
+            text: excerpt(text, tokens, '[上一段回答前文已省略，以下为结尾。]\n', true) }] }];
+          reduced = true;
+        }
+      }
     }
     const size = estimateTokens(copy);
     if (used + size > budget) break;
@@ -108,7 +120,7 @@ function newestRounds(turn: AgentMessage[], budget: number): AgentMessage[] {
   }
   const first = head[0];
   if (first && (reduced || kept.length < rounds.length)) {
-    const note = '\n[部分查询记录超出上下文。请根据保留的证据继续，需要时缩小范围再查。]';
+    const note = '\n[部分上下文已缩短。请根据保留的证据继续，需要时缩小范围再查。]';
     head[0] = { ...first, content: typeof first.content === 'string' ? first.content + note : [...first.content, { type: 'text', text: note }] };
   }
   return [...head, ...kept.flat()];

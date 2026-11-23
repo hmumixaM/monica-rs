@@ -97,7 +97,10 @@ export async function run(id: string, question: string, people: PickedPerson[]) 
       const conversation = (await listConversations()).find(c => c.id === id);
       if (conversation) await saveConversation({ ...conversation, updatedAt: Date.now(),
         title: history.some(message => message.role === 'user') ? conversation.title : question.trim().slice(0, 60) });
-      const messages: AgentMessage[] = [...history, { role: 'user', content: question, timestamp: Date.now() }];
+      const messages: AgentMessage[] = [
+        ...history.filter(message => message.role !== 'system'),
+        { role: 'user', content: question, timestamp: Date.now() },
+      ];
       await set(transcriptKey(id), messages);
       update(id, { messages });
       const model = await settings(controller.signal);
@@ -124,12 +127,12 @@ export async function run(id: string, question: string, people: PickedPerson[]) 
             contextWindow: model.context_window, maxTokens: model.max_tokens,
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             compat: { supportsDeveloperRole: false, supportsStore: false, maxTokensField: 'max_tokens' } },
-          messages: resumeContext(messages),
+          messages,
           systemPrompt: systemPrompt(people),
           tools: tools(),
         },
         transformContext: async messages => {
-          requestMessages = [...messages];
+          requestMessages = [...messages.filter(message => message.role === 'system'), ...resumeContext(messages)];
           requestInstruction = instruction;
           instruction = '';
           return prepareContext(budget);

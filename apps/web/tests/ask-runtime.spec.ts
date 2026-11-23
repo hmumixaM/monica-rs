@@ -228,9 +228,12 @@ test('an oversized tool result is compacted and a length-limited answer continue
         expect(JSON.stringify(messages)).toContain(question);
         expect(messages.at(-1)).toMatchObject({ role: 'tool', tool_call_id: 'search' });
         expect(messages.at(-1).content).toContain('/messages?conversation=room');
-        return route.fulfill(completion({ role: 'assistant', content: '先核对了项目记录。\n\n' }, 'length'));
+        return route.fulfill(completion({
+          role: 'assistant', content: '已核对项目。'.repeat(1_500) + '\n\n这是断点前的结尾。\n\n',
+        }, 'length'));
       default:
-        expect(JSON.stringify(messages.at(-2))).toContain('先核对了项目记录。');
+        expect(messages.at(-2).role).toBe('assistant');
+        expect(JSON.stringify(messages.at(-2))).toContain('这是断点前的结尾。');
         expect(messages.at(-1).content).toContain('上一段回答达到输出上限');
         return route.fulfill(completion({ role: 'assistant', content: '接着整理了讨论内容。' }, 'stop'));
     }
@@ -239,7 +242,40 @@ test('an oversized tool result is compacted and a length-limited answer continue
   await page.getByLabel('问题', { exact: true }).fill(question);
   await page.getByRole('button', { name: '提问', exact: true }).click();
   await expect(page.getByText('接着整理了讨论内容。', { exact: true })).toBeVisible();
-  await expect(page.getByText('先核对了项目记录。', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('这是断点前的结尾。', { exact: true })).toHaveCount(1);
   await expect(page.getByRole('article').getByText(question, { exact: true })).toHaveCount(1);
   expect([modelCalls, searchCalls]).toEqual([4, 1]);
+});
+
+test('a stopped partial answer survives the next question and reload', async ({ page }) => {
+  const stoppedText = '这是停止之前已经写出的部分。';
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/v1/me') return route.fulfill({ json: { id: 'synthetic', email: 'synthetic@example.invalid' } });
+    if (path === '/api/v1/auth/csrf') return route.fulfill({ json: { csrf_token: 'synthetic' } });
+    if (path === '/api/v1/ai/browser-model') {
+      return route.fulfill({ json: { enabled: true, model: 'synthetic-model', context_window: 32000, max_tokens: 1000 } });
+    }
+    if (path === '/api/v1/ai/chat/completions') {
+      expect(JSON.stringify(route.request().postDataJSON().messages)).not.toContain(stoppedText);
+      return route.fulfill(completion({ role: 'assistant', content: '新问题已答复。' }, 'stop'));
+    }
+    return route.fulfill({ json: [] });
+  });
+
+  await page.goto('/ask');
+  await page.getByLabel('导入会话文件').setInputFiles({
+    name: 'stopped-conversation.json', mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({ version: 1, messages: [
+      { role: 'user', content: '旧问题', timestamp: 1 },
+      { role: 'assistant', stopReason: 'aborted', content: [{ type: 'text', text: stoppedText }], timestamp: 2 },
+    ] })),
+  });
+  await expect(page.getByText(stoppedText, { exact: true })).toBeVisible();
+  await page.getByLabel('问题', { exact: true }).fill('再提一个问题');
+  await page.getByRole('button', { name: '提问', exact: true }).click();
+  await expect(page.getByText('新问题已答复。', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('新问题已答复。', { exact: true })).toBeVisible();
+  await expect(page.getByText(stoppedText, { exact: true })).toBeVisible();
 });
