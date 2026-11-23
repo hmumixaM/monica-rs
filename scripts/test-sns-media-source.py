@@ -18,8 +18,14 @@ class SourceMedia(unittest.TestCase):
   self.cached('http://wxapp.tc.qq.com/cover/0',b'cover');self.cached('https://szmmsns.qpic.cn/photo/0',b'photo')
   cover,body=fetch.frame(self.db,'123',1,cache_root=self.cache,thumbnail=True,source_media_id='456',source_kind='wechat_channels')
   self.assertEqual((cover['slot'],cover['source_media_id'],cover['source_md5'],body),(1,'456',None,b'cover'))
-  photo,body=fetch.frame(self.db,'123',2,cache_root=self.cache,source_media_id='789')
+  photo,body=fetch.frame(self.db,'123',2,cache_root=self.cache,source_media_id='789',source_kind='wechat_channels')
   self.assertEqual((photo['slot'],photo['source_media_id'],photo['source_md5'],body),(2,'789','source-md5',b'photo'))
+ def test_channels_image_can_be_in_a_regular_media_list_without_finder_metadata(self):
+  with sqlite3.connect(self.db) as db:
+   db.execute('INSERT INTO SnsTimeLine VALUES(?,?)',('125','<TimelineObject><id>125</id><ContentObject><type>54</type><mediaList><media><id>890</id><url>http://szmmsns.qpic.cn/channels/0</url></media></mediaList></ContentObject></TimelineObject>'))
+  self.cached('https://szmmsns.qpic.cn/channels/0',b'channels image')
+  header,body=fetch.frame(self.db,'125',1,cache_root=self.cache,source_media_id='890',source_kind='wechat_channels')
+  self.assertEqual((header['source_media_id'],body),('890',b'channels image'))
  def test_native_video_poster_uses_its_source_thumbnail_cdn(self):
   with sqlite3.connect(self.db)as db:db.execute('INSERT INTO SnsTimeLine VALUES(?,?)',('124','<TimelineObject><id>124</id><ContentObject><mediaList><media><id>987</id><type>15</type><url>http://snsvideo.c2c.wechat.com/video</url><thumb>http://vweixinthumb.tc.qq.com/poster/0</thumb></media></mediaList></ContentObject></TimelineObject>'))
   self.cached('http://vweixinthumb.tc.qq.com/poster/0',b'video poster')

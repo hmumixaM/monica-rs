@@ -40,8 +40,9 @@ def frame(source, external, slot, cache_root=None, source_tid=None, destination=
         regular = obj.findall('ContentObject/mediaList/media')
         finder = obj.find('ContentObject/finderFeed')
         finder_rows = finder.findall('mediaList/media') if finder is not None else []
-        if source_kind == 'wechat_channels':
-            if finder is None or finder.findtext('objectId') != source_media_id:
+        finder_cover = source_kind == 'wechat_channels' and slot <= len(finder_rows)
+        if finder_cover:
+            if finder.findtext('objectId') != source_media_id:
                 raise ValueError('source Channels identity mismatch')
             original_cover = finder_rows[slot - 1]
             media = ET.Element('media')
@@ -87,14 +88,14 @@ def frame(source, external, slot, cache_root=None, source_tid=None, destination=
             raise ValueError('video requires a streaming destination')
         if video and selected is not url:
             raise ValueError('native video source unavailable')
-        fetch = (fetch_url or '') if native_video or source_kind == 'wechat_channels' else (fetch_url or '').replace('http://', 'https://', 1)
+        fetch = (fetch_url or '') if native_video or finder_cover else (fetch_url or '').replace('http://', 'https://', 1)
         fetch = fetch.replace('/150?', '/0?')
         if fetch.endswith('/150'):
             fetch = fetch[:-4] + '/0'
         if token and 'token=' not in fetch:
             fetch += ('&' if '?' in fetch else '?') + 'token=' + quote_plus(token) + '&idx=1'
         parsed = urlsplit(fetch)
-        if (parsed.scheme not in (('http', 'https') if native_video or source_kind == 'wechat_channels' else ('https',)) or not parsed.hostname or
+        if (parsed.scheme not in (('http', 'https') if native_video or finder_cover else ('https',)) or not parsed.hostname or
                 not cdn(fetch) or
                 parsed.username or parsed.password or parsed.port not in (None, 80 if parsed.scheme == 'http' else 443)):
             raise ValueError('source is outside WeChat media CDN')
