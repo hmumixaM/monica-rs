@@ -1,9 +1,8 @@
 """Download and link SNS photos and native videos when a source page is imported.
 
-Completed image identities are never polled or periodically checked. Failed
-source downloads remain visible and recorded; only a new image identity or an
-explicit repair starts another attempt. Decoded, uncommitted batches resume
-without another network request when a source page is replayed.
+Completed media identities are reused. The live importer schedules another
+attempt for failed downloads. Decoded, uncommitted batches resume without
+another network request when publication is retried.
 """
 import hashlib
 import importlib.util
@@ -27,6 +26,9 @@ def atomic(path, value):
     with temporary.open('w')as output:
         json.dump(value,output);output.flush();os.fsync(output.fileno())
     os.replace(temporary,path)
+    directory=os.open(path.parent,os.O_RDONLY|os.O_DIRECTORY)
+    try:os.fsync(directory)
+    finally:os.close(directory)
 
 
 def import_event(db, source, media, state, runtime, cache, event_id):
@@ -51,11 +53,11 @@ def import_event(db, source, media, state, runtime, cache, event_id):
     event_state=state/str(event_id);event_state.mkdir(exist_ok=True)
     ledger=event_state/'photos.json'
     saved=json.loads(ledger.read_text())if ledger.exists()else{}
-    # Only a changed/new source image enters the resolver. Comment revisions
-    # do not trigger filesystem checks or downloads of finished photos.
-    pending=[(key,photo)for key,photo in identities if saved.get(key,{}).get('status')not in('ready','failed','source_only')]
-    if not pending:return dict(ready=0,failed=sum(saved.get(key,{}).get('status')=='failed'for key,_ in identities))
-    staged=[];failed=0;ready=0
+    # Comment revisions reuse finished photos. A failed slot is eligible again
+    # once the caller's retry backoff has elapsed.
+    pending=[(key,photo)for key,photo in identities if saved.get(key,{}).get('status')not in('ready','source_only')]
+    if not pending:return dict(ready=0,failed=0)
+    staged=[];ready=0
     stage=event_state/'stage';objects=stage/'objects';receipt=event_state/'receipt'
     objects.mkdir(parents=True,exist_ok=True);receipt.mkdir(exist_ok=True)
     for key,photo in pending:
@@ -89,7 +91,7 @@ def import_event(db, source, media, state, runtime, cache, event_id):
         except Exception as error:
             # Exceptions from HTTP/XML may include image credentials. Persist
             # only the exception class, never its text, request URL or stderr.
-            saved[key]=dict(status='failed',code=type(error).__name__);failed+=1
+            saved[key]=dict(status='failed',code=type(error).__name__)
         atomic(ledger,saved)
     if staged:
         manifest=stage/'manifest.json';atomic(manifest,dict(rows=[row for _,row in staged]))
@@ -99,7 +101,7 @@ def import_event(db, source, media, state, runtime, cache, event_id):
             expected_records=len(staged), target=DatabaseTarget.read(db), runtime=runtime,
         )
         # Lock contention or uncertain publication leaves decoded rows pending.
-        # The caller does not ACK this source page until publication succeeds.
+        # The durable queue retains the event until publication succeeds.
         publish(db, request)
         for key,_ in staged:saved[key]=dict(status='ready');ready+=1
         atomic(ledger,saved)

@@ -118,3 +118,16 @@ See [import storage](import-storage.md) for the normal media publication path.
 
 Each polling cycle handles WeChat before social archive scans so the large
 Instagram history walk does not postpone an unfinished WeChat backfill.
+
+For Moments media, pass `--sns-runtime` and the optional read-only
+`--sns-cache`. Keep the database on the isolated network and attach the
+import worker to the `monica-rs_sns-egress` bridge for DNS and access to the
+WeChat media CDN. Publish no ports on the worker. Verify a real CDN fetch
+after replacing the container.
+
+Each committed Moments page queues its media before acknowledging the page.
+The same WeChat cycle tries queued items and reports `sns_pending`,
+`sns_ready` and `sns_failed` in `status.json`. Failed items stay in
+`consumer.sqlite` and retry with backoff, even without a new snapshot. On
+upgrade, missing media from previously acknowledged posts within the live
+cutoff joins the queue. Completed slots reuse their existing publication.

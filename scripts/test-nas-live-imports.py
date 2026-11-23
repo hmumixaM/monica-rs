@@ -104,8 +104,9 @@ class LiveImportContract(unittest.TestCase):
             self.assertIsNone(self.db.execute(item.current_sql+' AND m.message_id=%s',(*item.query_args,selected[2])).fetchone())
             self.assertEqual(self.db.execute('SELECT count(*)FROM crm.message_search').fetchone()[0],3)
 
-    def test_sns_source_reuses_exact_registered_image_and_does_not_recheck_completed_photos(self):
+    def test_sns_retries_acknowledged_posts_and_reuses_completed_photos(self):
         import struct,zlib
+        from urllib.error import URLError
         images=live.module('sns_event_images_test','sns-media-import.py')
         def chunk(kind,body):
             return struct.pack('>I',len(body))+kind+body+struct.pack('>I',zlib.crc32(kind+body))
@@ -115,12 +116,25 @@ class LiveImportContract(unittest.TestCase):
         path.parent.mkdir(parents=True);path.write_bytes(image)
         url='https://szmmsns.qpic.cn/mmsns/synthetic/0'
         self.db.execute("INSERT INTO crm.media_assets(id,sha256,byte_length,media_type,object_path)VALUES(%s,%s,%s,'image/png',%s)",(mid,digest,len(image),str(path)))
-        self.db.execute("INSERT INTO crm.media_provenance(media_id,source,source_record_id,source_url)VALUES(%s,'wechat','old-image',%s)",(mid,url))
         from psycopg.types.json import Jsonb
-        content={'media':[{'role':'media-1','media_type':'image','source_url':url,'source_media_id':'101','source_md5':'a'*32}]}
-        self.db.execute("INSERT INTO crm.timeline_events(id,provider,object_id,external_id,event_type,content,content_hash,version)VALUES(%s,'wechat',%s,'100','post',%s,'synthetic',1)",(event,uuid.uuid4(),Jsonb(content)))
-        args=(self.db,self.args.chatlog/'sns/sns.db',self.args.media,self.args.state/'sns-media',Path(self.temp.name).resolve()/'runtime',None,event)
-        self.assertEqual(images.import_event(*args),dict(ready=1,failed=0))
+        content={'source_tid':'100','media':[{'role':'media-1','media_type':'image','source_url':url,'source_media_id':'101','source_md5':'a'*32}]}
+        self.db.execute("INSERT INTO crm.timeline_events(id,provider,object_id,external_id,event_type,occurred_at,content,content_hash,version)VALUES(%s,'wechat',%s,'100','post','2026-11-14',%s,'synthetic',1)",(event,uuid.uuid4(),Jsonb(content)))
+        snapshot=self.args.chatlog/'sns/sns.db'
+        snapshot.parent.mkdir();snapshot.touch()
+        self.args.sns_runtime=Path(self.temp.name).resolve()/'runtime'
+        args=(self.db,snapshot,self.args.media,self.args.state/'sns-media',self.args.sns_runtime,None,event)
+        def unavailable(*args, **kwargs):
+            raise URLError('synthetic outage')
+        fetch=types.SimpleNamespace(frame=unavailable)
+        with patch.object(live,'module',return_value=images),patch.object(images,'module',return_value=fetch):
+            self.assertEqual(self.consumer.import_sns_media(self.args.chatlog),dict(sns_pending=1,sns_ready=0,sns_failed=1))
+        attempts,retry_at=self.consumer.journal.execute('SELECT attempts,retry_at FROM sns_pending WHERE event_id=?',(str(event),)).fetchone()
+        self.assertEqual(attempts,2)
+        self.db.execute("INSERT INTO crm.media_provenance(media_id,source,source_record_id,source_url)VALUES(%s,'wechat','old-image',%s)",(mid,url))
+        restarted=live.Consumer(self.args,self.db)
+        self.addCleanup(restarted.close)
+        with patch.object(live.time,'time',return_value=retry_at+1):
+            self.assertEqual(restarted.import_sns_media(self.args.chatlog),dict(sns_pending=0,sns_ready=1,sns_failed=0))
         self.assertEqual(self.db.execute("SELECT media_id,role FROM crm.media_links WHERE entity_id=%s",(event,)).fetchall(),[(mid,'media-1')])
         self.assertEqual(path.read_bytes(),image)
         path.rename(path.with_suffix('.retained'))

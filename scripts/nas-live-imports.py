@@ -124,6 +124,7 @@ class Consumer:
         self.journal = sqlite3.connect(self.state / 'consumer.sqlite')
         self.journal.execute('CREATE TABLE IF NOT EXISTS delivered(provider TEXT,stream TEXT,external_id TEXT,account TEXT,digest TEXT,receipt TEXT,PRIMARY KEY(provider,stream,external_id,account))')
         self.journal.execute('CREATE TABLE IF NOT EXISTS source_files(path TEXT PRIMARY KEY,signature TEXT)')
+        self.journal.execute('CREATE TABLE IF NOT EXISTS sns_pending(event_id TEXT PRIMARY KEY,attempts INTEGER NOT NULL DEFAULT 0,retry_at REAL NOT NULL DEFAULT 0)')
         self.last_path = None
         self.last_input_time = None
         self.last_input = None
@@ -464,19 +465,24 @@ class Consumer:
                     count = len(frame['batch']['records'])
                     run = 'nas-chatlog:'+str(importer.id)+':'+frame['page_sha256']
                     self.db.execute("INSERT INTO crm.import_activity(id,provider,stream,kind,batch_id,state,phase,received_at,completed_at,records,processed,inserted,changed,unchanged) VALUES(%s,'wechat',%s,'page',%s,'complete','existing_archive',now(),now(),%s,%s,%s,%s,%s) ON CONFLICT(id) DO NOTHING",(run,frame['batch']['stream'],frame['page_sha256'],count,count,inserted,changed,unchanged))
-                # Source-page replay still enters the image importer even if
-                # metadata is already committed. Decoded photos can therefore
-                # finish publication before this page is acknowledged.
+                # The page can be acknowledged once its media work is durable.
+                # An offline CDN must not block later messages or source pages.
+                posts = []
                 for record in frame['batch']['records']:
-                    value=record['content']
-                    # Pages queued by an older reader carry posts without raw XML.
-                    if value.get('kind')!='post' or 'raw_content' not in value:continue
-                    root,_=self.legacy.reader.moments.parse_moments_xml(value['raw_content'])
-                    obj=root if root.tag=='TimelineObject'else root.find('TimelineObject')
-                    author=next(p['id']for p in value['participants']if p['role']=='author')
-                    account,_=importer.account(author)
-                    post=self.db.execute("SELECT id FROM crm.timeline_events WHERE provider='wechat' AND source_account_id=%s AND event_type='post' AND external_id=%s",(account,obj.findtext('id'))).fetchone()
-                    if post:self.import_sns_event(source,post[0])
+                    value = record['content']
+                    if value.get('kind') != 'post' or not value.get('media') or 'raw_content' not in value:
+                        continue
+                    root, _ = self.legacy.reader.moments.parse_moments_xml(value['raw_content'])
+                    obj = root if root.tag == 'TimelineObject' else root.find('TimelineObject')
+                    author = next(p['id'] for p in value['participants'] if p['role'] == 'author')
+                    account, _ = importer.account(author)
+                    post = self.db.execute("SELECT id FROM crm.timeline_events WHERE provider='wechat' AND source_account_id=%s AND event_type='post' AND external_id=%s", (account, obj.findtext('id') or str(value['source_tid']))).fetchone()
+                    if post:
+                        posts.append((str(post[0]),))
+                with self.journal:
+                    self.journal.executemany(
+                        'INSERT INTO sns_pending(event_id) VALUES(?) ON CONFLICT DO NOTHING', posts,
+                    )
                 self.legacy.atomic(reader_state/frame['ack_path'],dict(page_sha256=frame['page_sha256'],receipt_id=str(importer.id)))
                 self.counters['chatlog_pages'] += 1
                 self.progress('chatlog_received')
@@ -487,16 +493,73 @@ class Consumer:
             finally:
                 scan.close()
 
-    def import_sns_event(self, source, event_id):
-        runtime=getattr(self.args,'sns_runtime',None)
+        if not STOP:
+            return self.import_sns_media(source)
+
+    def import_sns_media(self, source):
+        runtime = getattr(self.args, 'sns_runtime', None)
+        snapshot = source/'sns/sns.db'
+        if not snapshot.is_file():
+            return {}
+        # Recover already acknowledged pages from the existing live boundary.
+        # Record the seed and its work in one transaction so restart is safe.
+        if self.journal.execute('PRAGMA user_version').fetchone()[0] == 0:
+            missing = self.db.execute("""
+                SELECT e.id FROM crm.timeline_events e
+                WHERE e.provider='wechat' AND e.event_type='post' AND e.occurred_at>=%s
+                  AND e.content ? 'source_tid' AND EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(coalesce(e.content->'media','[]')) m
+                    CROSS JOIN LATERAL (VALUES
+                        (m->>'role', m->>'media_type'='image' OR (m->>'media_type'='video' AND m->>'source_url' IS NOT NULL)),
+                        ((m->>'role')||'-poster', m->>'media_type'='video' AND m->>'thumbnail_url' IS NOT NULL)
+                    ) slot(role, expected)
+                    WHERE slot.expected AND NOT EXISTS (
+                        SELECT 1 FROM crm.media_links l WHERE l.entity_type='social_post' AND l.entity_id=e.id AND l.role=slot.role
+                    )
+                  )
+            """, (self.args.since,)).fetchall()
+            with self.journal:
+                self.journal.executemany(
+                    'INSERT INTO sns_pending(event_id,attempts) VALUES(?,1) ON CONFLICT DO NOTHING',
+                    [(str(event_id),) for (event_id,) in missing],
+                )
+                self.journal.execute('PRAGMA user_version=1')
+        pending = self.journal.execute('SELECT count(*) FROM sns_pending').fetchone()[0]
         if runtime is None:
-            if self.db.execute("SELECT 1 FROM crm.timeline_events e CROSS JOIN LATERAL jsonb_array_elements(coalesce(e.content->'media','[]'))m WHERE e.id=%s AND m->>'media_type' IN('image','video') LIMIT 1",(event_id,)).fetchone():
-                raise ValueError('SNS media runtime must be configured')
-            return
-        images=module('sns_event_images','sns-media-import.py')
-        result=images.import_event(self.db,source/'sns/sns.db',self.args.media,self.state/'sns-media',runtime,getattr(self.args,'sns_cache',None),event_id)
-        self.counters['media']+=result['ready']
-        self.progress('sns_media_received',provider='wechat',ready=result['ready'],failed=result['failed'])
+            return dict(sns_pending=pending, sns_runtime_configured=False)
+        images = module('sns_event_images', 'sns-media-import.py')
+        ready = failures = 0
+        due = self.journal.execute(
+            'SELECT event_id,attempts FROM sns_pending WHERE retry_at<=? ORDER BY (attempts>0),retry_at,event_id LIMIT 24',
+            (time.time(),),
+        ).fetchall()
+        deadline = time.monotonic() + 60
+        for event_id, attempts in due:
+            if STOP or time.monotonic() >= deadline:
+                break
+            try:
+                result = images.import_event(self.db, snapshot, self.args.media, self.state/'sns-media',
+                                             runtime, getattr(self.args, 'sns_cache', None), uuid.UUID(event_id))
+                ready += result['ready']
+                self.counters['media'] += result['ready']
+                failed = result['failed']
+            except Exception as error:
+                if self.db.closed or self.db.broken:
+                    raise
+                self.progress('sns_media_retry', provider='wechat', error_code=failure_code(error))
+                failed = 1
+            failures += failed
+            with self.journal:
+                if failed:
+                    delay = min(24 * 3600, 300 * 2**min(attempts, 9))
+                    self.journal.execute('UPDATE sns_pending SET attempts=attempts+1,retry_at=? WHERE event_id=?',
+                                         (time.time()+delay, event_id))
+                else:
+                    self.journal.execute('DELETE FROM sns_pending WHERE event_id=?', (event_id,))
+                    pending -= 1
+        status = dict(sns_pending=pending, sns_ready=ready, sns_failed=failures)
+        self.progress('sns_media_checked', provider='wechat', **status)
+        return status
 
     def changed_message_media(self, mid):
         # React only to a newly imported source revision. Completed photos are
@@ -576,8 +639,8 @@ def main():
                         break
                     try:
                         consumer.progress('checking',provider=provider)
-                        consumer.wechat() if provider=='wechat' else consumer.social(provider)
-                        consumer.progress('waiting_for_source',provider=provider)
+                        details = consumer.wechat() if provider=='wechat' else consumer.social(provider)
+                        consumer.progress('waiting_for_source',provider=provider,**(details or {}))
                     except Exception as error:
                         failed = True
                         # Private original inputs remain available; no payload/secret is logged.
