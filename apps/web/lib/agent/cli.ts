@@ -7,6 +7,7 @@ const MAX_LOOKUPS = 240;
 const BATCH_SIZE = 6;
 const MAX_LOOKUP_BYTES = 256 * 1024;
 const MAX_OUTPUT_BYTES = 48_000;
+const MAX_TRACE_BYTES = 64 * 1024;
 const encoder = new TextEncoder();
 const UUID = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i;
 
@@ -21,17 +22,39 @@ function errorText(error: unknown) {
 
 const commands = new Map(lookupCommands().map(command => [command.name, command]));
 
+export function cliTitle(value: unknown) {
+  return (typeof value === 'string' && value.trim().replace(/\s+/g, ' ').slice(0, 60)) || TOOL_LABELS.monica_cli;
+}
+
+export type CliQueryDetails = { queries: string[]; omittedQueries: number };
+
 function lookupDispatcher(signal: AbortSignal) {
   let lookups = 0;
   let succeeded = 0;
   let failed = 0;
+  let traceBytes = 0;
+  const details: CliQueryDetails = { queries: [], omittedQueries: 0 };
   const { directory, directory_facets: facets } = directoryCommands(signal);
+
+  function recordQuery(name: string, args: CommandArgs) {
+    const query = `cli(${JSON.stringify(name)}, ${JSON.stringify(args)})`;
+    const bytes = encoder.encode(query).length;
+    if (traceBytes + bytes > MAX_TRACE_BYTES) {
+      details.omittedQueries++;
+      return;
+    }
+    traceBytes += bytes;
+    details.queries.push(query);
+  }
+
   async function lookup(name: unknown, input: unknown): Promise<unknown> {
     signal.throwIfAborted();
     if (++lookups > MAX_LOOKUPS) throw new Error('本脚本的查询次数已用完。请分批查询。');
     const args = object(input);
-    if (name === 'directory') return directory(args);
-    if (name === 'directory_facets') return facets(args);
+    if (name === 'directory' || name === 'directory_facets') {
+      recordQuery(name, args);
+      return name === 'directory' ? directory(args) : facets(args);
+    }
     if (name === 'help') {
       if (!args.command) return ['directory', 'directory_facets', 'batch', ...commands.keys()];
       const command = typeof args.command === 'string' ? commands.get(args.command) : undefined;
@@ -48,6 +71,7 @@ function lookupDispatcher(signal: AbortSignal) {
     }
     const id = `cli-${lookups}`;
     const validated = validateToolArguments(tool, { type: 'toolCall', id, name: tool.name, arguments: args });
+    recordQuery(tool.name, validated);
     const result = await tool.execute(id, validated, signal);
     const output = result.content.find(part => part.type === 'text');
     if (!output || output.type !== 'text') throw new Error('查询没有返回文字结果。');
@@ -88,10 +112,10 @@ function lookupDispatcher(signal: AbortSignal) {
     }));
   }
 
-  return { dispatch, failure, allFailed: () => succeeded === 0 && failed > 0 };
+  return { dispatch, failure, details, allFailed: () => succeeded === 0 && failed > 0 };
 }
 
-function runScript(source: string, signal?: AbortSignal): Promise<{ json: string; isError: boolean }> {
+function runScript(source: string, signal?: AbortSignal): Promise<{ text: string; isError: boolean; details: CliQueryDetails }> {
   signal?.throwIfAborted();
   if (source.length > 32_000) throw new Error('JavaScript 查询脚本过长。');
   return new Promise((resolve, reject) => {
@@ -105,7 +129,11 @@ function runScript(source: string, signal?: AbortSignal): Promise<{ json: string
       controller.abort();
       worker.terminate();
     }
-    function fail(error: unknown) { cleanup(); reject(error); }
+    function fail(error: unknown) {
+      cleanup();
+      if (signal?.aborted) reject(error);
+      else resolve({ text: errorText(error), isError: true, details: lookup.details });
+    }
     function abort() { fail(signal?.reason); }
     signal?.addEventListener('abort', abort, { once: true });
     worker.onerror = () => fail(new Error('无法启动 JavaScript 查询环境。'));
@@ -116,7 +144,7 @@ function runScript(source: string, signal?: AbortSignal): Promise<{ json: string
           fail(new Error('脚本输出过长。请先在 JavaScript 中筛选或汇总，并保留必要的原文链接。'));
         } else {
           cleanup();
-          resolve({ json: data.json, isError: lookup.allFailed() });
+          resolve({ text: data.json, isError: lookup.allFailed(), details: lookup.details });
         }
         return;
       }
@@ -146,12 +174,19 @@ export const cliTool: AgentTool = {
     }),
   ].join('\n'),
   parameters: {
-    type: 'object', properties: { script: { type: 'string', description: 'JavaScript 函数体，最后 return 查询结果。' } },
-    required: ['script'], additionalProperties: false,
+    type: 'object', properties: {
+      title: { type: 'string', description: '用简短中文概括这段脚本查什么，例如「筛选同事并读取近况」。' },
+      script: { type: 'string', description: 'JavaScript 函数体，最后 return 查询结果。' },
+    },
+    required: ['title', 'script'], additionalProperties: false,
   } as unknown as AgentTool['parameters'],
+  prepareArguments(input) {
+    const args = object(input);
+    return { ...args, title: cliTitle(args.title) };
+  },
   async execute(_id, args, signal) {
     const { script } = args as { script: string };
-    const { json, isError } = await runScript(script, signal);
-    return { content: [{ type: 'text', text: json }], details: undefined, isError };
+    const { text, isError, details } = await runScript(script, signal);
+    return { content: [{ type: 'text', text }], details, isError };
   },
 };

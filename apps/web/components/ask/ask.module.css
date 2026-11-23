@@ -63,6 +63,13 @@
   & li[data-failed], & li[data-failed] > svg { color: var(--color-danger); }
   & q { color: var(--color-text); quotes: "「" "」"; }
 }
+.queryScript {
+  flex: 1; min-inline-size: 0;
+  & > summary { cursor: pointer; overflow-wrap: anywhere; }
+  &[open] > summary > svg { transform: rotate(90deg); }
+  & p { margin: 6px 0 0; }
+  & pre { margin: 4px 0; padding: var(--space-2); overflow: auto; max-block-size: 16rem; background: var(--color-tint); }
+}
 .status { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text-soft); font-size: var(--text-sm);
   & span { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--color-accent); animation: pulse 1.2s ease-in-out infinite; } }
 @keyframes pulse { 50% { opacity: .25; } }

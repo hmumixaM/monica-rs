@@ -11,9 +11,9 @@ function completion(delta: object, finish: 'stop' | 'tool_calls' | 'length' | nu
   };
 }
 
-function scriptCall(id: string, script: string) {
+function scriptCall(id: string, script: string, title?: string) {
   return completion({ role: 'assistant', tool_calls: [
-    { index: 0, id, type: 'function', function: { name: 'monica_cli', arguments: JSON.stringify({ script }) } },
+    { index: 0, id, type: 'function', function: { name: 'monica_cli', arguments: JSON.stringify({ script, title }) } },
   ] }, 'tool_calls');
 }
 
@@ -345,6 +345,7 @@ test('JavaScript shares the contacts filters, batches reads and keeps their cita
     if (path !== '/api/v1/ai/chat/completions') return route.fulfill({ json: [] });
     const { tools, messages } = route.request().postDataJSON();
     expect(tools.map((tool: { function: { name: string } }) => tool.function.name)).toEqual(['monica_cli']);
+    expect(tools[0].function.parameters.required).toContain('title');
     const last = messages.at(-1);
     if (last.role === 'user') {
       return route.fulfill(scriptCall('filtered-batch', `
@@ -352,7 +353,7 @@ test('JavaScript shares the contacts filters, batches reads and keeps their cita
         const facets = cli("directory_facets", {kind:"tags", query:"摄影"});
         const links = cli("batch", data.rows.map(p => ({command:"read_messages", args:{profile_id:p.profile_id}})), r=>r.messages[0].link);
         return {names: data.rows.map(p=>p.name), facets: facets.rows, links, fetch: typeof fetch};
-      `));
+      `, '筛选喜欢摄影的同事并查聊天'));
     }
     if (last.tool_call_id === 'filtered-batch') {
       expect(JSON.parse(last.content)).toEqual({
@@ -370,6 +371,19 @@ test('JavaScript shares the contacts filters, batches reads and keeps their cita
   await expect(page.getByText('找到两位符合筛选条件的联系人。')).toBeVisible();
   expect(directoryReads).toBe(2);
   expect(checked.sort()).toEqual(ids.slice(0, 2));
+  await page.reload();
+  await page.getByText('查询记录（2 步）', { exact: true }).click();
+  const title = page.getByText('筛选喜欢摄影的同事并查聊天', { exact: true });
+  const step = title.locator('..');
+  await expect(step.getByLabel('JavaScript 脚本')).toBeHidden();
+  await title.click();
+  await expect(step.getByLabel('JavaScript 脚本')).toContainText('data.rows.map(');
+  const queries = step.getByLabel('查询命令与参数');
+  await expect(queries).toContainText('cli("directory", {"query":"li","tags":["同事","喜欢摄影"]');
+  for (const id of ids.slice(0, 2)) {
+    await expect(queries).toContainText(`cli("read_messages", {"profile_id":"${id}"})`);
+  }
+  await expect(page.getByText('运行 JavaScript 查询', { exact: true })).toBeVisible();
 });
 
 test('JavaScript can summarize a whole large batch without retaining all message pages', async ({ page }) => {

@@ -1,10 +1,11 @@
 "use client";
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { ArrowUp, Check, CircleAlert, Download, Ellipsis, MessageSquarePlus, Search, Sparkles, Square, Trash2, Upload, X } from "lucide-react";
+import { ArrowUp, Check, ChevronRight, CircleAlert, Download, Ellipsis, MessageSquarePlus, Search, Sparkles, Square, Trash2, Upload, X } from "lucide-react";
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { useSearchParams } from "@/router/navigation";
+import { cliTitle, type CliQueryDetails } from "../../lib/agent/cli";
 import { chooseModel, exportConversation, forget, importConversation, modelChoices, restore, run, runningConversations, snapshot, stop, subscribe } from "../../lib/agent/runtime";
 import {
   activeConversation, type Conversation, createConversation, listConversations, saveConversation, selectConversation,
@@ -22,7 +23,7 @@ import styles from "./ask.module.css";
 const STARTERS = ["我最近和谁联系得最多？", "有哪些很久没联系、值得问候的老朋友？", "接下来一个月有谁过生日？"];
 const PERSON_STARTERS = ["TA 最近在忙什么？", "我们上次聊了什么？", "我答应过 TA 什么还没做的事？"];
 
-type Step = { id: string; label: string; detail: string; failed: boolean; done: boolean };
+type Step = { id: string; label: string; detail: string; script?: string; queries?: CliQueryDetails; failed: boolean; done: boolean };
 type Turn = { question: string; steps: Step[]; answer: string };
 
 /** A question, what Monica looked up for it, and what it said. */
@@ -38,13 +39,25 @@ function turns(messages: AgentMessage[]): Turn[] {
     if (!turn) continue;
     if (message.role === "toolResult") {
       const step = steps.get(message.toolCallId);
-      if (step) { step.done = true; step.failed = message.isError; }
+      if (step) {
+        step.done = true;
+        step.failed = message.isError;
+        const details = message.details as Partial<CliQueryDetails> | undefined;
+        if (message.toolName === "monica_cli" && Array.isArray(details?.queries)) {
+          step.queries = {
+            queries: details.queries.filter(query => typeof query === "string"),
+            omittedQueries: Number.isSafeInteger(details.omittedQueries) ? details.omittedQueries! : 0,
+          };
+        }
+      }
     } else if (message.role === "assistant") {
       for (const part of message.content) {
         if (part.type === "text") turn.answer += part.text;
         if (part.type === "toolCall" && message.stopReason !== "error" && message.stopReason !== "aborted") {
           const args = part.arguments as Record<string, unknown>;
-          const step = { id: part.id, label: TOOL_LABELS[part.name] ?? part.name, detail: String(args.query ?? args.since ?? ""), failed: false, done: false };
+          const script = part.name === "monica_cli" && typeof args.script === "string" ? args.script : undefined;
+          const label = part.name === "monica_cli" ? cliTitle(args.title) : TOOL_LABELS[part.name] ?? part.name;
+          const step = { id: part.id, label, detail: String(args.query ?? args.since ?? ""), script, failed: false, done: false };
           steps.set(part.id, step); turn.steps.push(step);
         }
       }
@@ -59,7 +72,16 @@ function Steps({ steps, live }: { steps: Step[]; live: boolean }) {
     <summary><Search size={13} aria-hidden="true" />查询记录（{steps.length} 步）</summary>
     <ol>{steps.map((step) => <li key={step.id} data-failed={step.failed ? "" : undefined} data-pending={!step.done && live ? "" : undefined}>
       {step.failed ? <CircleAlert size={13} aria-hidden="true" /> : <Check size={13} aria-hidden="true" />}
-      {step.label}{step.detail && <q>{step.detail}</q>}{step.failed && <span>查询失败</span>}
+      {step.script === undefined ? <>{step.label}{step.detail && <q>{step.detail}</q>}</> :
+        <details className={styles.queryScript}>
+          <summary><ChevronRight size={12} aria-hidden="true" />{step.label}</summary>
+          <pre aria-label="JavaScript 脚本"><code>{step.script}</code></pre>
+          {step.queries && (step.queries.queries.length > 0 || step.queries.omittedQueries > 0) && <>
+            <p>查询命令与参数{step.queries.omittedQueries > 0 && `（显示 ${step.queries.queries.length} 条，共 ${step.queries.queries.length + step.queries.omittedQueries} 条）`}</p>
+            <pre aria-label="查询命令与参数"><code>{step.queries.queries.join("\n")}</code></pre>
+          </>}
+        </details>}
+      {step.failed && <span>查询失败</span>}
     </li>)}</ol>
   </details>;
 }
