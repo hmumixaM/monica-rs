@@ -344,7 +344,10 @@ mod tests {
         assert_eq!(selected, shown);
         sqlx::query("UPDATE crm.media_slots SET source_observed_at=clock_timestamp() WHERE entity_id=$1 AND role='wechat_avatar_big'")
             .bind(account).execute(&pool).await.unwrap();
-        crate::media::refresh_profiles(&pool).await.unwrap();
+        // The fixture moved the timestamp directly, bypassing the import refresh queue.
+        crate::linking::refresh_account(&pool, account)
+            .await
+            .unwrap();
         let before_clear:Uuid=sqlx::query_scalar("SELECT p.avatar_media_id FROM crm.source_account_links l JOIN crm.profiles p ON p.id=l.profile_id WHERE l.account_id=$1")
             .bind(account).fetch_one(&pool).await.unwrap();
         assert_eq!(before_clear, old_asset.as_ref().unwrap().id);
