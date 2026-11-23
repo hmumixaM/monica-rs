@@ -443,6 +443,9 @@ class Consumer:
         own = self.args.wechat_self
         if not own or not self.db.execute("SELECT 1 FROM crm.legacy_chatlog_snapshots WHERE own_id=%s AND status IN ('converted','verified') LIMIT 1",(own,)).fetchone():
             raise ValueError('verified existing WeChat owner required')
+        # Start retries against the current complete SNS export before walking
+        # message shards. A large message rescan can otherwise delay them.
+        earlier_media = self.import_sns_media(source)
         with self.chatlog_control():
             manifest = dict(format=1,own_id=own,files=[],kind='continuous_business_pages',source='existing-chatlog-export')
             importer = self.legacy.Importer(self.db,manifest)
@@ -481,7 +484,8 @@ class Consumer:
                         posts.append((str(post[0]),))
                 with self.journal:
                     self.journal.executemany(
-                        'INSERT INTO sns_pending(event_id) VALUES(?) ON CONFLICT DO NOTHING', posts,
+                        'INSERT INTO sns_pending(event_id) VALUES(?) '
+                        'ON CONFLICT(event_id) DO UPDATE SET retry_at=0', posts,
                     )
                 self.legacy.atomic(reader_state/frame['ack_path'],dict(page_sha256=frame['page_sha256'],receipt_id=str(importer.id)))
                 self.counters['chatlog_pages'] += 1
@@ -494,7 +498,11 @@ class Consumer:
                 scan.close()
 
         if not STOP:
-            return self.import_sns_media(source)
+            status = self.import_sns_media(source)
+            for key in ('sns_ready', 'sns_failed'):
+                if key in status:
+                    status[key] += earlier_media.get(key, 0)
+            return status
 
     def import_sns_media(self, source):
         runtime = getattr(self.args, 'sns_runtime', None)
