@@ -53,7 +53,7 @@
 .answer { display: grid; gap: var(--space-3); min-inline-size: 0; }
 .steps {
   font-size: var(--text-xs); color: var(--color-text-soft);
-  & summary { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: var(--radius-chip); background: var(--color-tint); list-style: none; }
+  & summary { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: var(--radius-chip); background: var(--color-tint); list-style: none; cursor: pointer; }
   & summary::-webkit-details-marker { display: none; }
   & summary:hover { background: var(--color-tint-strong); color: var(--color-text); }
   & ol { display: grid; gap: 4px; margin: var(--space-2) 0 0; padding: 0 0 0 var(--space-3); border-inline-start: 2px solid var(--color-rule); list-style: none; }
@@ -65,10 +65,14 @@
 }
 .queryScript {
   flex: 1; min-inline-size: 0;
-  & > summary { cursor: pointer; overflow-wrap: anywhere; }
+  & > summary { overflow-wrap: anywhere; }
   &[open] > summary > svg { transform: rotate(90deg); }
   & p { margin: 6px 0 0; }
   & pre { margin: 4px 0; padding: var(--space-2); overflow: auto; max-block-size: 16rem; background: var(--color-tint); }
+}
+.thinking {
+  margin: var(--space-2) 0 0; padding: var(--space-2) var(--space-3); max-block-size: 18rem; overflow: auto;
+  background: var(--color-tint); font: inherit; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .status { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text-soft); font-size: var(--text-sm);
   & span { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--color-accent); animation: pulse 1.2s ease-in-out infinite; } }

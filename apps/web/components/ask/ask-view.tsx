@@ -1,7 +1,7 @@
 "use client";
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { ArrowUp, Check, ChevronRight, CircleAlert, Download, Ellipsis, MessageSquarePlus, Search, Sparkles, Square, Trash2, Upload, X } from "lucide-react";
+import { ArrowUp, Brain, Check, ChevronRight, CircleAlert, Download, Ellipsis, MessageSquarePlus, Search, Sparkles, Square, Trash2, Upload, X } from "lucide-react";
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { useSearchParams } from "@/router/navigation";
@@ -24,7 +24,7 @@ const STARTERS = ["我最近和谁联系得最多？", "有哪些很久没联系
 const PERSON_STARTERS = ["TA 最近在忙什么？", "我们上次聊了什么？", "我答应过 TA 什么还没做的事？"];
 
 type Step = { id: string; label: string; detail: string; script?: string; queries?: CliQueryDetails; failed: boolean; done: boolean };
-type Turn = { question: string; steps: Step[]; answer: string };
+type Turn = { question: string; steps: Step[]; thinking: string[]; answer: string };
 
 /** A question, what Monica looked up for it, and what it said. */
 function turns(messages: AgentMessage[]): Turn[] {
@@ -32,7 +32,7 @@ function turns(messages: AgentMessage[]): Turn[] {
   const steps = new Map<string, Step>();
   for (const message of messages) {
     if (message.role === "user") {
-      result.push({ question: typeof message.content === "string" ? message.content : message.content.map((part) => part.type === "text" ? part.text : "").join(""), steps: [], answer: "" });
+      result.push({ question: typeof message.content === "string" ? message.content : message.content.map((part) => part.type === "text" ? part.text : "").join(""), steps: [], thinking: [], answer: "" });
       continue;
     }
     const turn = result.at(-1);
@@ -53,6 +53,9 @@ function turns(messages: AgentMessage[]): Turn[] {
     } else if (message.role === "assistant") {
       for (const part of message.content) {
         if (part.type === "text") turn.answer += part.text;
+        if (part.type === "thinking" && !part.redacted && typeof part.thinking === "string" && part.thinking.trim()) {
+          turn.thinking.push(part.thinking);
+        }
         if (part.type === "toolCall" && message.stopReason !== "error" && message.stopReason !== "aborted") {
           const args = part.arguments as Record<string, unknown>;
           const script = part.name === "monica_cli" && typeof args.script === "string" ? args.script : undefined;
@@ -64,6 +67,16 @@ function turns(messages: AgentMessage[]): Turn[] {
     }
   }
   return result;
+}
+
+function Thinking({ parts }: { parts: string[] }) {
+  const [expanded, setExpanded] = useState(false);
+  return <details className={styles.steps} onToggle={event => setExpanded(event.currentTarget.open)}>
+    <summary><Brain size={13} aria-hidden="true" />模型思考</summary>
+    {expanded && <pre className={styles.thinking} tabIndex={0} aria-label="模型思考详情" aria-live="off">
+      {parts.join("\n\n")}
+    </pre>}
+  </details>;
 }
 
 function Steps({ steps, live }: { steps: Step[]; live: boolean }) {
@@ -229,6 +242,7 @@ export function AskView() {
               <p className={styles.question}>{turn.question}</p>
               <div className={styles.answer}>
                 <Steps steps={turn.steps} live={live} />
+                {turn.thinking.length > 0 && <Thinking key={id} parts={turn.thinking} />}
                 {turn.answer.trim() && <Markdown>{turn.answer}</Markdown>}
                 {live && <p className={styles.status} role="status"><span aria-hidden="true" />{state.status}</p>}
               </div>

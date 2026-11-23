@@ -273,6 +273,37 @@ test('an oversized tool result is compacted and a length-limited answer continue
   expect([modelCalls, searchCalls]).toEqual([5, 1]);
 });
 
+test('thinking-only completions keep their details folded and separate from the answer', async ({ page }) => {
+  const parts = ['合成思考第一轮。', '合成思考第二轮。', '合成思考第三轮。'];
+  let calls = 0;
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/v1/me') return route.fulfill({ json: { id: 'synthetic', email: 'synthetic@example.invalid' } });
+    if (path === '/api/v1/auth/csrf') return route.fulfill({ json: { csrf_token: 'synthetic' } });
+    if (path === '/api/v1/ai/browser-model') {
+      return route.fulfill({ json: { enabled: true, model: 'deepseek-v4-pro', context_window: 32000, max_tokens: 1000 } });
+    }
+    if (path === '/api/v1/ai/chat/completions') {
+      return route.fulfill(completion({ role: 'assistant', reasoning_content: parts[calls++] }, 'length'));
+    }
+    return route.fulfill({ json: [] });
+  });
+  await page.goto('/ask');
+  await page.getByLabel('问题', { exact: true }).fill('整理合成资料');
+  await page.getByRole('button', { name: '提问', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('模型这次没有生成回答');
+  expect(calls).toBe(parts.length);
+  await page.reload();
+  const fold = page.getByText('模型思考', { exact: true });
+  const details = page.getByLabel('模型思考详情');
+  await expect(fold).toBeVisible();
+  await expect(details).toBeHidden();
+  await fold.click();
+  await expect(details).toHaveText(parts.join(' '));
+  await fold.click();
+  await expect(details).toBeHidden();
+});
+
 test('a stopped partial answer survives the next question and reload', async ({ page }) => {
   const stoppedText = '这是停止之前已经写出的部分。';
   await page.route('**/api/**', async route => {
