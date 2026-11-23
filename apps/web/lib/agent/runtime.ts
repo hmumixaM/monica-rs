@@ -1,10 +1,12 @@
 "use client";
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core';
-import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions';
+import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript';
 import { del, get, set } from 'idb-keyval';
 import { apiFetch } from '../api';
 import type { PickedPerson } from '../../components/ui/person-picker';
-import { compactContext, resumeContext } from './context';
+import { compactContext, contextBudget, estimateTokens, resumeContext } from './context';
+import { streamModel } from './model-stream';
+import { readJson } from './requests';
 import { listConversations, saveConversation } from './sessions';
 import { TOOL_LABELS, tools } from './tools';
 
@@ -48,6 +50,7 @@ ${focus}
 - 搜到线索后，用 read_messages 读那几天前后的聊天，看清上下文再下结论；只凭一句命中的话容易看错。
 - 结果带 earlier 说明更早还有。问题问的是「所有」「每次」「第一次」「这些年」时，用 before 一直翻到问题要求的时间范围读完，或者 earlier 为空。
 - 问题涉及好几个人或好几件事时，逐个查，不要查完一个就作答。
+- 工具报错或返回 not_searched 时，那部分的结果未知。保留已有线索。工具已自动处理临时连接故障。持续失败时，缩小时间范围、换关键词，或改用 read_messages 等工具。用已经核实的内容回答，并说明哪些资料暂时查不了。
 - 确实查不到时，说明查过哪些说法、哪段时间。
 - 聊天里 from 为「我」的是用户本人，其余是对方或群成员。
 
@@ -59,19 +62,19 @@ ${focus}
 
 /** An assistant turn that neither says anything nor asks for a lookup. */
 function wroteNothing(message?: AgentMessage) {
-  if (!message || message.role !== 'assistant' || message.errorMessage) return false;
+  if (!message || message.role !== 'assistant' || (message.stopReason !== 'stop' && message.stopReason !== 'length')) return false;
   return !message.content.some(part => part.type === 'toolCall' || (part.type === 'text' && part.text.trim()));
 }
 
 async function settings(signal: AbortSignal) {
-  const response = await apiFetch('/api/v1/ai/browser-model', { signal });
-  if (!response.ok) throw new Error(`无法读取模型设置 (${response.status})`);
-  const value = await response.json();
+  const value = await readJson<{ enabled: boolean; model: string; models?: string[]; context_window: number; max_tokens: number }>(
+    '/api/v1/ai/browser-model', signal, '无法读取模型设置');
   if (!value.enabled) throw new Error('问答还没有开启。请在「设置 → 模型」里启用模型服务和问 Monica。');
-  return value as { model: string; models?: string[]; context_window: number; max_tokens: number };
+  return value;
 }
 
 const MODEL_KEY = 'monica:ask:model';
+const MAX_LOOKUP_ROUNDS = 50;
 /** The models a question can be answered with, the configured one first, and the one chosen in this browser. */
 export async function modelChoices(): Promise<{ models: string[]; chosen: string }> {
   const response = await apiFetch('/api/v1/ai/browser-model');
@@ -88,53 +91,108 @@ export async function run(id: string, question: string, people: PickedPerson[]) 
   const controller = new AbortController(); controllers.set(id, controller);
   update(id, { running: true, error: '', status: '正在思考…' });
   try {
-    const conversation = (await listConversations()).find(c => c.id === id);
-    if (conversation) await saveConversation({ ...conversation, updatedAt: Date.now(),
-      title: snapshot(id).messages.length ? conversation.title : question.trim().slice(0, 60) });
     await navigator.locks.request(transcriptKey(id), { ifAvailable: true }, async lock => {
       if (!lock) throw new Error('这个会话正在另一个标签页里回答');
+      const history = await get<AgentMessage[]>(transcriptKey(id)) ?? [];
+      const conversation = (await listConversations()).find(c => c.id === id);
+      if (conversation) await saveConversation({ ...conversation, updatedAt: Date.now(),
+        title: history.some(message => message.role === 'user') ? conversation.title : question.trim().slice(0, 60) });
+      const messages: AgentMessage[] = [...history, { role: 'user', content: question, timestamp: Date.now() }];
+      await set(transcriptKey(id), messages);
+      update(id, { messages });
       const model = await settings(controller.signal);
       // The server answers with the configured model unless this one is among its choices.
       const chosen = localStorage.getItem(MODEL_KEY) ?? '';
       const modelId = (model.models ?? []).includes(chosen) ? chosen : model.model;
-      let nudge = false;
-      const agent = new Agent({ initialState: {
-        model: { id: modelId, name: modelId, provider: 'monica', api: 'openai-completions',
-          baseUrl: location.origin + '/api/v1/ai', reasoning: false, input: ['text'],
-          contextWindow: model.context_window, maxTokens: model.max_tokens,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          compat: { supportsDeveloperRole: false, supportsStore: false, maxTokensField: 'max_tokens' } },
-        messages: resumeContext(snapshot(id).messages),
-        systemPrompt: systemPrompt(people),
-        tools: tools(),
-      }, transformContext: async messages => {
-        const context = compactContext(messages, model.context_window, model.max_tokens);
-        return nudge ? [...context, { role: 'user', content: '继续：还需要查就接着查；查够了，就根据已经查到的内容写出回答。', timestamp: Date.now() }] : context;
-      },
-      streamFn: (target, context, options) => streamSimple(target as Parameters<typeof streamSimple>[0], context, {
-        ...options, apiKey: 'local-session', fetch: apiFetch, maxRetries: 0,
-      }) });
+      let nudges = 0;
+      let lengthContinuations = 0;
+      let lookupRounds = 0;
+      let instruction = '';
+      let requestInstruction = '';
+      let requestMessages: AgentMessage[] = [];
+      let budget = contextBudget(model.context_window, model.max_tokens);
+      function prepareContext(limit: number) {
+        const context = compactContext(requestMessages, limit);
+        if (!requestInstruction) return context;
+        if (wroteNothing(context.at(-1))) context.pop();
+        return [...context, { role: 'user' as const, content: requestInstruction, timestamp: Date.now() }];
+      }
+      const agent = new Agent({
+        initialState: {
+          model: { id: modelId, name: modelId, provider: 'monica', api: 'openai-completions',
+            baseUrl: location.origin + '/api/v1/ai', reasoning: false, input: ['text'],
+            contextWindow: model.context_window, maxTokens: model.max_tokens,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            compat: { supportsDeveloperRole: false, supportsStore: false, maxTokensField: 'max_tokens' } },
+          messages: resumeContext(messages),
+          systemPrompt: systemPrompt(people),
+          tools: tools(),
+        },
+        transformContext: async messages => {
+          requestMessages = [...messages];
+          requestInstruction = instruction;
+          instruction = '';
+          return prepareContext(budget);
+        },
+        streamFn: (target, context, options) => streamModel(target as Parameters<typeof streamModel>[0], context, {
+          ...options, toolChoice: lookupRounds >= MAX_LOOKUP_ROUNDS ? 'none' : options?.toolChoice,
+        }, {
+          onRetry: () => update(id, { messages: [...agent.state.messages], status: '模型连接中断，正在重试…' }),
+          compact: current => {
+            const size = estimateTokens(current.messages.filter(message => message.role !== 'system'));
+            const smaller = Math.min(budget, Math.max(1_000, Math.floor(size * 0.55)));
+            const messages = prepareContext(smaller);
+            if (estimateTokens(messages) >= estimateTokens(current.messages)) return;
+            budget = smaller;
+            update(id, { messages: [...agent.state.messages], status: '正在缩短上下文，保留本轮问题和查询结果…' });
+            return normalizeContext({ messages });
+          },
+        }),
+        beforeToolCall: async () => lookupRounds >= MAX_LOOKUP_ROUNDS
+          ? { block: true, reason: '本轮查询已到上限。' }
+          : undefined,
+        finishTurn: ({ message, toolResults }, signal) => {
+          if (signal?.aborted || message.stopReason === 'error' || message.stopReason === 'aborted') return;
+          if (toolResults.length) {
+            if (lookupRounds >= MAX_LOOKUP_ROUNDS) return { action: 'end' };
+            if (++lookupRounds === MAX_LOOKUP_ROUNDS) {
+              instruction = '本轮查询已到上限。根据已核实的资料回答，并说明还有哪些范围没查完。';
+            }
+            return;
+          }
+          if (wroteNothing(message) && nudges < 2) {
+            nudges++;
+            instruction = '继续：还需要查就接着查，查够了就根据已经查到的内容回答。';
+            return { action: 'continue' };
+          }
+          if (message.stopReason === 'length' && !wroteNothing(message) && lengthContinuations < 2) {
+            lengthContinuations++;
+            instruction = '上一段回答达到输出上限。请从断开的地方继续，避免重复已经写过的内容。';
+            return { action: 'continue' };
+          }
+        },
+      });
       agents.set(id, agent);
       const unsubscribe = agent.subscribe(async event => {
         if (event.type === 'tool_execution_start') update(id, { status: `正在${TOOL_LABELS[event.toolName] ?? event.toolName}…` });
         if (event.type === 'tool_execution_end') update(id, { status: '正在整理回答…' });
-        if (event.type === 'message_update' || event.type === 'message_end') {
-          update(id, { messages: event.type === 'message_update' ? [...agent.state.messages.filter(m => m !== event.message), event.message] : [...agent.state.messages] });
+        if (event.type === 'message_update') {
+          update(id, { messages: [...agent.state.messages, event.message],
+            status: event.assistantMessageEvent.type.startsWith('text_') ? '正在回答…' : '正在思考…' });
         }
-        if (event.type === 'message_end') await set(transcriptKey(id), [...agent.state.messages]);
+        if (event.type === 'message_end') {
+          const messages = [...agent.state.messages];
+          update(id, { messages });
+          await set(transcriptKey(id), messages);
+        }
       });
       try {
-        await agent.prompt(question);
-        // After several lookups the model sometimes ends its turn having written nothing.
-        // Asked to go on, it answers from what it has read; the request is not kept in the transcript.
-        for (let attempt = 0; attempt < 2 && wroteNothing(agent.state.messages.at(-1)) && !controller.signal.aborted; attempt++) {
-          agent.state.messages = agent.state.messages.slice(0, -1);
-          update(id, { status: '正在整理回答…' });
-          nudge = true;
-          await agent.continue();
-        }
+        controller.signal.throwIfAborted();
+        await agent.continue();
         if (agent.state.errorMessage) throw new Error(agent.state.errorMessage);
-        if (wroteNothing(agent.state.messages.at(-1)) && !controller.signal.aborted) throw new Error('模型这次没有写出回答，请再问一次。');
+        const last = agent.state.messages.at(-1);
+        if (wroteNothing(last)) throw new Error('模型这次没有生成回答。本轮进度已保存。');
+        if (last?.role === 'assistant' && last.stopReason === 'length') throw new Error('回答达到长度上限。已生成的内容已保存。');
       } finally {
         unsubscribe(); agents.delete(id);
         const messages = [...agent.state.messages];

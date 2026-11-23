@@ -11,6 +11,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::Row;
+use std::time::Duration;
 pub(super) fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/v1/ai/browser-model", get(model))
@@ -128,18 +129,76 @@ async fn completion(
         })
         .await
         .map_err(|_| ApiError(StatusCode::SERVICE_UNAVAILABLE, "模型资源暂时不可用"))?;
-    let upstream = provider
+    let mut upstream = provider
         .forward(&body)
         .await
         .map_err(|_| ApiError(StatusCode::BAD_GATEWAY, "模型服务请求失败"))?;
     if !upstream.status().is_success() {
-        tracing::warn!(status = %upstream.status(), "model service rejected a question");
-        return Err(ApiError(
-            StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY),
-            "模型服务请求失败",
-        ));
+        let status =
+            StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+        tracing::warn!(%status, "model service rejected a question");
+        if status == StatusCode::PAYLOAD_TOO_LARGE
+            || (matches!(
+                status,
+                StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY
+            ) && tokio::time::timeout(Duration::from_secs(2), context_rejection(&mut upstream))
+                .await
+                .unwrap_or(false))
+        {
+            return Err(ApiError(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "模型上下文超出上限",
+            ));
+        }
+        let detail = if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
+            "模型服务拒绝授权，请检查模型设置"
+        } else {
+            "模型服务请求失败"
+        };
+        let mut response = ApiError(status, detail).into_response();
+        if matches!(
+            status,
+            StatusCode::TOO_MANY_REQUESTS | StatusCode::SERVICE_UNAVAILABLE
+        ) && let Some(delay) = upstream.headers().get(header::RETRY_AFTER)
+        {
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, delay.clone());
+        }
+        return Ok(response);
     }
     Ok(stream_response(upstream, slot, resources))
+}
+async fn context_rejection(upstream: &mut monica_core::ai::provider::ForwardResponse) -> bool {
+    const LIMIT: usize = 32 * 1024;
+    let mut bytes = Vec::new();
+    loop {
+        match upstream.chunk().await {
+            Ok(Some(chunk)) if bytes.len() + chunk.len() <= LIMIT => {
+                bytes.extend_from_slice(&chunk)
+            }
+            Ok(None) => break,
+            _ => return false,
+        }
+    }
+    context_limit_error(&bytes)
+}
+
+fn context_limit_error(bytes: &[u8]) -> bool {
+    let Ok(body) = serde_json::from_slice::<Value>(bytes) else {
+        return false;
+    };
+    let error = body.get("error").unwrap_or(&body);
+    let message = error["message"]
+        .as_str()
+        .or(error.as_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    error["code"].as_str() == Some("context_length_exceeded")
+        || error["type"].as_str() == Some("context_length_exceeded")
+        || message.contains("context_length_exceeded")
+        || message.contains("maximum context length")
+        || message.contains("context window exceeded")
 }
 fn stream_response(
     mut upstream: monica_core::ai::provider::ForwardResponse,
@@ -181,6 +240,19 @@ mod tests {
     use super::*;
     use axum::body::to_bytes;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    #[test]
+    fn only_context_errors_trigger_compaction() {
+        assert!(context_limit_error(
+            br#"{"error":{"code":"context_length_exceeded"}}"#
+        ));
+        assert!(context_limit_error(
+            br#"{"error":{"message":"This model's maximum context length is 8192 tokens"}}"#
+        ));
+        assert!(!context_limit_error(
+            br#"{"error":{"message":"Invalid model name"}}"#
+        ));
+        assert!(!context_limit_error(b"unstructured upstream error"));
+    }
     #[test]
     fn browser_payload_is_stateless_and_capped() {
         let input:Completion=serde_json::from_value(json!({"messages":[{"role":"user","content":"Synthetic only"}],"tools":[{"type":"function","function":{"name":"lookup"}}],"tool_choice":"auto","max_tokens":99999,"temperature":0.1})).unwrap();

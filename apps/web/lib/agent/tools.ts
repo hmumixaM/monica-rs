@@ -1,18 +1,12 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
-import { apiFetch } from '../api';
 import { messageText } from '../record-text';
+import { readJson as read } from './requests';
 
 /** What Monica can look up. Each tool reads the same endpoints as the pages do and returns
  * only what an answer needs: names, local times, text and a link back to the original. */
 
 type Json = Record<string, any>;
 type Args = Record<string, string | undefined>;
-
-async function read(path: string, signal?: AbortSignal): Promise<any> {
-  const response = await apiFetch(path, { signal });
-  if (!response.ok) throw new Error(response.status === 503 ? '数据库正忙，请稍后重试这次查询' : `查询失败 (${response.status})`);
-  return response.json();
-}
 
 const query = (values: Args) => new URLSearchParams(Object.entries(values).filter((entry): entry is [string, string] => !!entry[1])).toString();
 const cut = (text: unknown, length: number) => { const value = String(text ?? '').trim(); return value.length > length ? value.slice(0, length) + '…' : value; };
@@ -119,23 +113,26 @@ export function tools(): AgentTool[] {
     }, ['query'], async (a, signal) => {
       const limit = 40;
       const terms = [...new Set((a.query ?? '').split(/[|｜]/).map(term => term.trim()).filter(Boolean))].slice(0, 6);
-      const pages: Json[][] = []; const unsearched: string[] = [];
+      const pages: Json[][] = [];
+      const failures: { term: string; error: string }[] = [];
       for (const term of terms) {
         const path = a.profile_id
           ? `/api/v1/profiles/${a.profile_id}/messages?${query({ q: term, include_group_speech: 'true', conversation_type: a.chat, since: instant(a.since), before: instant(a.before), limit: String(limit) })}`
           : `/api/v1/messages/search?${query({ q: term, conversation_type: a.chat, since: instant(a.since), before: instant(a.before), limit: String(limit) })}`;
-        // A busy database fails one term, not the whole search: try it once more, then say which terms are missing.
-        try { pages.push(await read(path, signal).catch(() => read(path, signal))); }
-        catch (error) { if (signal?.aborted || terms.length === 1) throw error; unsearched.push(term); }
+        try { pages.push(await read(path, signal)); }
+        catch (error) {
+          signal?.throwIfAborted();
+          failures.push({ term, error: error instanceof Error ? error.message : String(error) });
+        }
       }
-      if (!pages.length) throw new Error('数据库正忙，这几个词都没有搜成，请稍后重试');
+      if (!pages.length) throw new Error(failures.length ? JSON.stringify({ not_searched: failures }) : '请提供要搜索的关键词。');
       // A term that filled its page has older matches not read yet. Stop the merged
       // page where the first such term stops, so turning the page skips nothing.
       const reached = pages.filter(rows => rows.length === limit).map(rows => String(rows.at(-1)!.occurred_at)).sort().at(-1) ?? null;
       const seen = new Set<string>();
       const rows = pages.flat().filter(row => (!reached || String(row.occurred_at) >= reached) && !seen.has(row.id) && seen.add(row.id))
         .sort((x, y) => String(y.occurred_at).localeCompare(String(x.occurred_at)));
-      return { messages: rows.map(row => messageRow(row, terms)), earlier: reached, ...(unsearched.length ? { not_searched: unsearched, note: 'not_searched 里的词因为数据库正忙没有搜成，需要时单独再搜' } : {}) };
+      return { messages: rows.map(row => messageRow(row, terms)), earlier: reached, ...(failures.length ? { not_searched: failures } : {}) };
     }),
 
     tool('read_messages', TOOL_LABELS.read_messages, '按时间读取和一个人的聊天（含 TA 在群里说的话），新的在前。用 since、until 读某段时间，用 before 向更早翻页。', {

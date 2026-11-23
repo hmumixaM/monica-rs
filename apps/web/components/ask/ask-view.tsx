@@ -42,7 +42,7 @@ function turns(messages: AgentMessage[]): Turn[] {
     } else if (message.role === "assistant") {
       for (const part of message.content) {
         if (part.type === "text") turn.answer += part.text;
-        if (part.type === "toolCall") {
+        if (part.type === "toolCall" && message.stopReason !== "error" && message.stopReason !== "aborted") {
           const args = part.arguments as Record<string, unknown>;
           const step = { id: part.id, label: TOOL_LABELS[part.name] ?? part.name, detail: String(args.query ?? args.since ?? ""), failed: false, done: false };
           steps.set(part.id, step); turn.steps.push(step);
@@ -59,7 +59,7 @@ function Steps({ steps, live }: { steps: Step[]; live: boolean }) {
     <summary><Search size={13} aria-hidden="true" />查了 {steps.length} 处资料</summary>
     <ol>{steps.map((step) => <li key={step.id} data-failed={step.failed ? "" : undefined} data-pending={!step.done && live ? "" : undefined}>
       {step.failed ? <CircleAlert size={13} aria-hidden="true" /> : <Check size={13} aria-hidden="true" />}
-      {step.label}{step.detail && <q>{step.detail}</q>}{step.failed && <span>没有查到</span>}
+      {step.label}{step.detail && <q>{step.detail}</q>}{step.failed && <span>查询失败</span>}
     </li>)}</ol>
   </details>;
 }

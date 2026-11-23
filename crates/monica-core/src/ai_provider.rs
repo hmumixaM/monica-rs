@@ -199,41 +199,19 @@ impl OpenAiProvider {
         }
         bail!("model retry limit")
     }
-    /// Stateless transport: response owns the upstream connection. Do not retry
-    /// after returning headers or after any streamed bytes have been delivered.
+    /// Stateless transport for the browser agent, which owns the retry budget.
     pub async fn forward(&self, body: &Value) -> Result<reqwest::Response> {
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(15))
             .timeout(Duration::from_secs(180))
             .build()?;
-        for retry in retries() {
-            match client
-                .post(self.endpoint.clone())
-                .bearer_auth(&self.api_key)
-                .json(body)
-                .send()
-                .await
-            {
-                Ok(response) => {
-                    let status = response.status();
-                    if (status == reqwest::StatusCode::TOO_MANY_REQUESTS
-                        || status == reqwest::StatusCode::REQUEST_TIMEOUT
-                        || status.is_server_error())
-                        && let Some(delay) = retry
-                    {
-                        drop(response);
-                        tokio::time::sleep(delay).await;
-                        continue;
-                    }
-                    return Ok(response);
-                }
-                Err(error) => match retry {
-                    Some(delay) => tokio::time::sleep(delay).await,
-                    None => bail!("model transport unavailable: {}", error.without_url()),
-                },
-            }
-        }
-        bail!("model transport retry limit")
+        client
+            .post(self.endpoint.clone())
+            .bearer_auth(&self.api_key)
+            .json(body)
+            .send()
+            .await
+            .map_err(|error| error.without_url().into())
     }
 }
 impl Provider for OpenAiProvider {
