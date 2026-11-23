@@ -89,7 +89,7 @@ function useStoredSnapshot<T>(key: readonly string[], url: string, storeKey: str
   return query;
 }
 
-function decode(raw: RawDirectory): Directory {
+export function decodeDirectory(raw: RawDirectory): Directory {
   const column = Object.fromEntries(raw.columns.map((name, index) => [name, index]));
   const lookup = (list: [string, string][]) => (indices: unknown) =>
     (indices as number[]).map((index) => list[index][0]);
@@ -132,7 +132,7 @@ const decodedSnapshots = new WeakMap<Snapshot<RawDirectory>, Directory>();
 function decoded(snapshot: Snapshot<RawDirectory>): Directory {
   let directory = decodedSnapshots.get(snapshot);
   if (!directory) {
-    directory = decode(snapshot.data);
+    directory = decodeDirectory(snapshot.data);
     decodedSnapshots.set(snapshot, directory);
   }
   return directory;

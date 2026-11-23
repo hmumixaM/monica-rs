@@ -89,11 +89,12 @@ const PERSON = { type: 'string', description: '人物的 profile_id' } as const;
 const BEFORE = { type: 'string', description: '只看这个时间之前的内容，用于向更早翻页；填上一页返回的 earlier' } as const;
 
 export const TOOL_LABELS: Record<string, string> = {
+  monica_cli: '运行 JavaScript 查询',
   find_people: '查找人物', get_person: '读取人物资料', search_messages: '搜索聊天', read_messages: '读取聊天',
   get_posts: '读取动态', search_records: '搜索动态与记录', search_mail: '搜索邮件与来源记录', read_record: '读取原文', relationship_overview: '查看往来概况',
 };
 
-export function tools(): AgentTool[] {
+export function lookupCommands(): AgentTool[] {
   return [
     tool('find_people', TOOL_LABELS.find_people, '按名字、备注或简介查找通讯录里的人，返回 profile_id。', {
       query: { type: 'string', description: '名字或关键词' },
@@ -125,7 +126,7 @@ export function tools(): AgentTool[] {
           failures.push({ term, error: error instanceof Error ? error.message : String(error) });
         }
       }
-      if (!pages.length) throw new Error(failures.length ? JSON.stringify({ not_searched: failures }) : '请提供要搜索的关键词。');
+      if (!terms.length) throw new Error('请提供要搜索的关键词。');
       // A term that filled its page has older matches not read yet. Stop the merged
       // page where the first such term stops, so turning the page skips nothing.
       const reached = pages.filter(rows => rows.length === limit).map(rows => String(rows.at(-1)!.occurred_at)).sort().at(-1) ?? null;

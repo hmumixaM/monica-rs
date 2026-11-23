@@ -5,9 +5,9 @@ import { ArrowUp, Check, CircleAlert, Download, Ellipsis, MessageSquarePlus, Sea
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { useSearchParams } from "@/router/navigation";
-import { chooseModel, exportConversation, forget, importConversation, modelChoices, restore, run, snapshot, stop, subscribe } from "../../lib/agent/runtime";
+import { chooseModel, exportConversation, forget, importConversation, modelChoices, restore, run, runningConversations, snapshot, stop, subscribe } from "../../lib/agent/runtime";
 import {
-  activeConversation, type Conversation, createConversation, deleteConversation, listConversations, saveConversation, selectConversation,
+  activeConversation, type Conversation, createConversation, listConversations, saveConversation, selectConversation,
 } from "../../lib/agent/sessions";
 import { TOOL_LABELS } from "../../lib/agent/tools";
 import { fetchJson } from "../../lib/queries";
@@ -80,14 +80,17 @@ export function AskView() {
   const input = useRef<HTMLTextAreaElement>(null);
   const end = useRef<HTMLDivElement>(null);
   const state = useSyncExternalStore(subscribe, () => snapshot(id), () => snapshot(id));
+  const running = useSyncExternalStore(subscribe, runningConversations, runningConversations);
   const transcript = useMemo(() => turns(state.messages), [state.messages]);
   const busy = !ready || state.running;
   const report = (error: unknown) => setFailure(error instanceof Error ? error.message : String(error));
 
   async function open(session: Conversation) {
     setReady(false); setQuestion(""); setFailure("");
-    await restore(session.id); await selectConversation(session.id);
-    setId(session.id); setPeople(session.people); setReady(true);
+    try {
+      await restore(session.id); await selectConversation(session.id);
+      setId(session.id); setPeople(session.people);
+    } finally { setReady(true); }
   }
   useEffect(() => {
     let active = true;
@@ -99,7 +102,7 @@ export function AskView() {
     return () => { active = false; };
   }, []);
   // A finished answer may have renamed the conversation.
-  useEffect(() => { if (ready) void listConversations().then(setSessions).catch(report); }, [state.running, ready]);
+  useEffect(() => { if (ready) void listConversations().then(setSessions).catch(report); }, [running, ready]);
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [state.messages, state.status]);
 
   async function choosePeople(next: PickedPerson[]) {
@@ -120,15 +123,21 @@ export function AskView() {
 
   // A question typed on the home page arrives ready to send.
   const handedOver = params.get("q");
-  useEffect(() => { if (handedOver && ready) { setQuestion(handedOver); input.current?.focus(); } }, [handedOver, ready]);
+  const appliedQuestion = useRef<string | null>(null);
+  useEffect(() => {
+    if (!handedOver || !ready || appliedQuestion.current === handedOver) return;
+    appliedQuestion.current = handedOver;
+    setQuestion(handedOver); input.current?.focus();
+  }, [handedOver, ready]);
 
   async function startNew() {
+    setReady(false);
     try { const session = await createConversation(); setSessions(await listConversations()); await open(session); input.current?.focus(); }
-    catch (error) { report(error); }
+    catch (error) { setReady(true); report(error); }
   }
   async function remove(session: Conversation) {
     try {
-      await forget(session.id); await deleteConversation(session.id);
+      await forget(session.id);
       const rest = await listConversations();
       setSessions(rest);
       if (session.id === id) await open(rest[0]);
@@ -156,23 +165,23 @@ export function AskView() {
     <PageHeader title="问 Monica" description="问一个人的近况、聊过的事，或者整体的往来。回答里的链接可以打开原文。" />
     <div className={styles.workspace}>
       <aside className={styles.sessions} aria-label="会话">
-        <Button block variant="secondary" disabled={busy} onClick={() => void startNew()}><MessageSquarePlus size={15} aria-hidden="true" />新会话</Button>
+        <Button block variant="secondary" disabled={!ready} onClick={() => void startNew()}><MessageSquarePlus size={15} aria-hidden="true" />新会话</Button>
         <ul role="list">{sessions.map((session) => <li key={session.id} data-current={session.id === id ? "" : undefined}>
-          <button type="button" disabled={busy && session.id !== id} aria-current={session.id === id ? "true" : undefined}
+          <button type="button" disabled={!ready} aria-current={session.id === id ? "true" : undefined}
             onClick={() => { if (session.id !== id) void open(session).catch(report); }}>{session.title}</button>
-          {sessions.length > 1 && <IconButton size="sm" label={`删除会话：${session.title}`} disabled={state.running && session.id === id}
+          {sessions.length > 1 && <IconButton size="sm" label={`删除会话：${session.title}`} disabled={!ready || running.has(session.id)}
             onClick={() => void remove(session)}><Trash2 size={13} /></IconButton>}
         </li>)}</ul>
       </aside>
 
       <section className={styles.chat} aria-label="当前会话">
         <header className={styles.chatHeader}>
-          <Select className={styles.sessionSelect} aria-label="选择会话" value={id} disabled={busy} onChange={(event) => {
+          <Select className={styles.sessionSelect} aria-label="选择会话" value={id} disabled={!ready} onChange={(event) => {
             const selected = sessions.find((session) => session.id === event.target.value);
             if (selected) void open(selected).catch(report);
           }}>{sessions.map((session) => <option key={session.id} value={session.id}>{session.title}</option>)}</Select>
           <h2>{current?.title ?? "新会话"}</h2>
-          <IconButton className={styles.newMobile} label="新会话" disabled={busy} onClick={() => void startNew()}><MessageSquarePlus size={17} /></IconButton>
+          <IconButton className={styles.newMobile} label="新会话" disabled={!ready} onClick={() => void startNew()}><MessageSquarePlus size={17} /></IconButton>
           <Menu trigger={<IconButton label="会话操作" disabled={!ready}><Ellipsis size={17} /></IconButton>} items={[
             { label: "导出会话", icon: <Download size={15} />, onSelect: () => void exportConversation(id).catch(report) },
             { label: "导入会话", icon: <Upload size={15} />, disabled: state.running, onSelect: () => fileInput.current?.click() },
@@ -222,7 +231,7 @@ export function AskView() {
               : <button type="button" className={styles.addPerson} disabled={busy} onClick={() => setPicking(true)}>@ {people.length ? "再加一个人" : "选择人物"}</button>}
           </div>
           <div className={styles.inputRow}>
-            <textarea ref={input} id="monica-question" name="question" aria-label="问题" rows={2} value={question} onKeyDown={onKey}
+            <textarea ref={input} id="monica-question" name="question" aria-label="问题" rows={2} value={question} disabled={!ready} onKeyDown={onKey}
               onChange={(event) => setQuestion(event.target.value)} placeholder={people.length ? "问关于 TA 的问题…" : "输入问题…"} />
             {state.running
               ? <IconButton label="停止回答" className={styles.send} onClick={() => stop(id)}><Square size={15} /></IconButton>
@@ -231,7 +240,7 @@ export function AskView() {
           <div className={styles.footnote}>
             <small>Enter 发送，Shift + Enter 换行。会话只保存在这个浏览器里。</small>
             {models.length > 1 && <label className={styles.model}>模型
-              <select aria-label="回答用的模型" value={model} disabled={state.running}
+              <select aria-label="回答用的模型" value={state.running ? state.model ?? model : model} disabled={state.running}
                 onChange={(event) => { setModel(event.target.value); chooseModel(event.target.value); }}>
                 {models.map((name) => <option key={name} value={name}>{name}</option>)}
               </select></label>}

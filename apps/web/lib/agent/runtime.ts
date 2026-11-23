@@ -4,24 +4,32 @@ import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript';
 import { del, get, set } from 'idb-keyval';
 import { apiFetch } from '../api';
 import type { PickedPerson } from '../../components/ui/person-picker';
+import { cliTool } from './cli';
 import { compactContext, contextBudget, estimateTokens, resumeContext } from './context';
 import { streamModel } from './model-stream';
 import { readJson } from './requests';
-import { listConversations, saveConversation } from './sessions';
-import { TOOL_LABELS, tools } from './tools';
+import { deleteConversation, listConversations, saveConversation } from './sessions';
+import { TOOL_LABELS } from './tools';
 
 /** One conversation's transcript and progress, shared by every view of it. */
-export type Snapshot = { messages: AgentMessage[]; running: boolean; status: string; error: string };
+export type Snapshot = { messages: AgentMessage[]; running: boolean; status: string; error: string; model?: string };
 const snapshots = new Map<string, Snapshot>();
 const listeners = new Set<() => void>();
 const agents = new Map<string, Agent>();
 const controllers = new Map<string, AbortController>();
+let runningIds = new Set<string>();
 const empty: Snapshot = { messages: [], running: false, status: '', error: '' };
 const transcriptKey = (id: string) => 'monica:ask:' + id;
 
 export const subscribe = (fn: () => void) => { listeners.add(fn); return () => { listeners.delete(fn); }; };
 export const snapshot = (id: string) => snapshots.get(id) ?? empty;
+export const runningConversations = (): ReadonlySet<string> => runningIds;
 function update(id: string, value: Partial<Snapshot>) {
+  if (value.running !== undefined && value.running !== runningIds.has(id)) {
+    runningIds = new Set(runningIds);
+    if (value.running) runningIds.add(id);
+    else runningIds.delete(id);
+  }
   snapshots.set(id, { ...snapshot(id), ...value }); listeners.forEach(fn => fn());
 }
 
@@ -31,26 +39,35 @@ export async function restore(id: string) {
   if (!snapshots.has(id)) update(id, { messages: saved ?? [] });
 }
 export function stop(id: string) { controllers.get(id)?.abort(); agents.get(id)?.abort(); }
-export async function forget(id: string) { stop(id); snapshots.delete(id); await del(transcriptKey(id)); }
+export async function forget(id: string) {
+  if (runningIds.has(id)) throw new Error('这个会话还在回答。');
+  await navigator.locks.request(transcriptKey(id), { ifAvailable: true }, async lock => {
+    if (!lock) throw new Error('这个会话正在另一个标签页里回答。');
+    await deleteConversation(id);
+    await del(transcriptKey(id));
+    snapshots.delete(id);
+  });
+}
 
 function systemPrompt(people: PickedPerson[]) {
   const today = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'full' }).format(new Date());
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const focus = people.length
     ? '用户这次想了解的人：\n' + people.map(person => `- ${person.display_name}（profile_id: ${person.id}）`).join('\n') + '\n问题里的「TA」「他们」指这些人。'
-    : '用户没有指定人物。问题提到某个人时先用 find_people 找到 TA；问题关于整体往来时用 relationship_overview。';
+    : '用户没有指定人物。问题提到某个人时先用 directory 找到 TA。问题关于整体往来时用 relationship_overview。';
   return `你是 Monica，用户的私人关系助手。你可以查用户通讯录里的人物资料、聊天记录、朋友发的动态、邮件，以及 Monica 整理的人物概括和每周近况。
 今天是${today}，时区 ${zone}。工具返回的时间都是这个时区的本地时间。
 
 ${focus}
 
 怎么查：
+- 通过 monica_cli 提交 JavaScript，脚本中用 cli("命令", 参数对象) 读取资料，最后 return 需要交给模型的结果。cli 同步返回，无需 await。例如 return cli("directory", {tags:["同事"], sort:"last_contact"}).rows.slice(0, 10)。
+- 有标签、公司、学校和平台条件时先用 directory 筛选。涉及很多人时，在同一段脚本里用 batch 读取并按问题聚合。例如 const people = cli("directory", {tags:["同事"]}).rows; return cli("batch", people.map(p => ({command:"get_person", args:{profile_id:p.profile_id}})))。
 - 先查再答。了解一个人从 get_person 开始；想知道聊天里说过什么，用 search_messages 按原文关键词搜，或用 read_messages 按时间读。
 - 搜索是逐字匹配，一个词只能找到恰好这么写的消息。每个问题先想它在聊天里可能怎么说：同义词、口语、英文和缩写、相关的人名地名、事情的前因后果，用 | 一次搜完；第一轮的结果里出现了新的说法，就拿它再搜一轮。
 - 搜到线索后，用 read_messages 读那几天前后的聊天，看清上下文再下结论；只凭一句命中的话容易看错。
 - 结果带 earlier 说明更早还有。问题问的是「所有」「每次」「第一次」「这些年」时，用 before 一直翻到问题要求的时间范围读完，或者 earlier 为空。
-- 问题涉及好几个人或好几件事时，逐个查，不要查完一个就作答。
-- 工具报错或返回 not_searched 时，那部分的结果未知。保留已有线索。工具已自动处理临时连接故障。持续失败时，缩小时间范围、换关键词，或改用 read_messages 等工具。用已经核实的内容回答，并说明哪些资料暂时查不了。
+- 查询返回 {error} 或 not_searched 时，那部分的结果未知。批量结果可能只有部分失败。保留已有线索，持续失败时可以缩小范围、换关键词或换命令。用已经核实的内容回答，并说明暂时查不到的资料。
 - 确实查不到时，说明查过哪些说法、哪段时间。
 - 聊天里 from 为「我」的是用户本人，其余是对方或群成员。
 
@@ -89,13 +106,15 @@ export function chooseModel(model: string) { localStorage.setItem(MODEL_KEY, mod
 export async function run(id: string, question: string, people: PickedPerson[]) {
   if (snapshot(id).running) return;
   const controller = new AbortController(); controllers.set(id, controller);
-  update(id, { running: true, error: '', status: '正在思考…' });
+  update(id, { running: true, error: '', status: '正在思考…', model: undefined });
   try {
+    const chosen = localStorage.getItem(MODEL_KEY) ?? '';
     await navigator.locks.request(transcriptKey(id), { ifAvailable: true }, async lock => {
       if (!lock) throw new Error('这个会话正在另一个标签页里回答');
       const history = await get<AgentMessage[]>(transcriptKey(id)) ?? [];
       const conversation = (await listConversations()).find(c => c.id === id);
-      if (conversation) await saveConversation({ ...conversation, updatedAt: Date.now(),
+      if (!conversation) throw new Error('这个会话已被删除。');
+      await saveConversation({ ...conversation, updatedAt: Date.now(),
         title: history.some(message => message.role === 'user') ? conversation.title : question.trim().slice(0, 60) });
       const messages: AgentMessage[] = [
         ...history.filter(message => message.role !== 'system'),
@@ -105,8 +124,8 @@ export async function run(id: string, question: string, people: PickedPerson[]) 
       update(id, { messages });
       const model = await settings(controller.signal);
       // The server answers with the configured model unless this one is among its choices.
-      const chosen = localStorage.getItem(MODEL_KEY) ?? '';
       const modelId = (model.models ?? []).includes(chosen) ? chosen : model.model;
+      update(id, { model: modelId });
       let nudges = 0;
       let lengthContinuations = 0;
       let lookupRounds = 0;
@@ -129,8 +148,9 @@ export async function run(id: string, question: string, people: PickedPerson[]) 
             compat: { supportsDeveloperRole: false, supportsStore: false, maxTokensField: 'max_tokens' } },
           messages,
           systemPrompt: systemPrompt(people),
-          tools: tools(),
+          tools: [cliTool],
         },
+        toolExecution: 'sequential',
         transformContext: async messages => {
           requestMessages = [...messages.filter(message => message.role === 'system'), ...resumeContext(messages)];
           requestInstruction = instruction;
@@ -140,7 +160,9 @@ export async function run(id: string, question: string, people: PickedPerson[]) 
         streamFn: (target, context, options) => streamModel(target as Parameters<typeof streamModel>[0], context, {
           ...options, toolChoice: lookupRounds >= MAX_LOOKUP_ROUNDS ? 'none' : options?.toolChoice,
         }, {
-          onRetry: () => update(id, { messages: [...agent.state.messages], status: '模型连接中断，正在重试…' }),
+          onRetry: (attempt, limit) => update(id, {
+            messages: [...agent.state.messages], status: `模型连接中断，正在重试（${attempt}/${limit}）…`,
+          }),
           compact: current => {
             const size = estimateTokens(current.messages.filter(message => message.role !== 'system'));
             const smaller = Math.min(budget, Math.max(1_000, Math.floor(size * 0.55)));

@@ -67,7 +67,17 @@ impl Completion {
     /// The request as the provider receives it: the configured model, and an
     /// output limit no larger than the configured one. Everything else is the
     /// browser agent's own conversation; the provider rejects what it cannot read.
-    fn body(self, model: &str, max: i32) -> Value {
+    fn body(mut self, model: &str, max: i32) -> Value {
+        let model_name = model.rsplit('/').next().unwrap_or(model);
+        if model_name == "deepseek-flash" || model_name.starts_with("deepseek-v4-") {
+            // DeepSeek's default thinking mode requires this field with tool history,
+            // including on older assistant messages created by another model.
+            for message in &mut self.messages {
+                if message["role"] == "assistant" && message["reasoning_content"].is_null() {
+                    message["reasoning_content"] = json!("");
+                }
+            }
+        }
         let mut body = json!({"model":model,"messages":self.messages,"stream":self.stream,"max_tokens":self.max_tokens.unwrap_or(max).min(max)});
         if let Some(tools) = self.tools {
             body["tools"] = json!(tools)
@@ -117,18 +127,18 @@ async fn completion(
         ))?;
     // Auth/settings queries have completed and released their connections before
     // any semaphore wait, upstream request or long-lived response stream.
-    let slot = monica_core::ai::slots::interactive()
-        .await
-        .map_err(|_| ApiError(StatusCode::TOO_MANY_REQUESTS, "模型服务正忙，请稍后重试"))?;
-    let resources = s
-        .resources
-        .acquire(monica_core::resources::TaskResources {
-            network: 1,
+    // Chat streams share the interactive memory budget. Background job slots
+    // and their network throttle do not serialize browser conversations.
+    let resources = tokio::time::timeout(
+        Duration::from_secs(30),
+        s.resources.acquire(monica_core::resources::TaskResources {
             memory_bytes: 4 * 1024 * 1024,
             ..Default::default()
-        })
-        .await
-        .map_err(|_| ApiError(StatusCode::SERVICE_UNAVAILABLE, "模型资源暂时不可用"))?;
+        }),
+    )
+    .await
+    .map_err(|_| ApiError(StatusCode::TOO_MANY_REQUESTS, "模型服务正忙，请稍后重试"))?
+    .map_err(|_| ApiError(StatusCode::SERVICE_UNAVAILABLE, "模型资源暂时不可用"))?;
     let mut upstream = provider
         .forward(&body)
         .await
@@ -137,17 +147,32 @@ async fn completion(
         let status =
             StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
         tracing::warn!(%status, "model service rejected a question");
-        if status == StatusCode::PAYLOAD_TOO_LARGE
-            || (matches!(
-                status,
-                StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY
-            ) && tokio::time::timeout(Duration::from_secs(2), context_rejection(&mut upstream))
+        let error = if matches!(
+            status,
+            StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY
+        ) || (status.is_server_error() && model.starts_with("gemini-"))
+        {
+            tokio::time::timeout(Duration::from_secs(2), read_provider_error(&mut upstream))
                 .await
-                .unwrap_or(false))
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+        if status == StatusCode::PAYLOAD_TOO_LARGE
+            || error.as_ref().is_some_and(context_limit_error)
         {
             return Err(ApiError(
                 StatusCode::PAYLOAD_TOO_LARGE,
                 "模型上下文超出上限",
+            ));
+        }
+        if status == StatusCode::PAYMENT_REQUIRED
+            || error.as_ref().is_some_and(prepaid_credits_depleted)
+        {
+            return Err(ApiError(
+                StatusCode::PAYMENT_REQUIRED,
+                "模型服务的预付余额已耗尽，请切换模型。",
             ));
         }
         let detail = if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
@@ -167,9 +192,11 @@ async fn completion(
         }
         return Ok(response);
     }
-    Ok(stream_response(upstream, slot, resources))
+    Ok(stream_response(upstream, resources))
 }
-async fn context_rejection(upstream: &mut monica_core::ai::provider::ForwardResponse) -> bool {
+async fn read_provider_error(
+    upstream: &mut monica_core::ai::provider::ForwardResponse,
+) -> Option<Value> {
     const LIMIT: usize = 32 * 1024;
     let mut bytes = Vec::new();
     loop {
@@ -178,31 +205,37 @@ async fn context_rejection(upstream: &mut monica_core::ai::provider::ForwardResp
                 bytes.extend_from_slice(&chunk)
             }
             Ok(None) => break,
-            _ => return false,
+            _ => return None,
         }
     }
-    context_limit_error(&bytes)
+    let body: Value = serde_json::from_slice(&bytes).ok()?;
+    Some(body.get("error").cloned().unwrap_or(body))
 }
 
-fn context_limit_error(bytes: &[u8]) -> bool {
-    let Ok(body) = serde_json::from_slice::<Value>(bytes) else {
-        return false;
-    };
-    let error = body.get("error").unwrap_or(&body);
-    let message = error["message"]
+fn provider_error_message(error: &Value) -> String {
+    error["message"]
         .as_str()
         .or(error.as_str())
         .unwrap_or_default()
-        .to_ascii_lowercase();
+        .to_ascii_lowercase()
+}
+
+fn context_limit_error(error: &Value) -> bool {
+    let message = provider_error_message(error);
     error["code"].as_str() == Some("context_length_exceeded")
         || error["type"].as_str() == Some("context_length_exceeded")
         || message.contains("context_length_exceeded")
         || message.contains("maximum context length")
         || message.contains("context window exceeded")
 }
+
+fn prepaid_credits_depleted(error: &Value) -> bool {
+    // LiteLLM can wrap the Gemini Developer API's 402 as a gateway 500.
+    let message = provider_error_message(error);
+    message.contains("prepayment credits") && message.contains("depleted")
+}
 fn stream_response(
     mut upstream: monica_core::ai::provider::ForwardResponse,
-    slot: tokio::sync::OwnedSemaphorePermit,
     resources: monica_core::resources::ResourcePermit,
 ) -> Response {
     let content_type = upstream
@@ -211,7 +244,7 @@ fn stream_response(
         .cloned()
         .unwrap_or_else(|| axum::http::HeaderValue::from_static("text/event-stream"));
     let stream = async_stream::stream! {
-        let _slot=slot;let _resources=resources;
+        let _resources=resources;
         loop{
             match upstream.chunk().await{
                 Ok(Some(bytes))=>yield Ok::<axum::body::Bytes,std::io::Error>(bytes),
@@ -243,15 +276,24 @@ mod tests {
     #[test]
     fn only_context_errors_trigger_compaction() {
         assert!(context_limit_error(
-            br#"{"error":{"code":"context_length_exceeded"}}"#
+            &json!({"code":"context_length_exceeded"})
         ));
-        assert!(context_limit_error(
-            br#"{"error":{"message":"This model's maximum context length is 8192 tokens"}}"#
-        ));
+        assert!(context_limit_error(&json!({
+            "message":"This model's maximum context length is 8192 tokens"
+        })));
         assert!(!context_limit_error(
-            br#"{"error":{"message":"Invalid model name"}}"#
+            &json!({"message":"Invalid model name"})
         ));
-        assert!(!context_limit_error(b"unstructured upstream error"));
+        assert!(!context_limit_error(&json!("unstructured upstream error")));
+    }
+    #[test]
+    fn a_gateway_wrapped_gemini_balance_error_is_permanent() {
+        assert!(prepaid_credits_depleted(&json!({
+            "message":"Gemini API returned 402: Your prepayment credits are depleted."
+        })));
+        assert!(!prepaid_credits_depleted(&json!({
+            "message":"Gemini API connection interrupted."
+        })));
     }
     #[test]
     fn browser_payload_is_stateless_and_capped() {
@@ -262,6 +304,31 @@ mod tests {
         assert_eq!(body["stream"], true);
         assert_eq!(body["tools"][0]["function"]["name"], "lookup");
         assert!(body.get("session_id").is_none());
+    }
+    #[test]
+    fn deepseek_replays_reasoning_and_accepts_old_assistant_history() {
+        let messages = json!([
+            {"role":"user","content":"Synthetic only"},
+            {"role":"assistant","content":"Earlier answer"},
+            {"role":"assistant","reasoning_content":"Kept","tool_calls":[]},
+            {"role":"tool","content":"A result"}
+        ]);
+        for name in [
+            "deepseek-flash",
+            "deepseek/deepseek-v4-pro",
+            "gemini-4-neon",
+        ] {
+            let input: Completion = serde_json::from_value(json!({"messages":messages})).unwrap();
+            let body = input.body(name, 8192);
+            assert_eq!(body["messages"][2]["reasoning_content"], "Kept");
+            assert!(body["messages"][0].get("reasoning_content").is_none());
+            assert!(body["messages"][3].get("reasoning_content").is_none());
+            if name.starts_with("deepseek") {
+                assert_eq!(body["messages"][1]["reasoning_content"], "");
+            } else {
+                assert!(body["messages"][1].get("reasoning_content").is_none());
+            }
+        }
     }
     #[sqlx::test(migrations = "../../migrations")]
     async fn a_question_may_pick_among_the_configured_models_only(pool: sqlx::PgPool) {
@@ -335,12 +402,19 @@ mod tests {
         (response, server)
     }
     #[tokio::test]
-    async fn sse_bytes_pass_through_and_disconnect_releases_reserved_slot() {
-        let resources = monica_core::resources::ResourceBudget::new(Default::default()).unwrap();
+    async fn sse_bytes_pass_through_and_disconnect_releases_memory() {
+        let resources =
+            monica_core::resources::ResourceBudget::new(monica_core::resources::ResourceLimits {
+                memory_bytes: 4 * 1024 * 1024,
+                ..Default::default()
+            })
+            .unwrap();
+        let request = monica_core::resources::TaskResources {
+            memory_bytes: 4 * 1024 * 1024,
+            ..Default::default()
+        };
         let (upstream, server) = fake_upstream(false).await;
-        let slot = monica_core::ai::slots::interactive().await.unwrap();
-        let budget = resources.acquire(Default::default()).await.unwrap();
-        let response = stream_response(upstream, slot, budget);
+        let response = stream_response(upstream, resources.acquire(request).await.unwrap());
         assert_eq!(
             response.headers()[header::CONTENT_TYPE],
             "text/event-stream"
@@ -353,20 +427,13 @@ mod tests {
         );
         assert!(server.await.unwrap());
         let (upstream, server) = fake_upstream(true).await;
-        let slot = monica_core::ai::slots::interactive().await.unwrap();
-        let response = stream_response(
-            upstream,
-            slot,
-            resources.acquire(Default::default()).await.unwrap(),
-        );
+        let response = stream_response(upstream, resources.acquire(request).await.unwrap());
+        assert_eq!(resources.status().memory_available_bytes, 0);
         drop(response);
-        let available = tokio::time::timeout(
-            std::time::Duration::from_secs(1),
-            monica_core::ai::slots::interactive(),
-        )
-        .await
-        .unwrap()
-        .unwrap();
+        let available = tokio::time::timeout(Duration::from_secs(1), resources.acquire(request))
+            .await
+            .unwrap()
+            .unwrap();
         drop(available);
         assert!(
             tokio::time::timeout(std::time::Duration::from_secs(2), server)

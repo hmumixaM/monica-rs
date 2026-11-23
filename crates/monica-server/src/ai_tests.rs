@@ -303,6 +303,61 @@ async fn authenticated_fake_ai_decisions_are_atomic_and_private_outputs_hide(poo
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn three_browser_completions_open_while_previous_streams_are_alive(pool: sqlx::PgPool) {
+    let root = tempfile::tempdir().unwrap();
+    let state = AppState::new(
+        pool.clone(),
+        "synthetic-session-signing-key-1234567890",
+        "http://testserver".into(),
+        root.path().into(),
+    )
+    .await
+    .unwrap();
+    let actor = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.app_users(id,email,password_hash) VALUES($1,'parallel-ai@example.invalid','unused')").bind(actor).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 day')").bind(Uuid::new_v4()).bind(actor).bind(monica_core::identity::bytes_hash(b"synthetic-ai-session")).execute(&pool).await.unwrap();
+    let app = crate::auth::routes(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}/v1", listener.local_addr().unwrap());
+    let provider = Router::new().route("/v1/chat/completions", post(|| async {
+        let body = async_stream::stream! {
+            yield Ok::<_, std::convert::Infallible>(axum::body::Bytes::from_static(b"data: synthetic\n\n"));
+            std::future::pending::<()>().await;
+        };
+        axum::response::Response::builder()
+            .header("content-type", "text/event-stream")
+            .body(Body::from_stream(body))
+            .unwrap()
+    }));
+    let upstream = tokio::spawn(async move { axum::serve(listener, provider).await.unwrap() });
+    response(
+        &app, "PATCH", "/api/v1/ai/settings",
+        json!({"enabled":true,"base_url":base_url,"model":"synthetic-model","api_key":"synthetic-key"}),
+        StatusCode::OK,
+    ).await;
+    let send = || {
+        app.clone().oneshot(request(
+            "POST",
+            "/api/v1/ai/chat/completions",
+            json!({"messages":[{"role":"user","content":"parallel fixture"}],"stream":true}),
+        ))
+    };
+    let (a, b, c) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::join!(send(), send(), send())
+    })
+    .await
+    .expect("new conversations must not wait for the first stream to close");
+    let opened = [a.unwrap(), b.unwrap(), c.unwrap()];
+    assert!(
+        opened
+            .iter()
+            .all(|response| response.status() == StatusCode::OK)
+    );
+    drop(opened);
+    upstream.abort();
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn model_settings_encrypt_keys_and_accept_large_agent_context(pool: sqlx::PgPool) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let root = tempfile::tempdir().unwrap();

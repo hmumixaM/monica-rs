@@ -1,10 +1,14 @@
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions';
 import { AssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream';
 import { apiFetch } from '../api';
-import { MAX_RETRIES, retryDelay, temporaryStatus } from './requests';
+import { MAX_CONNECTION_RETRIES, retryDelay, temporaryStatus } from './requests';
 
 // Pi reports interrupted response bodies through the terminal stream event.
-const INTERRUPTED_STREAM = /stream ended without finish_reason|network error|networkerror|failed to fetch|load failed|connection (?:error|closed|reset)|premature close/i;
+const INTERRUPTED_STREAM = [
+  /network[ _-]?error|failed to fetch|load failed|connection[ _-](?:error|(?:was )?closed|(?:was )?reset|lost)|socket hang up|timed? ?out|econnreset|etimedout/i,
+  /stream (?:ended without finish_reason|closed|interrupted|disconnected)|premature close|terminated|unexpected (?:end|eof)/i,
+];
+const MAX_CONTEXT_REDUCTIONS = 3;
 const MAX_RETRY_WAIT = 30_000;
 type Context = Parameters<typeof streamSimple>[1];
 
@@ -20,7 +24,7 @@ export function streamModel(
   context: Context,
   options: Parameters<typeof streamSimple>[2],
   recovery: {
-    onRetry: () => void;
+    onRetry: (attempt: number, limit: number) => void;
     compact: (context: Context) => Context | undefined;
   },
 ) {
@@ -29,7 +33,7 @@ export function streamModel(
   async function pipe() {
     let started = false;
     let attempts = 0;
-    let compacted = false;
+    let contextReductions = 0;
     let current = context;
     attempts: for (;;) {
       signal?.throwIfAborted();
@@ -43,7 +47,7 @@ export function streamModel(
         maxRetries: 0,
         fetch: async (input, init) => {
           try {
-            const response = await apiFetch(input, init);
+            const response = await apiFetch(input, { ...init, propagateCsrfFailure: true });
             responseStatus = response.status;
             retryWait = retryAfter(response.headers.get('retry-after'));
             return response;
@@ -55,26 +59,28 @@ export function streamModel(
       });
       for await (const event of source) {
         if (event.type === 'error' && event.reason === 'error') {
-          if (responseStatus === 413 && !compacted && !signal?.aborted) {
+          if (responseStatus === 413 && contextReductions < MAX_CONTEXT_REDUCTIONS && !signal?.aborted) {
             const next = recovery.compact(current);
             if (next) {
               current = next;
-              compacted = true;
+              contextReductions++;
               continue attempts;
             }
           }
-          const interrupted = networkFailure || (responseStatus !== undefined && temporaryStatus(responseStatus)) ||
-            (responseStatus === 200 && (event.error.rawStopReason === 'network_error' ||
-              INTERRUPTED_STREAM.test(event.error.errorMessage ?? '')));
+          const streamFailed = (responseStatus === undefined || responseStatus === 200) &&
+            (event.error.rawStopReason === 'network_error' ||
+              INTERRUPTED_STREAM.some(pattern => pattern.test(event.error.errorMessage ?? '')));
+          const interrupted = networkFailure || streamFailed || (responseStatus !== undefined && temporaryStatus(responseStatus));
           const longWait = (retryWait ?? 0) > MAX_RETRY_WAIT;
-          if (interrupted && !signal?.aborted && !longWait && attempts < MAX_RETRIES) {
-            recovery.onRetry();
-            await retryDelay(attempts++, signal, retryWait);
+          if (interrupted && !signal?.aborted && !longWait && attempts < MAX_CONNECTION_RETRIES) {
+            recovery.onRetry(attempts + 1, MAX_CONNECTION_RETRIES);
+            await retryDelay(attempts, signal, retryWait === undefined ? undefined : Math.max(250, retryWait));
+            attempts++;
             continue attempts;
           }
           const errorMessage = responseStatus === 413 ? '模型上下文超出上限。本轮进度已保存。'
             : interrupted ? (longWait ? '模型服务繁忙，需要稍后再试。本轮进度已保存。'
-              : '模型连接持续失败。本轮进度已保存。')
+              : `模型连接持续失败，已自动重试 ${attempts} 次。本轮进度已保存。`)
               : event.error.errorMessage;
           output.push({ ...event, error: { ...event.error, content: [],
             errorMessage } });

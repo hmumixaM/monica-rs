@@ -11,10 +11,14 @@ function completion(delta: object, finish: 'stop' | 'tool_calls' | 'length' | nu
   };
 }
 
-function lookup(id: string, name: string, args: object) {
+function scriptCall(id: string, script: string) {
   return completion({ role: 'assistant', tool_calls: [
-    { index: 0, id, type: 'function', function: { name, arguments: JSON.stringify(args) } },
+    { index: 0, id, type: 'function', function: { name: 'monica_cli', arguments: JSON.stringify({ script }) } },
   ] }, 'tool_calls');
+}
+
+function lookup(id: string, name: string, args: object) {
+  return scriptCall(id, `return cli(${JSON.stringify(name)}, ${JSON.stringify(args)});`);
 }
 
 test('PI browser loop executes tools, persists IndexedDB sessions, and restores after reload', async ({page}) => {
@@ -36,10 +40,12 @@ test('PI browser loop executes tools, persists IndexedDB sessions, and restores 
    const body=route.request().postDataJSON();modelCalls++;
    systemPrompt=JSON.stringify(body.messages.find((m:{role:string})=>m.role==='system'));
    const toolReplies=body.messages.filter((m:{role:string})=>m.role==='tool');
-   let chunks;
-   if(toolReplies.length>=2){submittedEvidence=JSON.stringify(toolReplies.at(-1));chunks=[{choices:[{index:0,delta:{role:'assistant',content:`已找到[合成联系人](/profiles/${profile})。`},finish_reason:null}]},{choices:[{index:0,delta:{},finish_reason:'stop'}]}];}
-   else {const tool=toolReplies.length?{name:'search_messages',arguments:JSON.stringify({profile_id:profile,query:'message'})}:{name:'find_people',arguments:'{"query":"合成"}'};chunks=[{choices:[{index:0,delta:{role:'assistant',tool_calls:[{index:0,id:`synthetic-tool-${toolReplies.length}`,type:'function',function:tool}]},finish_reason:null}]},{choices:[{index:0,delta:{},finish_reason:'tool_calls'}]}];}
-   return route.fulfill({contentType:'text/event-stream',body:chunks.map(c=>'data: '+JSON.stringify({id:'synthetic-completion',object:'chat.completion.chunk',created:1,model:'synthetic-model',...c})+'\n\n').join('')+'data: [DONE]\n\n'});
+   if(toolReplies.length>=2){
+    submittedEvidence=JSON.stringify(toolReplies.at(-1));
+    return route.fulfill(completion({role:'assistant',content:`已找到[合成联系人](/profiles/${profile})。`}, 'stop'));
+   }
+   const id=`synthetic-tool-${toolReplies.length}`;
+   return route.fulfill(toolReplies.length ? lookup(id,'search_messages',{profile_id:profile,query:'message'}) : lookup(id,'find_people',{query:'合成'}));
   }
   return route.fulfill({json:[]});
  });
@@ -64,7 +70,6 @@ test('PI browser loop executes tools, persists IndexedDB sessions, and restores 
 });
 test('wording searches keep partial results and a turn that says nothing is asked to go on', async ({page}) => {
  const searched:string[]=[];let modelCalls=0;let nudged=false;
- const sse=(chunks:object[])=>({contentType:'text/event-stream',body:chunks.map(c=>'data: '+JSON.stringify({id:'synthetic-completion',object:'chat.completion.chunk',created:1,model:'synthetic-model',...c})+'\n\n').join('')+'data: [DONE]\n\n'});
  await page.route('**/api/**',async route=>{
   const url=new URL(route.request().url());
   if(url.pathname==='/api/v1/me')return route.fulfill({json:{id:'synthetic',email:'synthetic@example.invalid'}});
@@ -79,20 +84,20 @@ test('wording searches keep partial results and a turn that says nothing is aske
   if(url.pathname==='/api/v1/ai/chat/completions'){
    const body=route.request().postDataJSON();modelCalls++;
    const last=body.messages.at(-1);
-   if(last.role==='user'&&String(last.content).startsWith('继续')){nudged=true;return route.fulfill(sse([{choices:[{index:0,delta:{role:'assistant',content:'两种说法都查到了。'},finish_reason:null}]},{choices:[{index:0,delta:{},finish_reason:'stop'}]}]));}
+   if(last.role==='user'&&String(last.content).startsWith('继续')){nudged=true;return route.fulfill(completion({role:'assistant',content:'两种说法都查到了。'},'stop'));}
    if(last.role==='tool'){
     const result=JSON.parse(last.content);
     expect(result.messages.map((row:{text:string})=>row.text)).toEqual(['说到offer','说到面试']);
     expect(result.not_searched).toEqual([{term:'跳槽',error:expect.stringContaining('连接中断')}]);
-    return route.fulfill(sse([{choices:[{index:0,delta:{role:'assistant'},finish_reason:null}]},{choices:[{index:0,delta:{},finish_reason:'stop'}]}]));
+    return route.fulfill(completion({role:'assistant'}, 'stop'));
    }
-   return route.fulfill(sse([{choices:[{index:0,delta:{role:'assistant',tool_calls:[{index:0,id:'synthetic-tool',type:'function',function:{name:'search_messages',arguments:JSON.stringify({query:'面试|offer|跳槽'})}}]},finish_reason:null}]},{choices:[{index:0,delta:{},finish_reason:'tool_calls'}]}]));
+   return route.fulfill(lookup('synthetic-tool','search_messages',{query:'面试|offer|跳槽'}));
   }
   return route.fulfill({json:[]});
  });
  await page.goto('/ask');await page.getByLabel('问题',{exact:true}).fill('聊过找工作吗');await page.getByRole('button',{name:'提问',exact:true}).click();
- await expect(page.getByText('两种说法都查到了。',{exact:true})).toBeVisible();
- expect(searched).toEqual(['面试','面试','offer','跳槽','跳槽','跳槽']);expect(nudged).toBeTruthy();expect(modelCalls).toBe(3);
+ await expect(page.getByText('两种说法都查到了。',{exact:true})).toBeVisible({timeout:16_000});
+ expect(searched).toEqual(['面试','面试','offer',...Array(11).fill('跳槽')]);expect(nudged).toBeTruthy();expect(modelCalls).toBe(3);
  // The request to go on is not part of the saved conversation.
  await page.reload();await expect(page.getByText('两种说法都查到了。',{exact:true})).toBeVisible();await expect(page.getByText(/^继续：/)).toHaveCount(0);
 });
@@ -104,11 +109,18 @@ test('the model chooses another lookup and reconnects automatically from existin
   let searches = 0;
   let reads = 0;
   let unavailableCalls = 0;
+  let csrfOutages = 0;
 
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/v1/me') return route.fulfill({ json: { id: 'synthetic', email: 'synthetic@example.invalid' } });
-    if (path === '/api/v1/auth/csrf') return route.fulfill({ json: { csrf_token: 'synthetic' } });
+    if (path === '/api/v1/auth/csrf') {
+      if (reads === 2 && csrfOutages === 0) {
+        csrfOutages++;
+        return route.fulfill({ status: 503, headers: { 'Retry-After': '0' } });
+      }
+      return route.fulfill({ json: { csrf_token: 'synthetic' } });
+    }
     if (path === '/api/v1/ai/browser-model') {
       return route.fulfill({ json: { enabled: true, model: 'synthetic-model', context_window: 32000, max_tokens: 1000 } });
     }
@@ -124,22 +136,27 @@ test('the model chooses another lookup and reconnects automatically from existin
     const { messages } = route.request().postDataJSON();
     if (messages.at(-1).role === 'user' && JSON.stringify(messages.at(-1).content).includes('再问一件事')) {
       unavailableCalls++;
-      return route.fulfill({ status: 503, json: { error: 'provider busy' } });
+      return route.fulfill({ status: 503, headers: { 'Retry-After': '0' }, json: { error: 'provider busy' } });
     }
     completionInputs.push(messages);
     switch (completionInputs.length) {
       case 1: return route.fulfill(lookup('search', 'search_messages', { query: '面试' }));
       case 2:
         expect(JSON.parse(messages.at(-1).content)).toEqual({
+          messages: [], earlier: null,
           not_searched: [{ term: '面试', error: expect.stringContaining('HTTP 503') }],
         });
         return route.fulfill(lookup('read', 'read_messages', { profile_id: profile }));
       case 3: return route.abort('connectionreset');
       case 4: return route.fulfill(completion({
         role: 'assistant', content: '中断的回答', tool_calls: [
-          { index: 0, id: 'interrupted-search', type: 'function', function: { name: 'search_messages', arguments: '{"query":"面试"}' } },
+          { index: 0, id: 'interrupted-search', type: 'function', function: { name: 'monica_cli', arguments: JSON.stringify({ script: 'return cli("search_messages", {query:"面试"});' }) } },
         ],
       }, null));
+      case 5: return route.fulfill({
+        contentType: 'text/event-stream', body: 'data: {"error":{"message":"terminated"}}\n\n',
+      });
+      case 6: return route.fulfill({ status: 502, headers: { 'Retry-After': '0' } });
       default:
         expect(messages.at(-1).content).toContain('周一面试');
         return route.fulfill(completion({ role: 'assistant', content: '查到一条记录提到周一面试。' }, 'stop'));
@@ -149,17 +166,18 @@ test('the model chooses another lookup and reconnects automatically from existin
   await page.goto('/ask');
   await page.getByLabel('问题', { exact: true }).fill(question);
   await page.getByRole('button', { name: '提问', exact: true }).click();
-  await expect(page.getByText('查到一条记录提到周一面试。', { exact: true })).toBeVisible();
+  await expect(page.getByText('查到一条记录提到周一面试。', { exact: true })).toBeVisible({timeout:16_000});
   await expect(page.getByRole('article').getByText(question, { exact: true })).toHaveCount(1);
   await expect(page.getByText('中断的回答', { exact: true })).toHaveCount(0);
   expect([searches, reads]).toEqual([3, 2]);
-  expect(completionInputs.slice(2)).toEqual(Array(3).fill(completionInputs[2]));
+  expect(csrfOutages).toBe(1);
+  expect(completionInputs.slice(2)).toEqual(Array(5).fill(completionInputs[2]));
 
   await page.getByLabel('问题', { exact: true }).fill('再问一件事');
   await page.getByRole('button', { name: '提问', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('模型连接持续失败');
   await expect(page.getByRole('button', { name: '重试回答', exact: true })).toHaveCount(0);
-  expect(unavailableCalls).toBe(3);
+  expect(unavailableCalls).toBe(11);
   await page.reload();
   await expect(page.getByRole('article').getByText('再问一件事', { exact: true })).toBeVisible();
   await expect(page.getByText('查到一条记录提到周一面试。', { exact: true })).toBeVisible();
@@ -187,7 +205,7 @@ test('the model respects Retry-After and Stop cancels the pending retry', async 
   await expect(submit).toBeEnabled();
   await page.clock.pauseAt(new Date('2026-01-01T12:01:00Z'));
   await submit.dispatchEvent('click');
-  await expect(page.getByText('模型连接中断，正在重试…')).toBeVisible();
+  await expect(page.getByText('模型连接中断，正在重试（1/10）…')).toBeVisible();
   await page.clock.runFor(2_000);
   expect(modelCalls).toBe(1);
   await page.getByRole('button', { name: '停止回答', exact: true }).dispatchEvent('click');
@@ -224,10 +242,15 @@ test('an oversized tool result is compacted and a length-limited answer continue
         rejectedSize = JSON.stringify(messages).length;
         return route.fulfill({ status: 413, json: { detail: '模型上下文超出上限' } });
       case 3:
+      case 4:
         expect(JSON.stringify(messages).length).toBeLessThan(rejectedSize);
         expect(JSON.stringify(messages)).toContain(question);
         expect(messages.at(-1)).toMatchObject({ role: 'tool', tool_call_id: 'search' });
         expect(messages.at(-1).content).toContain('/messages?conversation=room');
+        if (modelCalls === 3) {
+          rejectedSize = JSON.stringify(messages).length;
+          return route.fulfill({ status: 413, json: { detail: '模型上下文超出上限' } });
+        }
         return route.fulfill(completion({
           role: 'assistant', content: '已核对项目。'.repeat(1_500) + '\n\n这是断点前的结尾。\n\n',
         }, 'length'));
@@ -244,7 +267,7 @@ test('an oversized tool result is compacted and a length-limited answer continue
   await expect(page.getByText('接着整理了讨论内容。', { exact: true })).toBeVisible();
   await expect(page.getByText('这是断点前的结尾。', { exact: true })).toHaveCount(1);
   await expect(page.getByRole('article').getByText(question, { exact: true })).toHaveCount(1);
-  expect([modelCalls, searchCalls]).toEqual([4, 1]);
+  expect([modelCalls, searchCalls]).toEqual([5, 1]);
 });
 
 test('a stopped partial answer survives the next question and reload', async ({ page }) => {
@@ -278,4 +301,97 @@ test('a stopped partial answer survives the next question and reload', async ({ 
   await page.reload();
   await expect(page.getByText('新问题已答复。', { exact: true })).toBeVisible();
   await expect(page.getByText(stoppedText, { exact: true })).toBeVisible();
+});
+
+test('JavaScript shares the contacts filters, batches reads and keeps their citations', async ({ page }) => {
+  const ids = [1, 2, 3].map(n => `00000000-0000-4000-8000-00000000000${n}`);
+  const columns = ['id', 'type', 'name', 'summary', 'avatar_media_id', 'tag_ids', 'company_ids', 'school_ids',
+    'aliases', 'providers', 'headline', 'city', 'birthday_md', 'last_contact_at', 'direct_message_count',
+    'member_count', 'conversation_id', 'group_names'];
+  const profiles = ['李丽', '李明', '李伟'].map((name, i) => [
+    ids[i], 'person', name, null, null, i === 2 ? [0] : [0, 1], [0], [0],
+    [], ['wechat'], null, '芝加哥', null, null, 12 - i, null, null, [],
+  ]);
+  const checked: string[] = [];
+  let directoryReads = 0;
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/v1/me') return route.fulfill({ json: { id: 'synthetic', email: 'synthetic@example.invalid' } });
+    if (path === '/api/v1/auth/csrf') return route.fulfill({ json: { csrf_token: 'synthetic' } });
+    if (path === '/api/v1/ai/browser-model') {
+      return route.fulfill({ json: { enabled: true, model: 'synthetic-model', context_window: 32000, max_tokens: 1000 } });
+    }
+    if (path === '/api/v1/directory') {
+      directoryReads++;
+      return route.fulfill({ json: {
+        columns, profiles, tags: [['t1', '同事'], ['t2', '喜欢摄影']],
+        companies: [['c1', '合成公司']], schools: [['s1', '合成大学']],
+      } });
+    }
+    const match = path.match(/^\/api\/v1\/profiles\/([^/]+)\/messages$/);
+    if (match) {
+      checked.push(match[1]);
+      return route.fulfill({ json: [{ id: `message-${match[1]}`, conversation_id: 'room', text: '有摄影记录' }] });
+    }
+    if (path !== '/api/v1/ai/chat/completions') return route.fulfill({ json: [] });
+    const { tools, messages } = route.request().postDataJSON();
+    expect(tools.map((tool: { function: { name: string } }) => tool.function.name)).toEqual(['monica_cli']);
+    const last = messages.at(-1);
+    if (last.role === 'user') {
+      return route.fulfill(scriptCall('filtered-batch', `
+        const data = cli("directory", {query:"li", tags:["同事","喜欢摄影"], company:"合成公司", school:"合成大学", provider:"wechat", sort:"messages"});
+        const facets = cli("directory_facets", {kind:"tags", query:"摄影"});
+        const seen = cli("batch", data.rows.map(p => ({command:"read_messages", args:{profile_id:p.profile_id}})));
+        return {names: data.rows.map(p=>p.name), facets: facets.rows, links: seen.map(r=>r.messages[0].link), fetch: typeof fetch};
+      `));
+    }
+    expect(JSON.parse(last.content)).toEqual({
+      names: ['李丽', '李明'], facets: [{ id: 't2', name: '喜欢摄影' }],
+      links: ids.slice(0, 2).map(id => `/messages?conversation=room&message=message-${id}`), fetch: 'undefined',
+    });
+    return route.fulfill(completion({ role: 'assistant', content: '找到两位符合筛选条件的联系人。' }, 'stop'));
+  });
+  await page.goto('/ask');
+  await page.getByLabel('问题', { exact: true }).fill('找喜欢摄影的同事');
+  await page.getByRole('button', { name: '提问', exact: true }).click();
+  await expect(page.getByText('找到两位符合筛选条件的联系人。')).toBeVisible();
+  expect(directoryReads).toBe(1);
+  expect(checked.sort()).toEqual(ids.slice(0, 2));
+});
+
+test('switching conversations allows three independent in-flight prompts', async ({ page }) => {
+  const questions = ['会话甲的问题', '会话乙的问题', '会话丙的问题'];
+  const arrived: string[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/v1/me') return route.fulfill({ json: { id: 'synthetic', email: 'synthetic@example.invalid' } });
+    if (path === '/api/v1/auth/csrf') return route.fulfill({ json: { csrf_token: 'synthetic' } });
+    if (path === '/api/v1/ai/browser-model') {
+      return route.fulfill({ json: { enabled: true, model: 'synthetic-model', context_window: 32000, max_tokens: 1000 } });
+    }
+    if (path !== '/api/v1/ai/chat/completions') return route.fulfill({ json: [] });
+    const payload = route.request().postDataJSON();
+    const question = questions.find(q => JSON.stringify(payload.messages.at(-1).content).includes(q))!;
+    expect(payload.messages.filter((message: { role: string }) => message.role === 'user')).toHaveLength(1);
+    arrived.push(question);
+    await gate;
+    return route.fulfill(completion({ role: 'assistant', content: `${question}已经答复。` }, 'stop'));
+  });
+  await page.goto('/ask');
+  for (const [index, question] of questions.entries()) {
+    if (index) await page.getByRole('button', { name: '新会话', exact: true }).filter({ has: page.locator('svg') }).click();
+    await page.getByLabel('问题', { exact: true }).fill(question);
+    await page.getByRole('button', { name: '提问', exact: true }).click();
+    await expect.poll(() => arrived.length).toBe(index + 1);
+  }
+  expect(arrived).toEqual(questions);
+  release();
+  for (const question of questions) {
+    const picker = page.getByLabel('选择会话');
+    if (await picker.isVisible()) await picker.selectOption({ label: question });
+    else await page.getByRole('complementary', { name: '会话' }).getByRole('button', { name: question, exact: true }).click();
+    await expect(page.getByText(`${question}已经答复。`, { exact: true })).toBeVisible();
+  }
 });

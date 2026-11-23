@@ -145,7 +145,7 @@ async fn save(
             .map(|model| model.trim().to_owned())
             .filter(|model| !model.is_empty())
             .collect();
-        if models.len() > 20 || models.iter().any(|model| model.len() > 255) {
+        if models.len() > 64 || models.iter().any(|model| model.len() > 255) {
             return Err(invalid("问 Monica 的可选模型无效"));
         }
         sqlx::query("UPDATE crm.ai_settings SET qa_models=$1 WHERE id")
