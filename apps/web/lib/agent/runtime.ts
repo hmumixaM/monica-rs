@@ -62,7 +62,7 @@ ${focus}
 
 怎么查：
 - 通过 monica_cli 提交 JavaScript，脚本中用 cli("命令", 参数对象) 读取资料，最后 return 需要交给模型的结果。cli 同步返回，无需 await。例如 return cli("directory", {tags:["同事"], sort:"last_contact"}).rows.slice(0, 10)。
-- 有标签、公司、学校和平台条件时先用 directory 筛选。涉及很多人时，在同一段脚本里用 batch 读取并按问题聚合。例如 const people = cli("directory", {tags:["同事"]}).rows; return cli("batch", people.map(p => ({command:"get_person", args:{profile_id:p.profile_id}})))。
+- 有标签、公司、学校和平台条件时先用 directory 筛选。涉及很多人时，用 batch 的第三个参数逐项提取与问题有关的数据。例如 const people = cli("directory", {tags:["同事"]}).rows; return cli("batch", people.map(p => ({command:"read_messages", args:{profile_id:p.profile_id}})), (result, i) => ({name:people[i].name, count:result.messages?.length, error:result.error}))。
 - 先查再答。了解一个人从 get_person 开始；想知道聊天里说过什么，用 search_messages 按原文关键词搜，或用 read_messages 按时间读。
 - 搜索是逐字匹配，一个词只能找到恰好这么写的消息。每个问题先想它在聊天里可能怎么说：同义词、口语、英文和缩写、相关的人名地名、事情的前因后果，用 | 一次搜完；第一轮的结果里出现了新的说法，就拿它再搜一轮。
 - 搜到线索后，用 read_messages 读那几天前后的聊天，看清上下文再下结论；只凭一句命中的话容易看错。

@@ -2,6 +2,7 @@ use super::*;
 use axum::{
     body::{Body, to_bytes},
     http::Request,
+    response::IntoResponse,
 };
 use tower::ServiceExt;
 
@@ -305,7 +306,7 @@ async fn authenticated_fake_ai_decisions_are_atomic_and_private_outputs_hide(poo
 #[sqlx::test(migrations = "../../migrations")]
 async fn three_browser_completions_open_while_previous_streams_are_alive(pool: sqlx::PgPool) {
     let root = tempfile::tempdir().unwrap();
-    let state = AppState::new(
+    let mut state = AppState::new(
         pool.clone(),
         "synthetic-session-signing-key-1234567890",
         "http://testserver".into(),
@@ -313,13 +314,25 @@ async fn three_browser_completions_open_while_previous_streams_are_alive(pool: s
     )
     .await
     .unwrap();
+    state.resources =
+        monica_core::resources::ResourceBudget::new(monica_core::resources::ResourceLimits {
+            memory_bytes: 64 * 1024 * 1024,
+            ..Default::default()
+        })
+        .unwrap();
     let actor = Uuid::new_v4();
     sqlx::query("INSERT INTO crm.app_users(id,email,password_hash) VALUES($1,'parallel-ai@example.invalid','unused')").bind(actor).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO crm.sessions(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 day')").bind(Uuid::new_v4()).bind(actor).bind(monica_core::identity::bytes_hash(b"synthetic-ai-session")).execute(&pool).await.unwrap();
     let app = crate::auth::routes(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base_url = format!("http://{}/v1", listener.local_addr().unwrap());
-    let provider = Router::new().route("/v1/chat/completions", post(|| async {
+    let provider = Router::new().route("/v1/chat/completions", post(|Json(input): Json<Value>| async move {
+        if input["model"] == "gemini-4-neon" {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error":{"message":"Your prepayment credits are depleted."}})),
+            ).into_response();
+        }
         let body = async_stream::stream! {
             yield Ok::<_, std::convert::Infallible>(axum::body::Bytes::from_static(b"data: synthetic\n\n"));
             std::future::pending::<()>().await;
@@ -332,7 +345,7 @@ async fn three_browser_completions_open_while_previous_streams_are_alive(pool: s
     let upstream = tokio::spawn(async move { axum::serve(listener, provider).await.unwrap() });
     response(
         &app, "PATCH", "/api/v1/ai/settings",
-        json!({"enabled":true,"base_url":base_url,"model":"synthetic-model","api_key":"synthetic-key"}),
+        json!({"enabled":true,"base_url":base_url,"model":"synthetic-model","api_key":"synthetic-key","qa_models":["gemini-4-neon"]}),
         StatusCode::OK,
     ).await;
     let send = || {
@@ -347,13 +360,27 @@ async fn three_browser_completions_open_while_previous_streams_are_alive(pool: s
     })
     .await
     .expect("new conversations must not wait for the first stream to close");
-    let opened = [a.unwrap(), b.unwrap(), c.unwrap()];
+    let fourth = send().await.unwrap();
+    let opened = [a.unwrap(), b.unwrap(), c.unwrap(), fourth];
     assert!(
         opened
             .iter()
             .all(|response| response.status() == StatusCode::OK)
     );
-    drop(opened);
+    let available = tokio::time::timeout(std::time::Duration::from_secs(1), send())
+        .await
+        .expect("memory saturation should return immediately");
+    assert_eq!(available.unwrap().status(), StatusCode::TOO_MANY_REQUESTS);
+    let [a, b, c, d] = opened;
+    drop(b);
+    assert_eq!(send().await.unwrap().status(), StatusCode::OK);
+    drop((a, c, d));
+    let blocked = response(
+        &app, "POST", "/api/v1/ai/chat/completions",
+        json!({"model":"gemini-4-neon","messages":[{"role":"user","content":"synthetic credit fixture"}]}),
+        StatusCode::PAYMENT_REQUIRED,
+    ).await;
+    assert_eq!(blocked["detail"], "模型服务的预付余额已耗尽，请切换模型。");
     upstream.abort();
 }
 

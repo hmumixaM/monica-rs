@@ -5,7 +5,9 @@ import { lookupCommands, TOOL_LABELS } from './tools';
 
 const MAX_LOOKUPS = 240;
 const BATCH_SIZE = 6;
+const MAX_LOOKUP_BYTES = 256 * 1024;
 const MAX_OUTPUT_BYTES = 48_000;
+const encoder = new TextEncoder();
 const UUID = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i;
 
 function object(value: unknown): CommandArgs {
@@ -21,6 +23,8 @@ const commands = new Map(lookupCommands().map(command => [command.name, command]
 
 function lookupDispatcher(signal: AbortSignal) {
   let lookups = 0;
+  let succeeded = 0;
+  let failed = 0;
   const { directory, directory_facets: facets } = directoryCommands(signal);
   async function lookup(name: unknown, input: unknown): Promise<unknown> {
     signal.throwIfAborted();
@@ -51,28 +55,43 @@ function lookupDispatcher(signal: AbortSignal) {
   }
 
   async function checked(name: unknown, args: unknown) {
-    try { return await lookup(name, args); }
-    catch (error) { signal.throwIfAborted(); return { error: errorText(error) }; }
+    try {
+      const result = await lookup(name, args);
+      if (encoder.encode(JSON.stringify(result)).length > MAX_LOOKUP_BYTES) {
+        throw new Error('单次查询结果过长。请缩小时间范围、减少分页大小或限制搜索词。');
+      }
+      if (name !== 'help') {
+        if (name === 'search_messages' && object(result).error) failed++;
+        else succeeded++;
+      }
+      return result;
+    } catch (error) { signal.throwIfAborted(); return failure(error); }
   }
 
-  return async (name: string, json: string) => {
+  function failure(error: unknown) {
+    failed++;
+    return { error: errorText(error) };
+  }
+
+  async function dispatch(name: string, json: string) {
     if (json.length > 65_536) throw new Error('查询参数过长。');
     const args: unknown = JSON.parse(json);
     if (name !== 'batch') return checked(name, args);
-    if (!Array.isArray(args) || args.length > MAX_LOOKUPS - lookups) {
-      throw new Error('batch 需要命令数组，且不能超过脚本剩余的查询次数。');
+    if (!Array.isArray(args) || args.length > BATCH_SIZE) {
+      throw new Error('batch 分片需要命令数组。');
     }
-    const results: unknown[] = [];
-    for (let offset = 0; offset < args.length; offset += BATCH_SIZE) {
-      signal.throwIfAborted();
-      const batch = args.slice(offset, offset + BATCH_SIZE).map(entry => object(entry));
-      results.push(...await Promise.all(batch.map(entry => checked(entry.command, entry.args ?? {}))));
-    }
-    return results;
-  };
+    return Promise.all(args.map(async item => {
+      try {
+        const entry = object(item);
+        return await checked(entry.command, entry.args ?? {});
+      } catch (error) { signal.throwIfAborted(); return failure(error); }
+    }));
+  }
+
+  return { dispatch, failure, allFailed: () => succeeded === 0 && failed > 0 };
 }
 
-function runScript(source: string, signal?: AbortSignal): Promise<string> {
+function runScript(source: string, signal?: AbortSignal): Promise<{ json: string; isError: boolean }> {
   signal?.throwIfAborted();
   if (source.length > 32_000) throw new Error('JavaScript 查询脚本过长。');
   return new Promise((resolve, reject) => {
@@ -93,22 +112,22 @@ function runScript(source: string, signal?: AbortSignal): Promise<string> {
     worker.onmessage = async ({ data }) => {
       if (data.type === 'error') { fail(new Error(errorText(data.error))); return; }
       if (data.type === 'result') {
-        if (new TextEncoder().encode(data.json).length > MAX_OUTPUT_BYTES) {
+        if (encoder.encode(data.json).length > MAX_OUTPUT_BYTES) {
           fail(new Error('脚本输出过长。请先在 JavaScript 中筛选或汇总，并保留必要的原文链接。'));
         } else {
           cleanup();
-          resolve(data.json);
+          resolve({ json: data.json, isError: lookup.allFailed() });
         }
         return;
       }
       if (data.type === 'lookup') {
         let json: string;
-        try { json = JSON.stringify(await lookup(data.name, data.json)); }
-        catch (error) { json = JSON.stringify({ error: errorText(error) }); }
+        try { json = JSON.stringify(await lookup.dispatch(data.name, data.json)); }
+        catch (error) { json = JSON.stringify(lookup.failure(error)); }
         if (!controller.signal.aborted) worker.postMessage({ json });
       }
     };
-    worker.postMessage({ source });
+    worker.postMessage({ source, batchSize: BATCH_SIZE, maxLookups: MAX_LOOKUPS });
   });
 }
 
@@ -119,7 +138,7 @@ export const cliTool: AgentTool = {
     '运行一段 JavaScript 查询 Monica。用 return 返回可序列化数据。在脚本里直接调用同步函数 cli(command, args)，可以用循环、filter、map、sort 做批量查询和归纳。',
     'directory 参数 query、type（person/group/all）、tags（全部匹配的名称或 ID 数组）、company、school、provider、sort（relevance/name/last_contact/messages/birthday）、limit（至多 500）、offset。返回 rows、total、next_offset。',
     'directory_facets 参数 kind（tags/companies/schools）、query、limit、offset，可发现筛选值。',
-    'batch 接受 [{command,args}, ...]，每项独立返回数据或 {error}，结果顺序同输入。脚本至多执行 240 项查询。先筛选再批读，并在脚本里缩小最终输出。',
+    'batch 接受 [{command,args}, ...]，每项独立返回数据或 {error}，结果顺序同输入。脚本至多执行 240 项查询。大批量时用 cli("batch", commands, (result, index) => ...) 逐项提取必要字段，避免把所有原始记录留在内存。',
     '不确定某项记录查询的参数时，用 cli("help", {command:"命令名"}) 查看参数定义。',
     ...[...commands.values()].map(command => {
       const schema = command.parameters as { properties?: Record<string, unknown>; required?: string[] };
@@ -132,6 +151,7 @@ export const cliTool: AgentTool = {
   } as unknown as AgentTool['parameters'],
   async execute(_id, args, signal) {
     const { script } = args as { script: string };
-    return { content: [{ type: 'text', text: await runScript(script, signal) }], details: undefined };
+    const { json, isError } = await runScript(script, signal);
+    return { content: [{ type: 'text', text: json }], details: undefined, isError };
   },
 };

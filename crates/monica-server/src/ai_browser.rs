@@ -3,7 +3,7 @@ use super::{ApiError, AppState, Result, user};
 use axum::{
     Json, Router,
     body::Body,
-    extract::State,
+    extract::{FromRequest, Request, State},
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
     routing::get,
@@ -91,12 +91,21 @@ impl Completion {
         body
     }
 }
-async fn completion(
-    State(s): State<AppState>,
-    h: HeaderMap,
-    Json(input): Json<Completion>,
-) -> Result<Response> {
-    user(&s, &h).await?;
+async fn completion(State(s): State<AppState>, request: Request) -> Result<Response> {
+    user(&s, request.headers()).await?;
+    // Admit before buffering the JSON body. Long-lived responses share memory
+    // with the rest of Monica and release both reservations when disconnected.
+    let resources = s
+        .resources
+        .try_acquire_model_stream(4 * 1024 * 1024)
+        .ok_or(ApiError(
+            StatusCode::TOO_MANY_REQUESTS,
+            "模型服务正忙，请稍后重试",
+        ))?;
+    let input = match Json::<Completion>::from_request(request, &s).await {
+        Ok(Json(input)) => input,
+        Err(rejection) => return Ok(rejection.into_response()),
+    };
     let row = sqlx::query(
         "SELECT enabled,execution_enabled,qa_enabled,model,model_routes,qa_models,base_url,max_tokens FROM crm.ai_settings WHERE id",
     )
@@ -125,20 +134,6 @@ async fn completion(
             StatusCode::SERVICE_UNAVAILABLE,
             "模型服务尚未配置",
         ))?;
-    // Auth/settings queries have completed and released their connections before
-    // any semaphore wait, upstream request or long-lived response stream.
-    // Chat streams share the interactive memory budget. Background job slots
-    // and their network throttle do not serialize browser conversations.
-    let resources = tokio::time::timeout(
-        Duration::from_secs(30),
-        s.resources.acquire(monica_core::resources::TaskResources {
-            memory_bytes: 4 * 1024 * 1024,
-            ..Default::default()
-        }),
-    )
-    .await
-    .map_err(|_| ApiError(StatusCode::TOO_MANY_REQUESTS, "模型服务正忙，请稍后重试"))?
-    .map_err(|_| ApiError(StatusCode::SERVICE_UNAVAILABLE, "模型资源暂时不可用"))?;
     let mut upstream = provider
         .forward(&body)
         .await

@@ -56,7 +56,7 @@ function turns(messages: AgentMessage[]): Turn[] {
 function Steps({ steps, live }: { steps: Step[]; live: boolean }) {
   if (!steps.length) return null;
   return <details className={styles.steps} open={live || undefined}>
-    <summary><Search size={13} aria-hidden="true" />查了 {steps.length} 处资料</summary>
+    <summary><Search size={13} aria-hidden="true" />查询记录（{steps.length} 步）</summary>
     <ol>{steps.map((step) => <li key={step.id} data-failed={step.failed ? "" : undefined} data-pending={!step.done && live ? "" : undefined}>
       {step.failed ? <CircleAlert size={13} aria-hidden="true" /> : <Check size={13} aria-hidden="true" />}
       {step.label}{step.detail && <q>{step.detail}</q>}{step.failed && <span>查询失败</span>}

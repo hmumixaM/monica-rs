@@ -1,8 +1,11 @@
 import type { JsonObject } from '@earendil-works/pi-ai';
 import type { RawDirectory } from '../api-types';
-import { decodeDirectory, type DirectoryFilters, type DirectorySort } from '../directory';
+import {
+  currentVerifiedDirectory, decodeVerifiedDirectory, directoryUrl,
+  type Directory, type DirectoryFilters, type DirectorySort,
+} from '../directory';
 import { searchPeople } from '../search-client';
-import { readJson } from './requests';
+import { readWithRetry } from './requests';
 
 export type CommandArgs = JsonObject;
 
@@ -36,9 +39,17 @@ const sorts: DirectorySort[] = ['relevance', 'name', 'last_contact', 'messages',
 
 /** The same snapshot, matching and ranking as the Contacts page. */
 export function directoryCommands(signal?: AbortSignal) {
-  let snapshot: Promise<ReturnType<typeof decodeDirectory>> | undefined;
+  let snapshot: Promise<Directory> | undefined;
+  let lastSearch: { key: string; result: ReturnType<typeof searchPeople> } | undefined;
   function directory() {
-    return snapshot ??= readJson<RawDirectory>('/api/v1/directory', signal).then(decodeDirectory).catch(error => {
+    if (snapshot) return snapshot;
+    const previous = currentVerifiedDirectory();
+    const headers = previous ? { 'If-None-Match': previous.etag } : undefined;
+    return snapshot = readWithRetry(directoryUrl, { signal, headers }, async response => {
+      if (response.status === 304 && previous) return previous.directory;
+      const raw = await response.json() as RawDirectory;
+      return decodeVerifiedDirectory(raw, response.headers.get('ETag'));
+    }).catch(error => {
       snapshot = undefined;
       throw error;
     });
@@ -54,14 +65,23 @@ export function directoryCommands(signal?: AbortSignal) {
       if (!Array.isArray(tags) || tags.length > 20) throw new Error('tags 必须是最多 20 项的名称或 ID 数组。');
       const filters: DirectoryFilters = {
         type: type === 'all' ? undefined : type,
-        tagIds: tags.map(tag => resolve(data.tags, tag, '标签')),
+        tagIds: tags.map(tag => resolve(data.tags, tag, '标签')).sort(),
         companyId: args.company === undefined ? undefined : resolve(data.companies, args.company, '公司'),
         schoolId: args.school === undefined ? undefined : resolve(data.schools, args.school, '学校'),
         provider: text(args.provider, 'provider') || undefined,
       };
       const offset = integer(args.offset, 0, 0, Number.MAX_SAFE_INTEGER);
       const limit = integer(args.limit, 100, 1, 500);
-      const hits = await searchPeople(data, text(args.query, 'query'), filters, sort, undefined, signal);
+      const query = text(args.query, 'query');
+      const key = JSON.stringify([query, filters, sort]);
+      if (lastSearch?.key !== key) {
+        const result = searchPeople(data, query, filters, sort, undefined, signal).catch(error => {
+          if (lastSearch?.result === result) lastSearch = undefined;
+          throw error;
+        });
+        lastSearch = { key, result };
+      }
+      const hits = await lastSearch.result;
       return {
         total: hits.length,
         next_offset: offset + limit < hits.length ? offset + limit : null,

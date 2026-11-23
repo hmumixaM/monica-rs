@@ -56,40 +56,41 @@ export type DirectorySort = "relevance" | "name" | "last_contact" | "messages" |
 interface Snapshot<T> { etag: string | null; data: T }
 
 export const directoryKey = ["directory"] as const;
+export const directoryUrl = "/api/v1/directory";
 export const directoryPostsKey = ["directory", "posts"] as const;
 const STORE_KEY = "monica.directory.v1";
 const POSTS_STORE_KEY = "monica.directory-posts.v1";
 const STALE_MS = 5 * 60_000;
 
-async function revalidate<T>(url: string, storeKey: string, previous?: Snapshot<T>): Promise<Snapshot<T>> {
-  const cached = previous ?? (await get<Snapshot<T>>(storeKey));
-  const response = await apiFetch(url, { headers: cached?.etag ? { "If-None-Match": cached.etag } : {} });
+async function revalidate(previous?: Snapshot<RawDirectory>): Promise<Snapshot<RawDirectory>> {
+  const cached = previous ?? (await get<Snapshot<RawDirectory>>(STORE_KEY));
+  const response = await apiFetch(directoryUrl, { headers: cached?.etag ? { "If-None-Match": cached.etag } : {} });
   if (response.status === 304 && cached) return cached;
-  if (!response.ok) throw new Error(`${url} failed with ${response.status}`);
-  const snapshot = { etag: response.headers.get("ETag"), data: (await response.json()) as T };
-  await set(storeKey, snapshot);
+  if (!response.ok) throw new Error(`${directoryUrl} failed with ${response.status}`);
+  const snapshot = { etag: response.headers.get("ETag"), data: (await response.json()) as RawDirectory };
+  decodeVerifiedDirectory(snapshot.data, snapshot.etag);
+  await set(STORE_KEY, snapshot);
   return snapshot;
 }
 
-function useStoredSnapshot<T>(key: readonly string[], url: string, storeKey: string, enabled = true) {
+function useStoredDirectory() {
   const client = useQueryClient();
   const query = useQuery({
-    queryKey: key,
-    queryFn: () => revalidate<T>(url, storeKey, client.getQueryData<Snapshot<T>>(key)),
+    queryKey: directoryKey,
+    queryFn: () => revalidate(client.getQueryData<Snapshot<RawDirectory>>(directoryKey)),
     staleTime: STALE_MS,
-    enabled,
   });
   useEffect(() => {
-    if (!enabled || client.getQueryData(key)) return;
+    if (client.getQueryData(directoryKey)) return;
     // Paint from the persisted snapshot while the network revalidates it.
-    void get<Snapshot<T>>(storeKey).then((stored) => {
-      if (stored && !client.getQueryData(key)) client.setQueryData(key, stored, { updatedAt: 0 });
+    void get<Snapshot<RawDirectory>>(STORE_KEY).then((stored) => {
+      if (stored && !client.getQueryData(directoryKey)) client.setQueryData(directoryKey, stored, { updatedAt: 0 });
     });
-  }, [client, enabled, key, storeKey]);
+  }, [client]);
   return query;
 }
 
-export function decodeDirectory(raw: RawDirectory): Directory {
+function decodeDirectory(raw: RawDirectory): Directory {
   const column = Object.fromEntries(raw.columns.map((name, index) => [name, index]));
   const lookup = (list: [string, string][]) => (indices: unknown) =>
     (indices as number[]).map((index) => list[index][0]);
@@ -126,22 +127,33 @@ export function decodeDirectory(raw: RawDirectory): Directory {
   };
 }
 
-// Every component shares one decoded directory (and search index) per snapshot.
-const decodedSnapshots = new WeakMap<Snapshot<RawDirectory>, Directory>();
+// Only an authenticated server response may associate an ETag with a directory.
+// Optimistic UI edits keep their own object and do not replace this snapshot.
+const decodedSnapshots = new WeakMap<RawDirectory, Directory>();
+let verifiedDirectory: { etag: string; directory: Directory } | undefined;
 
-function decoded(snapshot: Snapshot<RawDirectory>): Directory {
-  let directory = decodedSnapshots.get(snapshot);
+export function currentVerifiedDirectory() { return verifiedDirectory; }
+
+export function decodeVerifiedDirectory(raw: RawDirectory, etag: string | null) {
+  const directory = etag && verifiedDirectory?.etag === etag ? verifiedDirectory.directory : decoded(raw);
+  if (etag) verifiedDirectory = { etag, directory };
+  decodedSnapshots.set(raw, directory);
+  return directory;
+}
+
+function decoded(raw: RawDirectory): Directory {
+  let directory = decodedSnapshots.get(raw);
   if (!directory) {
-    directory = decodeDirectory(snapshot.data);
-    decodedSnapshots.set(snapshot, directory);
+    directory = decodeDirectory(raw);
+    decodedSnapshots.set(raw, directory);
   }
   return directory;
 }
 
 /** The decoded directory, painted from IndexedDB first and revalidated by ETag. */
 export function useDirectory() {
-  const query = useStoredSnapshot<RawDirectory>(directoryKey, "/api/v1/directory", STORE_KEY);
-  const directory = query.data ? decoded(query.data) : undefined;
+  const query = useStoredDirectory();
+  const directory = query.data ? decoded(query.data.data) : undefined;
   return { ...query, directory };
 }
 
@@ -260,6 +272,7 @@ export function patchDirectoryTag(client: QueryClient, profileId: string, change
 /** Remove every persisted snapshot, for logout. */
 export async function clearDirectory(client: QueryClient) {
   await client.cancelQueries({ queryKey: directoryKey });
+  verifiedDirectory = undefined;
   resetSearchWorkers();
   client.removeQueries({ queryKey: directoryKey });
   await Promise.all([del(STORE_KEY), del(POSTS_STORE_KEY)]);

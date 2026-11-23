@@ -227,6 +227,7 @@ struct Resources {
     network: Arc<Semaphore>,
     disk: Arc<Semaphore>,
     memory: Arc<Semaphore>,
+    model_stream_memory: Arc<Semaphore>,
     background_memory: Arc<Semaphore>,
     background_network: Arc<Semaphore>,
     clock: Instant,
@@ -238,6 +239,7 @@ struct Resources {
 pub struct ResourcePermit {
     _background_memory: Option<OwnedSemaphorePermit>,
     _background_network: Option<OwnedSemaphorePermit>,
+    _model_stream_memory: Option<OwnedSemaphorePermit>,
     _memory: Option<OwnedSemaphorePermit>,
     _cpu: Option<OwnedSemaphorePermit>,
     _network: Option<OwnedSemaphorePermit>,
@@ -274,6 +276,10 @@ impl ResourceBudget {
                 network: Arc::new(Semaphore::new(limits.network as usize)),
                 disk: Arc::new(Semaphore::new(limits.disk as usize)),
                 memory: Arc::new(Semaphore::new(memory_units)),
+                model_stream_memory: Arc::new(Semaphore::new(
+                    (memory_units / 4)
+                        .max(memory_units.min(INTERACTIVE_MEMORY_RESERVE / MEMORY_UNIT)),
+                )),
                 background_memory: Arc::new(Semaphore::new(
                     memory_units.saturating_sub(INTERACTIVE_MEMORY_RESERVE / MEMORY_UNIT),
                 )),
@@ -347,10 +353,38 @@ impl ResourceBudget {
         Ok(ResourcePermit {
             _background_memory: None,
             _background_network: None,
+            _model_stream_memory: None,
             _memory: memory,
             _cpu: cpu,
             _network: network,
             _disk: disk,
+        })
+    }
+
+    /// A long-lived model stream uses at most a share of the global memory budget.
+    /// Admission is immediate so excess HTTP bodies do not accumulate in a queue.
+    pub fn try_acquire_model_stream(&self, memory_bytes: usize) -> Option<ResourcePermit> {
+        let memory = u32::try_from(memory_bytes.div_ceil(MEMORY_UNIT)).ok()?;
+        let stream = self
+            .inner
+            .model_stream_memory
+            .clone()
+            .try_acquire_many_owned(memory)
+            .ok()?;
+        let shared = self
+            .inner
+            .memory
+            .clone()
+            .try_acquire_many_owned(memory)
+            .ok()?;
+        Some(ResourcePermit {
+            _background_memory: None,
+            _background_network: None,
+            _model_stream_memory: Some(stream),
+            _memory: Some(shared),
+            _cpu: None,
+            _network: None,
+            _disk: None,
         })
     }
 

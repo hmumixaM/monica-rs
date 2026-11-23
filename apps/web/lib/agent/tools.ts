@@ -133,7 +133,11 @@ export function lookupCommands(): AgentTool[] {
       const seen = new Set<string>();
       const rows = pages.flat().filter(row => (!reached || String(row.occurred_at) >= reached) && !seen.has(row.id) && seen.add(row.id))
         .sort((x, y) => String(y.occurred_at).localeCompare(String(x.occurred_at)));
-      return { messages: rows.map(row => messageRow(row, terms)), earlier: reached, ...(failures.length ? { not_searched: failures } : {}) };
+      return {
+        messages: rows.map(row => messageRow(row, terms)), earlier: reached,
+        ...(failures.length ? { not_searched: failures } : {}),
+        ...(pages.length === 0 ? { error: '所有关键词都查询失败。' } : {}),
+      };
     }),
 
     tool('read_messages', TOOL_LABELS.read_messages, '按时间读取和一个人的聊天（含 TA 在群里说的话），新的在前。用 since、until 读某段时间，用 before 向更早翻页。', {

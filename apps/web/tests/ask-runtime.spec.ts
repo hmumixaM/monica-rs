@@ -145,6 +145,7 @@ test('the model chooses another lookup and reconnects automatically from existin
         expect(JSON.parse(messages.at(-1).content)).toEqual({
           messages: [], earlier: null,
           not_searched: [{ term: '面试', error: expect.stringContaining('HTTP 503') }],
+          error: '所有关键词都查询失败。',
         });
         return route.fulfill(lookup('read', 'read_messages', { profile_id: profile }));
       case 3: return route.abort('connectionreset');
@@ -167,6 +168,8 @@ test('the model chooses another lookup and reconnects automatically from existin
   await page.getByLabel('问题', { exact: true }).fill(question);
   await page.getByRole('button', { name: '提问', exact: true }).click();
   await expect(page.getByText('查到一条记录提到周一面试。', { exact: true })).toBeVisible({timeout:16_000});
+  await page.getByText('查询记录（2 步）', { exact: true }).click();
+  await expect(page.getByText('查询失败', { exact: true })).toHaveCount(1);
   await expect(page.getByRole('article').getByText(question, { exact: true })).toHaveCount(1);
   await expect(page.getByText('中断的回答', { exact: true })).toHaveCount(0);
   expect([searches, reads]).toEqual([3, 2]);
@@ -303,7 +306,7 @@ test('a stopped partial answer survives the next question and reload', async ({ 
   await expect(page.getByText(stoppedText, { exact: true })).toBeVisible();
 });
 
-test('JavaScript shares the contacts filters, batches reads and keeps their citations', async ({ page }) => {
+test('JavaScript shares the contacts filters, batches reads and keeps their citations', async ({ page, browserName }) => {
   const ids = [1, 2, 3].map(n => `00000000-0000-4000-8000-00000000000${n}`);
   const columns = ['id', 'type', 'name', 'summary', 'avatar_media_id', 'tag_ids', 'company_ids', 'school_ids',
     'aliases', 'providers', 'headline', 'city', 'birthday_md', 'last_contact_at', 'direct_message_count',
@@ -314,6 +317,7 @@ test('JavaScript shares the contacts filters, batches reads and keeps their cita
   ]);
   const checked: string[] = [];
   let directoryReads = 0;
+  const etag = '"synthetic-directory-v1"';
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/v1/me') return route.fulfill({ json: { id: 'synthetic', email: 'synthetic@example.invalid' } });
@@ -323,7 +327,12 @@ test('JavaScript shares the contacts filters, batches reads and keeps their cita
     }
     if (path === '/api/v1/directory') {
       directoryReads++;
-      return route.fulfill({ json: {
+      if (directoryReads === 2) {
+        expect(route.request().headers()['if-none-match']).toBe(etag);
+        // Playwright's WebKit interception cannot synthesize a 304.
+        if (browserName !== 'webkit') return route.fulfill({ status: 304 });
+      }
+      return route.fulfill({ headers: { etag }, json: {
         columns, profiles, tags: [['t1', '同事'], ['t2', '喜欢摄影']],
         companies: [['c1', '合成公司']], schools: [['s1', '合成大学']],
       } });
@@ -341,22 +350,64 @@ test('JavaScript shares the contacts filters, batches reads and keeps their cita
       return route.fulfill(scriptCall('filtered-batch', `
         const data = cli("directory", {query:"li", tags:["同事","喜欢摄影"], company:"合成公司", school:"合成大学", provider:"wechat", sort:"messages"});
         const facets = cli("directory_facets", {kind:"tags", query:"摄影"});
-        const seen = cli("batch", data.rows.map(p => ({command:"read_messages", args:{profile_id:p.profile_id}})));
-        return {names: data.rows.map(p=>p.name), facets: facets.rows, links: seen.map(r=>r.messages[0].link), fetch: typeof fetch};
+        const links = cli("batch", data.rows.map(p => ({command:"read_messages", args:{profile_id:p.profile_id}})), r=>r.messages[0].link);
+        return {names: data.rows.map(p=>p.name), facets: facets.rows, links, fetch: typeof fetch};
       `));
     }
-    expect(JSON.parse(last.content)).toEqual({
-      names: ['李丽', '李明'], facets: [{ id: 't2', name: '喜欢摄影' }],
-      links: ids.slice(0, 2).map(id => `/messages?conversation=room&message=message-${id}`), fetch: 'undefined',
-    });
+    if (last.tool_call_id === 'filtered-batch') {
+      expect(JSON.parse(last.content)).toEqual({
+        names: ['李丽', '李明'], facets: [{ id: 't2', name: '喜欢摄影' }],
+        links: ids.slice(0, 2).map(id => `/messages?conversation=room&message=message-${id}`), fetch: 'undefined',
+      });
+      return route.fulfill(scriptCall('directory-refresh', 'return cli("directory", {query:"li", tags:["同事"]}).total;'));
+    }
+    expect(JSON.parse(last.content)).toBe(3);
     return route.fulfill(completion({ role: 'assistant', content: '找到两位符合筛选条件的联系人。' }, 'stop'));
   });
   await page.goto('/ask');
   await page.getByLabel('问题', { exact: true }).fill('找喜欢摄影的同事');
   await page.getByRole('button', { name: '提问', exact: true }).click();
   await expect(page.getByText('找到两位符合筛选条件的联系人。')).toBeVisible();
-  expect(directoryReads).toBe(1);
+  expect(directoryReads).toBe(2);
   expect(checked.sort()).toEqual(ids.slice(0, 2));
+});
+
+test('JavaScript can summarize a whole large batch without retaining all message pages', async ({ page }) => {
+  test.setTimeout(60_000);
+  const people = 240;
+  const messagesPerPerson = 60;
+  const messages = Array.from({ length: messagesPerPerson }, (_, i) => ({
+    id: `large-${i}`, conversation_id: 'synthetic-room', text: '甲'.repeat(360),
+  }));
+  let reads = 0;
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/v1/me') return route.fulfill({ json: { id: 'synthetic', email: 'synthetic@example.invalid' } });
+    if (path === '/api/v1/auth/csrf') return route.fulfill({ json: { csrf_token: 'synthetic' } });
+    if (path === '/api/v1/ai/browser-model') {
+      return route.fulfill({ json: { enabled: true, model: 'synthetic-model', context_window: 32000, max_tokens: 1000 } });
+    }
+    if (/^\/api\/v1\/profiles\/[^/]+\/messages$/.test(path)) {
+      reads++;
+      return route.fulfill({ json: messages });
+    }
+    if (path !== '/api/v1/ai/chat/completions') return route.fulfill({ json: [] });
+    const last = route.request().postDataJSON().messages.at(-1);
+    if (last.role === 'user') return route.fulfill(scriptCall('large-batch', `
+      const commands = Array.from({length:${people}}, (_, i) => ({
+        command: "read_messages", args: {profile_id:"00000000-0000-4000-8000-" + String(i).padStart(12, "0")}
+      }));
+      const counts = cli("batch", commands, result => result.messages.length);
+      return {message_count:counts.reduce((total, count) => total + count, 0)};
+    `));
+    expect(JSON.parse(last.content)).toEqual({ message_count: people * messagesPerPerson });
+    return route.fulfill(completion({ role: 'assistant', content: '大批量查询已汇总。' }, 'stop'));
+  });
+  await page.goto('/ask');
+  await page.getByLabel('问题', { exact: true }).fill('汇总很多人有多少条合成记录');
+  await page.getByRole('button', { name: '提问', exact: true }).click();
+  await expect(page.getByText('大批量查询已汇总。')).toBeVisible({ timeout: 45_000 });
+  expect(reads).toBe(people);
 });
 
 test('switching conversations allows three independent in-flight prompts', async ({ page }) => {
