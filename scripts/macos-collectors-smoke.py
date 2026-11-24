@@ -16,6 +16,13 @@ with sync_playwright() as p:
  browser.close()
 """
  subprocess.run([str(python),'-I','-B','-c',code],env=env,check=True)
+ compressed_body = """import runpy, sys, zstandard
+module = runpy.run_path(sys.argv[1])
+payload = zstandard.ZstdCompressor().compress(b'Synthetic WeChat message')
+assert module['body'](payload) == ('Synthetic WeChat message', None)
+print('Bundled Chatlog Zstandard decoding passed')
+"""
+ subprocess.run([str(python),'-I','-B','-c',compressed_body,str(root/'collector-chatlog.py')],env=env,check=True)
  for provider in ['instagram','linkedin']:
   subprocess.run([str(root/'run-collector'),'--provider',provider,'--data-root',temp,'status'],env=env,check=True)
  for fixture in ['test-collector-bridge.py','test-collector-chatlog.py']:
