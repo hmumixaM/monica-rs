@@ -66,7 +66,7 @@
       "file": "vendor/linkedin_enrichment/voyager.py",
       "source": "linkedin-enrichment/src/linkedin_enrichment/voyager.py",
       "sha256": "b79f340af642d2a1124d0c8709933344d8225464d31b1d4dea7f1cacb8e658c2",
-      "bundled_sha256": "b79f340af642d2a1124d0c8709933344d8225464d31b1d4dea7f1cacb8e658c2"
+      "bundled_sha256": "d633f49f1f3a45b365e633b7fa2958aeaf2180ad93df1c9f7f2f63e6dc7a1600"
     },
     {
       "file": "vendor/linkedin_enrichment/profile_media.py",
@@ -78,7 +78,7 @@
       "file": "vendor/linkedin_enrichment/models.py",
       "source": "linkedin-enrichment/src/linkedin_enrichment/models.py",
       "sha256": "d5bbd23fb4b23eca27df3c28461792a4882a944d34b615b9f099d90d934f2274",
-      "bundled_sha256": "d5bbd23fb4b23eca27df3c28461792a4882a944d34b615b9f099d90d934f2274"
+      "bundled_sha256": "9c7cecd319a07bf12d8cab7727504385ed1eed9a74d3750a9382d7615565e7b1"
     },
     {
       "file": "vendor/linkedin_enrichment/connections.py",
@@ -108,7 +108,7 @@
       "file": "vendor/linkedin_enrichment/scrapers.py",
       "source": "linkedin-enrichment/src/linkedin_enrichment/scrapers.py",
       "sha256": "d39a5f79b5bfd2a870d1de1ea0320e18a790c3f088bd2e67ac138c4688ed96da",
-      "bundled_sha256": "cb41fb14295452da49deca0ed890e4e8abfa3eadecf5f17d93fa335876ace5d4"
+      "bundled_sha256": "9f3675964ec369ba1a3761a7390d91629108a5d277b8075e29aac629ac666576"
     },
     {
       "file": "vendor/linkedin_enrichment/cli.py",
@@ -126,19 +126,19 @@
       "file": "vendor/linkedin_enrichment/storage.py",
       "source": "linkedin-collector-repair/storage.py",
       "sha256": "73cea6b1de80f9ec833e9f2774471aa73148e7f2d9bf5f140d7564357e406c37",
-      "bundled_sha256": "eacba1140501bfce6f4fb4c1749deb8b6ebb36dd0bd14503eb01794635a44105"
+      "bundled_sha256": "a5b3c19dfd51692d6af68bbad2deaccb91bcd3663561b4de44f9166364d714f7"
     },
     {
       "file": "vendor/linkedin_enrichment/mutuals.py",
       "source": "linkedin-enrichment/src/linkedin_enrichment/mutuals.py",
       "sha256": "36c66997f1d1c1e7f4262102cae7f08ab287957ac523aeb11ee9f10f3b22501c",
-      "bundled_sha256": "36c66997f1d1c1e7f4262102cae7f08ab287957ac523aeb11ee9f10f3b22501c"
+      "bundled_sha256": "e3dddf49b8aae25f478836fc5814f899cb4240e465419fa872cde4cd229420cd"
     },
     {
       "file": "vendor/linkedin_enrichment/messaging.py",
       "source": "linkedin-enrichment/src/linkedin_enrichment/messaging.py",
       "sha256": "4b7835db141fe5068181119ae9818bd75221b53d2b47bb19601525f4ef4d3808",
-      "bundled_sha256": "4b7835db141fe5068181119ae9818bd75221b53d2b47bb19601525f4ef4d3808"
+      "bundled_sha256": "01d910b53bb9bb99007012ec722d05e3b03acfc72c9df71a06895703046f09fc"
     },
     {
       "file": "vendor/linkedin_enrichment/LICENSE",

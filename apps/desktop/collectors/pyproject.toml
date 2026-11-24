@@ -3,6 +3,7 @@ name = "monica-desktop-collectors"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+  "zstandard==0.25.0",
   "instaloader==4.15.3",
   "playwright==1.62.0",
   "pydantic==2.13.4",
