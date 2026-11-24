@@ -239,7 +239,7 @@ impl Supervisor {
                 .server
                 .parent()
                 .ok_or("运行目录无效")?
-                .join("tools/bin/chatlog-alpha"),
+                .join("tools/bin/chatlog-beta"),
             paths.logs.join("chatlog.log"),
         )?;
         Ok(Self {
@@ -328,7 +328,6 @@ impl Supervisor {
                 "MONICA_COLLECTOR_DATA_ROOT",
                 self.paths.data.join("collector-data"),
             )
-            .env("MONICA_CHATLOG_ALPHA_URL", self.chatlog.url())
             .env("MONICA_WEB_ROOT", &self.paths.web)
             .env_remove("MONICA_AI_ENABLED")
             .env("MONICA_ADAPTERS_ENABLED", "false")

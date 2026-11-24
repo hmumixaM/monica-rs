@@ -176,7 +176,15 @@ impl Chatlog {
         }
         save(
             &self.root.join("chatlog-server.json"),
-            &json!({"platform":"darwin","version":4,"data_dir":source,"data_key":key,"work_dir":work,"http_addr":format!("127.0.0.1:{}",self.preferences.port),"desktop_mode":true,"auto_decrypt":true,"wal_enabled":true,"auto_decrypt_debounce":1000,"save_decrypted_media":false}),
+            &json!({
+                "platform": "darwin",
+                "version": 4,
+                "data_dir": source,
+                "data_key": key,
+                "work_dir": work,
+                "http_addr": self.url(),
+                "desktop_mode": true,
+            }),
         )?;
         self.error = None;
         Ok(())
@@ -223,7 +231,6 @@ impl Chatlog {
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .env("HOME", &self.root)
-            .env("CHATLOG_WCDB_CACHE_DIR", self.root.join("wcdb-cache"))
             .stdin(Stdio::null())
             .stdout(output.try_clone().map_err(|e| e.to_string())?)
             .stderr(output)
