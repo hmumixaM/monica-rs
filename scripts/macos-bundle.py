@@ -52,6 +52,14 @@ def main():
     if not a.whatsapp_binary.is_file(): p.error('Build the explicit WhatsApp Go bridge before packaging')
     if not a.whatsapp_licenses.is_dir(): p.error('Generate the WhatsApp dependency license inventory before packaging')
     if not (a.collectors/'manifest.json').is_file() or not (a.chatlog_runtime/'source.json').is_file(): p.error('Build pinned collector and Chatlog runtimes before packaging')
+    chatlog_pin=json.loads((ROOT/'apps/desktop/patches/chatlog/beta.json').read_text())
+    chatlog_source=json.loads((a.chatlog_runtime/'source.json').read_text())
+    chatlog_binary=a.chatlog_runtime/'chatlog-beta'
+    if (
+        any(chatlog_source.get(key)!=value for key,value in chatlog_pin.items())
+        or not chatlog_binary.is_file()
+        or chatlog_source.get('binary_sha256')!=digest(chatlog_binary)
+    ): p.error('Build Chatlog Beta from the pinned source before packaging')
     collector_manifest=json.loads((a.collectors/'manifest.json').read_text())
     if digest(ROOT/'apps/desktop/collectors/uv.lock')!=collector_manifest['collector_lock_sha256']: p.error('Collector dependency lock is stale; rebuild its runtime')
     if not collector_manifest.get('collector_files'): p.error('Collector source inventory is missing; run macos-refresh-collectors.py')
@@ -73,8 +81,8 @@ def main():
     shutil.copy2(a.ffprobe,probe);pending.append(probe);origins[probe]=a.ffprobe.resolve()
     bridge=a.output/'tools/bin/monica-whatsapp'
     shutil.copy2(a.whatsapp_binary,bridge);pending.append(bridge);origins[bridge]=a.whatsapp_binary.resolve()
-    chatlog=a.output/'tools/bin/chatlog-alpha'
-    shutil.copy2(a.chatlog_runtime/'chatlog-alpha',chatlog);pending.append(chatlog);origins[chatlog]=(a.chatlog_runtime/'chatlog-alpha').resolve()
+    chatlog=a.output/'tools/bin/chatlog-beta'
+    shutil.copy2(chatlog_binary,chatlog);pending.append(chatlog);origins[chatlog]=chatlog_binary.resolve()
     seen=set()
     while pending:
         f=pending.pop()
@@ -108,7 +116,7 @@ def main():
     shutil.copy2(geo/'README.md',notices/'GeoNames.md')
     shutil.copy2(geo/'PROVENANCE.json',notices/'GeoNames-PROVENANCE.json')
     shutil.copytree(a.chatlog_runtime/'licenses',notices/'Chatlog-dependencies')
-    for name in ['source.json','desktop.patch','go.mod','go.sum']:
+    for name in ['source.json','Cargo.lock']:
         shutil.copy2(a.chatlog_runtime/name,notices/('Chatlog-'+name))
     shutil.copytree(a.whatsapp_licenses,notices/'WhatsApp-dependencies')
     for name in ['PROVENANCE.md','go.mod','go.sum']:
@@ -134,6 +142,7 @@ def main():
     for f in a.output.rglob('*'):
         if f.is_file() and not f.is_symlink(): f.chmod(f.stat().st_mode | 0o200)
     manifest={'schema':1,'platform':'darwin/arm64','minimum_macos':'26.0','server_sha256':digest(a.server),'postgres':run(pg/'bin/postgres','--version').strip(),'ffprobe':run(probe,'-version').splitlines()[0],'whatsapp_sha256':digest(bridge),'chatlog_sha256':digest(chatlog),'collectors':json.loads((a.collectors/'manifest.json').read_text()),'native_files':audited,'adapters_enabled':False,'ai_enabled':False,'source_commit':run('git','-C',ROOT,'rev-parse','HEAD').strip(),'source_dirty':bool(run('git','-C',ROOT,'status','--porcelain').strip()),'license_packages':[p.parent.name+'-'+p.name for p in sorted(package_roots)]}
+    manifest['chatlog_source_commit']=chatlog_pin['commit']
     (a.output/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     print(json.dumps({'output':str(a.output),'native_files':len(audited),'postgres':manifest['postgres']}))
 

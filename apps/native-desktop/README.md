@@ -19,7 +19,7 @@ The shell starts `monica-server migrate`, then `monica-server serve --listen 127
 
 It uses `GET /api/v1/ready`, `GET /internal/runtime/status`, and `POST /internal/runtime/pause` or `/resume`. Internal calls carry only a native-side bearer token, with no browser Origin header. Status must include `paused: boolean`, `draining: boolean`, `active_jobs: number`. First account creation uses the real `/api/v1/auth/bootstrap` contract.
 
-The settings window exposes opt-in Contacts and Messages controls. The browser Sources page manages separate mail and WhatsApp connections. The package includes the Go WhatsApp bridge and ffprobe; neither reads an account until explicitly connected. The package also includes locked Python 3.12.11 collector bridges, Playwright Chromium, and a pinned Chatlog build. Instagram and LinkedIn each expose explicit login, local login status, enable, pause and cancel controls; collection remains off after login until enabled. Optional face model assets are not included and report needs_models until explicitly installed. No personal credentials or previously installed collector configuration are bundled.
+The settings window exposes opt-in Contacts and Messages controls. The browser Sources page manages separate mail and WhatsApp connections. The package includes the Go WhatsApp bridge and ffprobe; neither reads an account until explicitly connected. The package also includes locked Python 3.12.11 collector bridges, Playwright Chromium, and the pinned Chatlog Beta snapshot service. Instagram and LinkedIn each expose explicit login, local login status, enable, pause and cancel controls; collection remains off after login until enabled. Optional face model assets are not included and report needs_models until explicitly installed. No personal credentials or previously installed collector configuration are bundled.
 
 ## Build an isolated local test artifact
 
@@ -41,6 +41,8 @@ python3 scripts/macos-verify.py 'apps/native-desktop/src-tauri/target/release/bu
 ```
 
 `macos-bundle.py` requires a fresh output directory (default `apps/native-desktop/runtime`). It copies only explicit server/static assets, PostgreSQL executables/libraries, ffprobe, the WhatsApp Go bridge, Chatlog and the isolated Python/Chromium distribution, relocates dynamic dependencies, signs changed native files and rejects remaining Homebrew links. For a repeat build, preserve the previous runtime outside that location and create a new output. `--server` and `--postgres-prefix` can select explicit test inputs. No existing database, browser session, collector configuration or `.env` is read.
+
+`macos-chatlog.py` needs read access to the pinned Chatlog Beta repository in `apps/desktop/patches/chatlog/beta.json`. It builds the snapshot service with its locked Rust dependencies and copies their notices into the package.
 
 The local artifact is ad-hoc signed, not notarized or ready for public distribution. The recorded initial 161.68 MiB app included a debug Rust backend and no external collectors/models; its size is not a like-for-like comparison with the previous full desktop bundle.
 
@@ -142,13 +144,13 @@ The supervisor passes `MONICA_COLLECTOR_DATA_ROOT=<app-data>/collector-data`, `M
 
 Login subprocesses have an owned process group. Cancel, global pause and quit terminate that group, including provider descendants. The Python wrapper preserves the parent's group in this mode. Synthetic unit tests exercise a stubborn fake child/grandchild and verify default-off, no auto-enable, authentication gating and successful enable/pause acknowledgements. Debug test-data mode rejects real login launches.
 
-Chatlog uses an independently allocated loopback port and private config/work directory. The user explicitly supplies a WeChat 4 data path and existing key; neither is discovered from another app. It starts only after enablement, stops on pause/quit, and recovers only its own crashed child. The Rust backend receives `MONICA_CHATLOG_ALPHA_URL`. Synthetic lifecycle tests use a fake HTTP child, not a real WeChat database.
+Chatlog Beta uses an independently allocated loopback port and private config/work directory. The user supplies the macOS WeChat 4 data path and an existing 64-hex-character database key. Beta uses that key to decrypt contacts, message shards and Moments and publishes standalone SQLite snapshots. It starts only after enablement, stops on pause/quit, and recovers its own crashed child. The separate Beta media decoder is an upstream CLI.
 
 The collector distribution was moved to a path containing spaces and tested there: bundled Chromium rendered an offline synthetic document; both provider status commands reported needs_login in a fresh root; seven publication bridge fixtures passed. This proves wrapper/interpreter/browser relocation without accessing a real account. The final signed app must repeat this smoke test via `macos-verify.py`.
 
 The latest additional source-state guard asks the backend before every native Contacts/Messages read. A missing or paused source disables local polling; a failed status request skips the read. The guard never enables a locally disabled source. Twelve native unit tests include these fail-closed cases. Chatlog enable/disable is coupled to the `wechat` adapter control; global pause retains user intent, and a Web-side adapter pause stops the owned daemon on the next status tick.
 
-The actual pinned Chatlog binary also passes `scripts/macos-chatlog-smoke.py`: an empty synthetic source is rejected, no loopback listener survives, and the source directory remains untouched. `macos-verify.py` repeats this check against the delivered binary.
+`scripts/macos-chatlog-smoke.py` exercises the packaged Chatlog Beta binary. It checks that an empty synthetic source is rejected, no loopback listener survives, and the source directory remains untouched. `macos-verify.py` runs this check against the delivered binary.
 
 Newest native GUI acceptance (social/Chatlog controls) was attempted but blocked before interaction by the Mac being locked. The earlier actual base-shell/Contacts/Messages acceptance remains recorded above; the newest controls currently have synthetic Playwright and native process tests only. Final delivery must keep this distinction if the screen remains locked.
 
