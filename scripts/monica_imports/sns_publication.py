@@ -156,8 +156,19 @@ def publish(db, request: Publication):
             db.execute("INSERT INTO crm.media_provenance(media_id,source,source_record_id,source_url) VALUES(%s,'wechat',%s,%s) ON CONFLICT DO NOTHING", (media_id, provenance, source_url))
             # The unique slot arbitrates concurrent publishers. RETURNING must
             # confirm the winner before inserting a potentially duplicate link.
-            if live:
-                # Keep old links as source history while advancing the active slot.
+            native = entity_type == 'social_post' and role == f'media-{slot}' and asset['media_type'] == 'video/mp4'
+            if native:
+                require(original.get('media_type') == 'video')
+                superseded = db.execute("""
+                    SELECT a.id,a.media_type FROM crm.media_assets a WHERE a.id IN (
+                        SELECT media_id FROM crm.media_slots WHERE entity_type=%s AND entity_id=%s AND role=%s
+                        UNION SELECT media_id FROM crm.media_links WHERE entity_type=%s AND entity_id=%s AND role=%s
+                    )
+                """, (entity_type, entity_id, role, entity_type, entity_id, role)).fetchall()
+                require(all(old_id == media_id or kind.startswith('image/') for old_id, kind in superseded))
+            if live or native:
+                # Legacy importers sometimes stored an image under a native
+                # video role. Keep its link, and advance the verified clip slot.
                 db.execute("""INSERT INTO crm.media_slots(entity_type,entity_id,media_id,role)
                     VALUES('social_post',%s,%s,%s) ON CONFLICT(entity_type,entity_id,role) DO UPDATE SET
                     media_id=excluded.media_id,generation=crm.media_slots.generation+1,updated_at=now()

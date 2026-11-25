@@ -269,7 +269,15 @@ def import_event(db, source, media, state, runtime, cache, event_id):
         try:
             if photo['media_type']=='video':
                 video=module('sns_video_stream',scripts/'sns-video.py')
-                header=video.obtain(fetch,source,external,slot,cache,content.get('source_tid'),stage,runtime,source_media_id=photo.get('source_media_id'),live_motion=live,raw_xml=photo.get('_raw_xml'))
+                video_args = (fetch, source, external, slot, cache, content.get('source_tid'), stage, runtime)
+                try:
+                    header = video.obtain(*video_args, source_media_id=photo.get('source_media_id'),
+                                          live_motion=live, raw_xml=photo.get('_raw_xml'))
+                except (FileNotFoundError, ValueError, sqlite3.Error):
+                    archive = archived_xml(db, event_id) if not live else None
+                    if not archive or fetch.xml_hash(archive) != content.get('raw_xml_sha256'):
+                        raise
+                    header = video.obtain(*video_args, source_media_id=photo.get('source_media_id'), raw_xml=archive)
                 if live:
                     if (header['raw_xml_sha256'] != content['raw_xml_sha256']
                             or header['parent_media_id'] != photo['parent_media_id']

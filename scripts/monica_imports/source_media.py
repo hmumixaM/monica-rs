@@ -52,11 +52,16 @@ def link_existing(db, media_root, event_id, role, source_url, media_kind='image'
         lock = f'media-slot:{entity_type}:{entity_id}:{role}'
         if not db.execute('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))', (lock,)).fetchone()[0]:
             raise BlockingIOError('sns_slot_busy')
-        prior = db.execute(
-            "SELECT media_id FROM crm.media_links "
-            "WHERE entity_type=%s AND entity_id=%s AND role=%s", (entity_type, entity_id, role),
-        ).fetchall()
-        if any(item[0] != media_id for item in prior):
+        prior = db.execute("""
+            SELECT a.id,a.media_type FROM crm.media_assets a WHERE a.id IN (
+                SELECT media_id FROM crm.media_links WHERE entity_type=%s AND entity_id=%s AND role=%s
+                UNION SELECT media_id FROM crm.media_slots WHERE entity_type=%s AND entity_id=%s AND role=%s
+            )
+        """, (entity_type, entity_id, role, entity_type, entity_id, role)).fetchall()
+        conflicts = [kind for linked_id, kind in prior if linked_id != media_id]
+        if conflicts:
+            if media_kind == 'video' and entity_type == 'social_post' and all(kind.startswith('image/') for kind in conflicts):
+                return False  # The verified publisher can advance the old still slot.
             raise ValueError('sns_slot_identity_conflict')
         chosen = db.execute(
             "INSERT INTO crm.media_slots(entity_type,entity_id,role,media_id) "

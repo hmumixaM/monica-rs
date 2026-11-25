@@ -156,6 +156,7 @@ class LiveImportContract(unittest.TestCase):
         snapshot.parent.mkdir(parents=True)
         snapshot.touch()
         self.consumer.journal.execute('PRAGMA user_version=2')
+        self.consumer.journal.execute("INSERT INTO sns_queue_seeds VALUES('moments-and-comments')")
         self.args.sns_runtime = self.args.state/'runtime'
         self.args.interval = 30
         self.consumer.journal.execute('INSERT INTO sns_pending(event_id) VALUES(?)', (str(uuid.uuid4()),))

@@ -545,8 +545,7 @@ class Consumer:
                         (m->>'role', m->>'media_type'='image' OR (m->>'media_type'='video' AND m->>'source_url' IS NOT NULL)),
                         ((m->>'role')||'-poster', m->>'media_type'='video' AND m->>'thumbnail_url' IS NOT NULL)
                     ) slot(role, expected)
-                    WHERE slot.expected AND (e.occurred_at>=%s OR
-                        (slot.role=m->>'role' AND m->>'media_type'='video' AND nullif(m->>'source_url','') IS NOT NULL)) AND NOT EXISTS (
+                    WHERE slot.expected AND e.occurred_at>=%s AND NOT EXISTS (
                         SELECT 1 FROM crm.media_links l JOIN crm.media_assets a ON a.id=l.media_id
                         WHERE l.entity_type='social_post' AND l.entity_id=e.id AND l.role=slot.role
                           AND a.media_type LIKE CASE WHEN slot.role=m->>'role' AND m->>'media_type'='video'
@@ -574,6 +573,26 @@ class Consumer:
                 self.journal.execute("INSERT INTO sns_queue_seeds VALUES('moments-and-comments')")
                 if self.journal.execute('PRAGMA user_version').fetchone()[0] == 0:
                     self.journal.execute('PRAGMA user_version=1')
+        if not self.journal.execute("SELECT 1 FROM sns_queue_seeds WHERE name='historical-native-video'").fetchone():
+            videos = self.db.execute("""
+                SELECT e.id FROM crm.timeline_events e
+                WHERE e.provider='wechat' AND e.event_type='post' AND e.status='active'
+                  AND e.occurred_at<%s AND e.content ? 'source_tid' AND EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(coalesce(e.content->'media','[]')) m
+                    WHERE m->>'media_type'='video' AND nullif(m->>'source_url','') IS NOT NULL
+                      AND NOT EXISTS (
+                        SELECT 1 FROM crm.media_links l JOIN crm.media_assets a ON a.id=l.media_id
+                        WHERE l.entity_type='social_post' AND l.entity_id=e.id AND l.role=m->>'role'
+                          AND a.media_type LIKE 'video/%%'
+                      )
+                  )
+            """, (self.args.since,)).fetchall()
+            with self.journal:
+                self.journal.executemany(
+                    'INSERT INTO sns_pending(event_id,attempts) VALUES(?,1) ON CONFLICT DO NOTHING',
+                    [(str(event_id),) for (event_id,) in videos],
+                )
+                self.journal.execute("INSERT INTO sns_queue_seeds VALUES('historical-native-video')")
         if runtime is not None and self.journal.execute('PRAGMA user_version').fetchone()[0] == 1:
             images = module('sns_event_images', 'sns-media-import.py')
             historical = images.historical_motion_events(self.db, snapshot, self.args.media, lambda: STOP)

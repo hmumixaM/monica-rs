@@ -35,6 +35,8 @@ def obtain(fetch,source,external,slot,cache,source_tid,stage,runtime,source_medi
         header,_=fetch.frame(source,external,slot,cache_root=cache,source_tid=source_tid,destination=cipher,source_media_id=source_media_id,live_motion=live_motion,raw_xml=raw_xml)
         source_md5 = header['source_md5'] if header.get('verified_cached_video') else None
         if source_md5:
+            with cipher.open('rb') as original:
+                os.fsync(original.fileno())
             os.replace(cipher, decoded)
         else:
             encoded=json.dumps(header).encode()
@@ -54,6 +56,12 @@ def obtain(fetch,source,external,slot,cache,source_tid,stage,runtime,source_medi
                     if child.poll()is None:child.kill();child.wait()
         asset=validate(decoded,runtime,source_md5=source_md5)
         target=stage/'objects'/asset['sha256']
-        if not target.exists():os.replace(decoded,target)
+        if not target.exists():
+            os.replace(decoded,target)
+        directory = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
         header.pop('seed',None);header.update(media=asset,full_video=True)
         return header

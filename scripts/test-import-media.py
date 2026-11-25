@@ -81,6 +81,29 @@ class PublicationContract(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT role FROM crm.media_links WHERE entity_id=%s',
                                          (self.event,)).fetchall(), [('live-media-1',)])
 
+    def test_verified_native_video_can_advance_the_legacy_poster_slot(self):
+        with patch('monica_imports.sns_publication.subprocess.run', return_value=self.validator):
+            publish(self.db, self.request)
+        old = self.db.execute('SELECT media_id FROM crm.media_slots WHERE entity_id=%s', (self.event,)).fetchone()[0]
+        self.content['media'][0]['media_type'] = 'video'
+        self.db.execute('UPDATE crm.timeline_events SET content=%s WHERE id=%s', (Jsonb(self.content), self.event))
+        clip = b'verified native MP4'
+        asset = dict(self.asset, sha256=hashlib.sha256(clip).hexdigest(),
+                     byte_length=len(clip), media_type='video/mp4')
+        (self.request.stage/'objects'/asset['sha256']).write_bytes(clip)
+        manifest = self.request.stage/'manifest.json'
+        row = json.loads(manifest.read_text())['rows'][0]
+        row.update(media=asset,full_video=True)
+        manifest.write_text(json.dumps(dict(rows=[row])))
+        request = replace(self.request, manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest())
+        verifier = SimpleNamespace(validate=lambda *args, **kwargs: asset)
+        with patch('monica_imports.sns_publication.module', return_value=verifier):
+            publish(self.db, request)
+        self.assertEqual(self.db.execute('SELECT a.media_type FROM crm.media_slots s JOIN crm.media_assets a ON a.id=s.media_id WHERE entity_id=%s',
+                                         (self.event,)).fetchone(), ('video/mp4',))
+        self.assertIsNotNone(self.db.execute('SELECT 1 FROM crm.media_links WHERE entity_id=%s AND media_id=%s',
+                                            (self.event,old)).fetchone())
+
     def test_wrong_database_or_changed_source_never_publishes(self):
         with self.assertRaises(ValueError):
             publish(self.db,replace(self.request,target=replace(self.request.target,system_id='another-cluster')))
@@ -130,7 +153,7 @@ class PublicationContract(unittest.TestCase):
                              {'sns_pending': 0, 'sns_ready': 0, 'sns_failed': 0})
         self.assertEqual(self.db.execute('SELECT entity_type,entity_id,role FROM crm.media_links').fetchall(),
                          [('social_interaction', comment, 'media-1')])
-        self.assertEqual(self.consumer.journal.execute('SELECT count(*) FROM sns_queue_seeds').fetchone()[0], 1)
+        self.assertEqual(self.consumer.journal.execute("SELECT count(*) FROM sns_queue_seeds WHERE name='moments-and-comments'").fetchone()[0], 1)
         images = fixtures.live.module('sns_reuse_comment_test', 'sns-media-import.py')
         (self.args.sns_cache/name).unlink()
         with patch.object(images, 'archived_xml', side_effect=AssertionError('must reuse the verified asset')):

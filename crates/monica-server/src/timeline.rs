@@ -356,34 +356,44 @@ async fn check_local_media(
 
 fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
     let local = local.as_array().cloned().unwrap_or_default();
-    let by_url = local
-        .iter()
-        .flat_map(|media| {
-            media["source_urls"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .chain(std::iter::once(&media["source_url"]))
-                .filter_map(move |url| {
-                    url.as_str()
-                        .filter(|url| !url.is_empty())
-                        .map(|url| (url, media))
-                })
+    let mut by_url: std::collections::BTreeMap<_, Vec<_>> = Default::default();
+    for (url, media) in local.iter().flat_map(|media| {
+        media["source_urls"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .chain(std::iter::once(&media["source_url"]))
+            .filter_map(move |url| {
+                url.as_str()
+                    .filter(|url| !url.is_empty())
+                    .map(|url| (url, media))
+            })
+    }) {
+        by_url.entry(url).or_default().push(media);
+    }
+    let by_url_type = |url: &str, family: Option<&str>| {
+        by_url.get(url)?.iter().rev().copied().find(|media| {
+            family.is_none_or(|kind| {
+                media["media_type"]
+                    .as_str()
+                    .and_then(|mime| mime.split('/').next())
+                    == Some(kind)
+            })
         })
-        .collect::<std::collections::BTreeMap<_, _>>();
+    };
     let exact_ids = remote
         .as_array()
         .into_iter()
         .flatten()
         .flat_map(|item| {
-            ["source_url", "thumbnail_url"]
-                .into_iter()
-                .filter_map(|key| {
-                    item[key]
-                        .as_str()
-                        .and_then(|url| by_url.get(url))
-                        .map(|media| media["id"].to_string())
-                })
+            ["source_url", "thumbnail_url"].into_iter().flat_map(|key| {
+                item[key]
+                    .as_str()
+                    .and_then(|url| by_url.get(url))
+                    .into_iter()
+                    .flatten()
+                    .map(|media| media["id"].to_string())
+            })
         })
         .collect::<std::collections::BTreeSet<_>>();
     // Imported archives can keep file paths instead of the original CDN URL.
@@ -430,7 +440,13 @@ fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
         };
         let poster = item["thumbnail_url"]
             .as_str()
-            .and_then(|u| by_url.get(u).copied())
+            .and_then(|u| by_url_type(u, Some("image")))
+            .or_else(|| {
+                (item["media_type"] == "video")
+                    .then(|| item["source_url"].as_str())
+                    .flatten()
+                    .and_then(|url| by_url_type(url, Some("image")))
+            })
             .or_else(|| {
                 let index = role.strip_prefix("media-")?;
                 [
@@ -446,8 +462,13 @@ fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
                         .is_some_and(|kind| kind.starts_with("image"))
                 })
             });
-        let local = url
-            .and_then(|u| by_url.get(u).copied())
+        let family = item["media_type"]
+            .as_str()
+            .and_then(|kind| kind.split('/').next());
+        let local = item["source_url"]
+            .as_str()
+            .filter(|url| !url.is_empty())
+            .and_then(|u| by_url_type(u, family))
             .or_else(|| {
                 archive_role(&role).filter(|media| {
                     let expected = item["media_type"].as_str().unwrap_or("").split('/').next();
@@ -770,6 +791,19 @@ mod tests {
         )
         .await;
         assert_eq!(media[0]["ready"], false);
+    }
+
+    #[test]
+    fn native_video_outranks_the_legacy_poster_with_the_same_source_url() {
+        let remote = json!([{"role":"media-1","media_type":"video","source_url":"https://example.test/clip"}]);
+        let local = json!([
+            {"role":"media-1","id":"mp4","media_type":"video/mp4","source_url":"https://example.test/clip","ready":true},
+            {"role":"media-1","id":"poster","media_type":"image/jpeg","source_url":"https://example.test/clip","ready":true}
+        ]);
+        let media = merge_media(&remote, &local);
+        assert_eq!(media.len(), 1);
+        assert_eq!(media[0]["id"], "mp4");
+        assert_eq!(media[0]["thumbnail_id"], "poster");
     }
 
     #[test]
