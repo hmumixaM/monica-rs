@@ -215,7 +215,8 @@ pub(super) async fn run(
         trace_bytes: 0,
         omitted: 0,
     };
-    let result = script_worker::run(&source, Duration::from_secs(120), permit, &mut bridge).await;
+    let result =
+        script_worker::run(&source, script_worker::SCRIPT_TIMEOUT, permit, &mut bridge).await;
     let details = json!({"queries":bridge.queries,"omittedQueries":bridge.omitted});
     match result {
         Ok(text) => (

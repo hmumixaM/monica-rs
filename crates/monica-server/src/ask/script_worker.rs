@@ -10,6 +10,8 @@ use monica_core::resources::ResourcePermit;
 use std::{
     io::{self, BufRead, Read, Write},
     process::Stdio,
+    sync::mpsc,
+    thread,
     time::Duration,
 };
 use tokio::{
@@ -20,6 +22,10 @@ use tokio::{
 const WORKER_FLAG: &str = "--monica-ask-js-worker";
 const READY: &str = "monica-ask-js-ready";
 const CHILD_FRAME_BYTES: usize = SCRIPT_RESULT_BYTES + 1;
+pub(super) const SCRIPT_TIMEOUT: Duration = Duration::from_secs(120);
+// Let the server report the regular deadline and reap the worker first.
+const WORKER_WATCHDOG_TIMEOUT: Duration = SCRIPT_TIMEOUT.saturating_add(Duration::from_secs(1));
+const WORKER_TIMEOUT_EXIT: i32 = 124;
 const TIMEOUT_MESSAGE: &str = "JavaScript 查询超时。请缩小范围或分批查询。";
 
 pub(crate) fn entry() -> Result<bool> {
@@ -27,11 +33,24 @@ pub(crate) fn entry() -> Result<bool> {
     if args.next().is_none_or(|arg| arg != WORKER_FLAG) || args.next().is_some() {
         return Ok(false);
     }
-    serve(io::stdin().lock(), io::stdout().lock())?;
+    serve(
+        io::stdin().lock(),
+        io::stdout().lock(),
+        WORKER_WATCHDOG_TIMEOUT,
+    )?;
     Ok(true)
 }
 
-fn serve(mut input: impl BufRead, mut output: impl Write) -> Result<()> {
+fn serve(mut input: impl BufRead, mut output: impl Write, timeout: Duration) -> Result<()> {
+    // A compute-only guest cannot notice a closed pipe if the server dies.
+    let (_finished, pending) = mpsc::channel::<()>();
+    thread::Builder::new()
+        .name("ask-js-watchdog".into())
+        .spawn(move || {
+            if pending.recv_timeout(timeout) == Err(mpsc::RecvTimeoutError::Timeout) {
+                std::process::exit(WORKER_TIMEOUT_EXIT);
+            }
+        })?;
     writeln!(output, "{READY}")?;
     output.flush()?;
     let source: String = serde_json::from_str(&read_input(&mut input, SOURCE_BYTES * 6 + 2)?)?;
@@ -197,11 +216,34 @@ mod tests {
     use super::*;
     use monica_core::resources::{ResourceBudget, TaskResources};
 
+    const TEST_WATCHDOG_MS: &str = "MONICA_ASK_TEST_WATCHDOG_MS";
+
     #[test]
     fn child_entry() {
         if std::env::var_os("MONICA_ASK_TEST_CHILD").is_some() {
-            serve(io::stdin().lock(), io::stdout().lock()).unwrap();
+            let timeout = std::env::var(TEST_WATCHDOG_MS)
+                .map(|ms| Duration::from_millis(ms.parse().unwrap()))
+                .unwrap_or(WORKER_WATCHDOG_TIMEOUT);
+            serve(io::stdin().lock(), io::stdout().lock(), timeout).unwrap();
         }
+    }
+
+    #[tokio::test]
+    async fn worker_stops_without_server_to_enforce_deadline() {
+        let mut child = command()
+            .unwrap()
+            .env(TEST_WATCHDOG_MS, "500")
+            .spawn()
+            .unwrap();
+        let mut input = child.stdin.take().unwrap();
+        input.write_all(b"\"while (true) {}\"\n").await.unwrap();
+        drop(input);
+
+        let status = tokio::time::timeout(Duration::from_secs(10), child.wait())
+            .await
+            .expect("the worker enforces its own deadline")
+            .unwrap();
+        assert_eq!(status.code(), Some(WORKER_TIMEOUT_EXIT));
     }
 
     struct NoLookup;
