@@ -479,3 +479,190 @@ fn result_above_the_old_limit_reaches_the_model_context() {
     let wire = model_context(&history, "system", "", "fixture", 560_000);
     assert_eq!(wire[3]["content"], result);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn ask_edits_require_owner_confirmation_and_commit_once(pool: PgPool) {
+    let (state, app) = setup(&pool).await;
+    let path = new_chat(&app).await;
+    let chat = Uuid::parse_str(path.rsplit('/').next().unwrap()).unwrap();
+    let run = Uuid::new_v4();
+    let lease = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.ask_runs(id,chat_id,model,timezone,people,status,lease_id,lease_until) VALUES($1,$2,'fixture','UTC','[]','running',$3,now()+interval '5 minutes')")
+        .bind(run).bind(chat).bind(lease).execute(&pool).await.unwrap();
+    let people = [Uuid::new_v4(), Uuid::new_v4()];
+    for (id, name) in people.iter().zip(["林同学", "周同学"]) {
+        sqlx::query(
+            "INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person',$2)",
+        )
+        .bind(id)
+        .bind(name)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let [first, second] = people;
+    let existing_tag = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.tags(id,name) VALUES($1,'QD')")
+        .bind(existing_tag)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO crm.tag_memberships(tag_id,profile_id) VALUES($1,$2)")
+        .bind(existing_tag)
+        .bind(first)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let actions = [
+        json!({"action":"add_record","profile_ids":people,"record_type":"note","title":"重聚纪要","body":"在上海见面"}),
+        json!({"action":"add_record","profile_ids":[first],"record_type":"activity","title":"线下见面","occurred_at":"2025-03-14T18:00:00+08:00"}),
+        json!({"action":"add_tag","profile_ids":people,"tag":"qd"}),
+        json!({"action":"create_tag","profile_ids":[first],"tag":"待跟进"}),
+        json!({"action":"set_profile_field","profile_id":first,"field":"city","value":"上海"}),
+        json!({"action":"add_date","profile_id":first,"date":{"kind":"birthday","precision":"month_day","month":7,"day":12}}),
+        json!({"action":"add_relationship","profile_id":first,"related_profile_id":second,"relationship":"曾是同事"}),
+    ];
+    let mut ids = Vec::new();
+    for (n, action) in actions.iter().enumerate() {
+        let key = format!("edit-{n}");
+        let id = edits::propose(&pool, chat, run, lease, &key, action)
+            .await
+            .unwrap();
+        assert_eq!(
+            edits::propose(&pool, chat, run, lease, &key, action)
+                .await
+                .unwrap(),
+            id
+        );
+        ids.push(id);
+    }
+    let unknown = json!({"action":"set_profile_field","profile_id":first,"field":"wechat.nickname","value":"禁止"});
+    assert!(
+        edits::propose(&pool, chat, run, lease, "unknown-write", &unknown)
+            .await
+            .is_err()
+    );
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM crm.activities WHERE title IN ('重聚纪要','线下见面')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 0);
+    let page = request(&app, "owner", "GET", &path, Value::Null, StatusCode::OK).await;
+    assert_eq!(page["edits"].as_array().unwrap().len(), actions.len());
+    assert!(
+        page["edits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|edit| edit["status"] == "pending")
+    );
+    let denied = format!("{path}/edits/{}", ids[0]);
+    request(
+        &app,
+        "other",
+        "POST",
+        &denied,
+        json!({"confirm":true}),
+        StatusCode::NOT_FOUND,
+    )
+    .await;
+    let owner: (Uuid, String) =
+        sqlx::query_as("SELECT id,email FROM crm.app_users WHERE email='owner@example.invalid'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let delegated = auth::delegated_routes(state, owner);
+    request(
+        &delegated,
+        "owner",
+        "POST",
+        &denied,
+        json!({"confirm":true}),
+        StatusCode::FORBIDDEN,
+    )
+    .await;
+    for id in ids {
+        let endpoint = format!("{path}/edits/{id}");
+        let decision = json!({"confirm":true});
+        let saved = request(
+            &app,
+            "owner",
+            "POST",
+            &endpoint,
+            decision.clone(),
+            StatusCode::OK,
+        )
+        .await;
+        assert_eq!(saved["status"], "applied");
+        assert_eq!(
+            request(&app, "owner", "POST", &endpoint, decision, StatusCode::OK).await,
+            saved
+        );
+    }
+    let counts: (i64,i64,i64,i64,i64,i64) = sqlx::query_as("SELECT
+        (SELECT count(*) FROM crm.activities WHERE title IN ('重聚纪要','线下见面')),
+        (SELECT count(*) FROM crm.tag_memberships WHERE tag_id=$3),
+        (SELECT count(*) FROM crm.tags t JOIN crm.tag_memberships m ON t.id=m.tag_id WHERE t.name='待跟进' AND m.profile_id=$1),
+        (SELECT count(*) FROM crm.field_current c JOIN crm.field_revisions r ON c.revision_id=r.id WHERE c.profile_id=$1 AND c.field_key='monica.residence' AND r.value='\"上海\"'),
+        (SELECT count(*) FROM crm.profile_dates WHERE profile_id=$1 AND kind='birthday' AND year IS NULL AND month=7 AND day=12),
+        (SELECT count(*) FROM crm.relationship_edges WHERE from_profile_id=$1 AND to_profile_id=$2 AND relationship_type='曾是同事')")
+        .bind(first).bind(second).bind(existing_tag).fetch_one(&pool).await.unwrap();
+    assert_eq!(counts, (2, 2, 1, 1, 1, 1));
+
+    let replacement =
+        json!({"action":"set_profile_field","profile_id":first,"field":"city","value":"南京"});
+    let stale = edits::propose(&pool, chat, run, lease, "old-preview", &replacement)
+        .await
+        .unwrap();
+    let newer =
+        json!({"action":"set_profile_field","profile_id":first,"field":"city","value":"杭州"});
+    let new_id = edits::propose(&pool, chat, run, lease, "new-preview", &newer)
+        .await
+        .unwrap();
+    let new_result = request(
+        &app,
+        "owner",
+        "POST",
+        &format!("{path}/edits/{new_id}"),
+        json!({"confirm":true}),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(new_result["status"], "applied");
+    let rejected = request(
+        &app,
+        "owner",
+        "POST",
+        &format!("{path}/edits/{stale}"),
+        json!({"confirm":true}),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(rejected["status"], "stale");
+
+    let pending = edits::propose(&pool, chat, run, lease, "cancelled-run", &actions[0])
+        .await
+        .unwrap();
+    request(
+        &app,
+        "owner",
+        "DELETE",
+        &format!("{path}/runs/{run}"),
+        Value::Null,
+        StatusCode::NO_CONTENT,
+    )
+    .await;
+    let stopped = request(
+        &app,
+        "owner",
+        "POST",
+        &format!("{path}/edits/{pending}"),
+        json!({"confirm":true}),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(stopped["status"], "dismissed");
+}

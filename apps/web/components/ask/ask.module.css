@@ -122,3 +122,23 @@
   .transcript, .composer { padding-inline: var(--space-3); }
   .inputRow textarea { font-size: 16px; }
 }
+
+.editCard {
+  display: grid;
+  gap: var(--space-2);
+  max-inline-size: 46rem;
+  margin-block: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-rule);
+  border-radius: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.editCard header { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: baseline; justify-content: space-between; }
+.editCard header span, .editLabel, .editEmpty { color: var(--color-text-soft); font-size: var(--text-sm); margin: 0; }
+.editPeople summary { cursor: pointer; font-size: var(--text-sm); }
+.editPeople ul { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin-block: var(--space-1); padding: 0; list-style: none; }
+.editFields { display: grid; gap: var(--space-1); margin: 0; }
+.editFields div { display: grid; grid-template-columns: minmax(4em, max-content) minmax(0, 1fr); gap: var(--space-2); }
+.editFields dt { color: var(--color-text-soft); }
+.editFields dd { margin: 0; white-space: pre-wrap; }
+.editActions { display: flex; flex-wrap: wrap; gap: var(--space-2); }

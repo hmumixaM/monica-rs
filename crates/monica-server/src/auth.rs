@@ -169,6 +169,13 @@ pub async fn user(s: &AppState, h: &HeaderMap) -> ApiResult<(Uuid, String)> {
     if let Some(actor) = &s.delegated_actor {
         return Ok(actor.clone());
     }
+    session_user(s, h).await
+}
+
+pub(crate) async fn session_user(s: &AppState, h: &HeaderMap) -> ApiResult<(Uuid, String)> {
+    if s.delegated_actor.is_some() {
+        return Err(bad(StatusCode::FORBIDDEN, "A user session is required"));
+    }
     let t = s
         .session_token(h)
         .ok_or(bad(StatusCode::UNAUTHORIZED, "login required"))?;

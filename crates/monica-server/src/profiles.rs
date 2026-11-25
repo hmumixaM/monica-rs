@@ -1,7 +1,7 @@
 #[path = "activities.rs"]
-mod activities;
+pub(crate) mod activities;
 #[path = "profile_dates.rs"]
-mod dates;
+pub(crate) mod dates;
 #[path = "profile_details.rs"]
 mod details;
 #[cfg(test)]
@@ -13,7 +13,7 @@ mod graph_cache_tests;
 #[path = "profile_read.rs"]
 mod read;
 #[path = "profile_relationships.rs"]
-mod relationships;
+pub(crate) mod relationships;
 #[path = "profile_summary.rs"]
 pub(crate) mod summary;
 use crate::auth::{ApiError, AppState, user};
@@ -117,10 +117,10 @@ async fn lock(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result<()> {
     Ok(())
 }
 #[derive(Deserialize)]
-struct Field {
-    field_key: String,
-    value: Value,
-    source_type: Option<String>,
+pub(crate) struct Field {
+    pub(crate) field_key: String,
+    pub(crate) value: Value,
+    pub(crate) source_type: Option<String>,
 }
 async fn change(
     s: &AppState,
@@ -134,7 +134,7 @@ async fn change(
     tx.commit().await?;
     Ok(row)
 }
-async fn change_locked(
+pub(crate) async fn change_locked(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
     actor: Uuid,
@@ -317,10 +317,22 @@ async fn tags(
 }
 async fn membership(s: &AppState, actor: Uuid, id: Uuid, tag: Uuid, attach: bool) -> Result<()> {
     let mut tx = s.pool.begin().await?;
-    lock(&mut tx, id).await?;
+    membership_locked(&mut tx, actor, id, tag, attach).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub(crate) async fn membership_locked(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: Uuid,
+    id: Uuid,
+    tag: Uuid,
+    attach: bool,
+) -> Result<()> {
+    lock(tx, id).await?;
     if sqlx::query("SELECT id FROM crm.tags WHERE id=$1")
         .bind(tag)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await?
         .is_none()
     {
@@ -330,34 +342,33 @@ async fn membership(s: &AppState, actor: Uuid, id: Uuid, tag: Uuid, attach: bool
         sqlx::query("DELETE FROM crm.tag_membership_removals WHERE tag_id=$1 AND profile_id=$2")
             .bind(tag)
             .bind(id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         sqlx::query(
             "INSERT INTO crm.tag_memberships VALUES($1,$2,'manual') ON CONFLICT DO NOTHING",
         )
         .bind(tag)
         .bind(id)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     } else {
-        let present:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.presented_tag_memberships WHERE tag_id=$1 AND profile_id=$2)").bind(tag).bind(id).fetch_one(&mut *tx).await?;
+        let present:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.presented_tag_memberships WHERE tag_id=$1 AND profile_id=$2)").bind(tag).bind(id).fetch_one(&mut **tx).await?;
         let n = sqlx::query("DELETE FROM crm.tag_memberships WHERE tag_id=$1 AND profile_id=$2")
             .bind(tag)
             .bind(id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?
             .rows_affected();
         if n == 0 && !present {
             return Err(ApiError(StatusCode::NOT_FOUND, "tag not on profile"));
         }
-        sqlx::query("INSERT INTO crm.tag_membership_removals(tag_id,profile_id,removed_by) VALUES($1,$2,$3) ON CONFLICT(tag_id,profile_id) DO UPDATE SET removed_by=excluded.removed_by,removed_at=now()").bind(tag).bind(id).bind(actor).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO crm.tag_membership_removals(tag_id,profile_id,removed_by) VALUES($1,$2,$3) ON CONFLICT(tag_id,profile_id) DO UPDATE SET removed_by=excluded.removed_by,removed_at=now()").bind(tag).bind(id).bind(actor).execute(&mut **tx).await?;
     }
-    sqlx::query("INSERT INTO crm.tag_membership_revisions(tag_id,profile_id,operation,actor_user_id) VALUES($1,$2,$3,$4)").bind(tag).bind(id).bind(if attach{"added"}else{"removed"}).bind(actor).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO crm.tag_membership_revisions(tag_id,profile_id,operation,actor_user_id) VALUES($1,$2,$3,$4)").bind(tag).bind(id).bind(if attach{"added"}else{"removed"}).bind(actor).execute(&mut **tx).await?;
     sqlx::query("UPDATE crm.profiles SET generation=generation+1 WHERE id=$1")
         .bind(id)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
-    tx.commit().await?;
     Ok(())
 }
 async fn attach(

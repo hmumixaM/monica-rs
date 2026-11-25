@@ -29,12 +29,12 @@ struct Member {
     left_at: Option<String>,
 }
 #[derive(Deserialize)]
-struct Edge {
-    to_profile_id: Uuid,
-    relationship_type: String,
-    note: Option<String>,
-    valid_from: Option<String>,
-    valid_to: Option<String>,
+pub(crate) struct Edge {
+    pub(crate) to_profile_id: Uuid,
+    pub(crate) relationship_type: String,
+    pub(crate) note: Option<String>,
+    pub(crate) valid_from: Option<String>,
+    pub(crate) valid_to: Option<String>,
 }
 #[derive(Deserialize)]
 struct Page {
@@ -114,6 +114,21 @@ async fn add_relationship(
     Json(p): Json<Edge>,
 ) -> Result<(StatusCode, Json<Value>)> {
     let (actor, _) = user(&s, &h).await?;
+    let mut tx = s.pool.begin().await?;
+    let edge = save_locked(&mut tx, id, actor, p).await?;
+    tx.commit().await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({"id":edge,"status":"created"})),
+    ))
+}
+
+pub(crate) async fn save_locked(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    actor: Uuid,
+    p: Edge,
+) -> Result<Uuid> {
     if !(1..=120).contains(&p.relationship_type.chars().count()) {
         return Err(invalid("invalid relationship type"));
     }
@@ -126,32 +141,27 @@ async fn add_relationship(
             "Relationships require two different people; use group membership for groups",
         ));
     }
-    let mut tx = s.pool.begin().await?;
-    if pair(&mut tx, id, p.to_profile_id).await? != ("person".into(), "person".into()) {
+    if pair(tx, id, p.to_profile_id).await? != ("person".into(), "person".into()) {
         return Err(invalid(
             "Relationships require two different people; use group membership for groups",
         ));
     }
-    times(&mut tx, &p.valid_from, &p.valid_to).await?;
+    times(tx, &p.valid_from, &p.valid_to).await?;
     let edge:Option<Uuid>=sqlx::query_scalar("INSERT INTO crm.relationship_edges(id,from_profile_id,to_profile_id,relationship_type,note,valid_from,valid_to) VALUES($1,$2,$3,$4,$5,$6::timestamptz,$7::timestamptz) ON CONFLICT(from_profile_id,to_profile_id,relationship_type) WHERE NOT legacy_source_owned AND evidence_kind='relationship' DO UPDATE SET note=excluded.note,valid_from=excluded.valid_from,valid_to=excluded.valid_to,updated_at=now() WHERE (relationship_edges.note,relationship_edges.valid_from,relationship_edges.valid_to) IS DISTINCT FROM (excluded.note,excluded.valid_from,excluded.valid_to) RETURNING id")
-        .bind(Uuid::new_v4()).bind(id).bind(p.to_profile_id).bind(&p.relationship_type).bind(&p.note).bind(&p.valid_from).bind(&p.valid_to).fetch_optional(&mut *tx).await?;
+        .bind(Uuid::new_v4()).bind(id).bind(p.to_profile_id).bind(&p.relationship_type).bind(&p.note).bind(&p.valid_from).bind(&p.valid_to).fetch_optional(&mut **tx).await?;
     let edge = if let Some(edge) = edge {
         let payload = json!({"to_profile_id":p.to_profile_id,"relationship_type":p.relationship_type,"note":p.note,"valid_from":p.valid_from,"valid_to":p.valid_to});
-        sqlx::query("INSERT INTO crm.relationship_edge_revisions(edge_id,operation,payload,actor_user_id) VALUES($1,'created',$2,$3)").bind(edge).bind(&payload).bind(actor).execute(&mut *tx).await?;
-        sqlx::query("INSERT INTO crm.audit_events(user_id,action,entity_type,entity_id,metadata) VALUES($1,'relationship.saved','relationship',$2,$3)").bind(actor).bind(edge).bind(payload).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO crm.relationship_edge_revisions(edge_id,operation,payload,actor_user_id) VALUES($1,'created',$2,$3)").bind(edge).bind(&payload).bind(actor).execute(&mut **tx).await?;
+        sqlx::query("INSERT INTO crm.audit_events(user_id,action,entity_type,entity_id,metadata) VALUES($1,'relationship.saved','relationship',$2,$3)").bind(actor).bind(edge).bind(payload).execute(&mut **tx).await?;
         sqlx::query("UPDATE crm.profiles SET generation=generation+1 WHERE id=ANY($1)")
             .bind(vec![id, p.to_profile_id])
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         edge
     } else {
-        sqlx::query_scalar("SELECT id FROM crm.relationship_edges WHERE from_profile_id=$1 AND to_profile_id=$2 AND relationship_type=$3 AND NOT legacy_source_owned AND evidence_kind='relationship'").bind(id).bind(p.to_profile_id).bind(p.relationship_type).fetch_one(&mut *tx).await?
+        sqlx::query_scalar("SELECT id FROM crm.relationship_edges WHERE from_profile_id=$1 AND to_profile_id=$2 AND relationship_type=$3 AND NOT legacy_source_owned AND evidence_kind='relationship'").bind(id).bind(p.to_profile_id).bind(p.relationship_type).fetch_one(&mut **tx).await?
     };
-    tx.commit().await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({"id":edge,"status":"created"})),
-    ))
+    Ok(edge)
 }
 
 async fn relationships(

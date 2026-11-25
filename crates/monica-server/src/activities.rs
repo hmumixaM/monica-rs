@@ -25,15 +25,15 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v1/activities/{id}/state", patch(set_state))
 }
 #[derive(Deserialize)]
-struct Write {
-    activity_type: String,
-    occurred_at: String,
-    title: String,
-    body: Option<String>,
+pub(crate) struct Write {
+    pub(crate) activity_type: String,
+    pub(crate) occurred_at: String,
+    pub(crate) title: String,
+    pub(crate) body: Option<String>,
     #[serde(default)]
-    participant_profile_ids: Vec<Uuid>,
-    due_at: Option<String>,
-    media_ids: Option<Vec<Uuid>>,
+    pub(crate) participant_profile_ids: Vec<Uuid>,
+    pub(crate) due_at: Option<String>,
+    pub(crate) media_ids: Option<Vec<Uuid>>,
 }
 #[derive(Deserialize)]
 struct Page {
@@ -153,18 +153,33 @@ async fn record(
     Ok(())
 }
 
-async fn save(s: &AppState, id: Option<Uuid>, actor: Uuid, mut p: Write) -> Result<Uuid> {
+async fn save(s: &AppState, id: Option<Uuid>, actor: Uuid, p: Write) -> Result<Uuid> {
     let mut tx = s.pool.begin().await?;
-    validate(&mut tx, &mut p).await?;
+    let (saved, changed) = save_locked(&mut tx, id, actor, p).await?;
+    if changed {
+        tx.commit().await?;
+    } else {
+        tx.rollback().await?;
+    }
+    Ok(saved)
+}
+
+pub(crate) async fn save_locked(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Option<Uuid>,
+    actor: Uuid,
+    mut p: Write,
+) -> Result<(Uuid, bool)> {
+    validate(tx, &mut p).await?;
     let old = if let Some(id) = id {
         sqlx::query(
             "SELECT id FROM crm.activities WHERE id=$1 AND source_type='manual' FOR UPDATE",
         )
         .bind(id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await?
         .ok_or_else(missing)?;
-        Some(snapshot(&mut tx, id).await?)
+        Some(snapshot(tx, id).await?)
     } else {
         None
     };
@@ -177,13 +192,13 @@ async fn save(s: &AppState, id: Option<Uuid>, actor: Uuid, mut p: Write) -> Resu
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let affected = profiles(&mut tx, &p.participant_profile_ids, &old_ids).await?;
+    let affected = profiles(tx, &p.participant_profile_ids, &old_ids).await?;
     let saved = id.unwrap_or_else(Uuid::new_v4);
     sqlx::query("INSERT INTO crm.activities(id,activity_type,occurred_at,title,body,source_type,created_by,due_at,content_hash) VALUES($1,$2,$3::timestamptz,$4,$5,'manual',$6,$7::timestamptz,'') ON CONFLICT(id) DO UPDATE SET activity_type=excluded.activity_type,occurred_at=excluded.occurred_at,title=excluded.title,body=excluded.body,due_at=excluded.due_at")
-        .bind(saved).bind(p.activity_type).bind(p.occurred_at).bind(p.title).bind(p.body).bind(actor).bind(p.due_at).execute(&mut *tx).await?;
+        .bind(saved).bind(p.activity_type).bind(p.occurred_at).bind(p.title).bind(p.body).bind(actor).bind(p.due_at).execute(&mut **tx).await?;
     sqlx::query("DELETE FROM crm.activity_participants WHERE activity_id=$1")
         .bind(saved)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     let participants = p
         .participant_profile_ids
@@ -193,34 +208,32 @@ async fn save(s: &AppState, id: Option<Uuid>, actor: Uuid, mut p: Write) -> Resu
         sqlx::query("INSERT INTO crm.activity_participants VALUES($1,$2)")
             .bind(saved)
             .bind(participant)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
     }
     if let Some(ids) = p.media_ids {
-        media(&mut tx, saved, &ids, actor).await?;
+        media(tx, saved, &ids, actor).await?;
     } else if id.is_none() {
-        media(&mut tx, saved, &[], actor).await?;
+        media(tx, saved, &[], actor).await?;
     }
-    let value = snapshot(&mut tx, saved).await?;
+    let value = snapshot(tx, saved).await?;
     if old.as_ref().is_some_and(|old| {
         monica_core::identity::canonical_json(old) == monica_core::identity::canonical_json(&value)
     }) {
-        tx.rollback().await?;
-        return Ok(saved);
+        return Ok((saved, false));
     }
     record(
-        &mut tx,
+        tx,
         saved,
         actor,
         if id.is_some() { "updated" } else { "created" },
         &affected,
     )
     .await?;
-    monica_core::ai::memory::legacy::sync(&mut tx, "activity", &[saved])
+    monica_core::ai::memory::legacy::sync(tx, "activity", &[saved])
         .await
         .map_err(|_| invalid("activity Memory update failed"))?;
-    tx.commit().await?;
-    Ok(saved)
+    Ok((saved, true))
 }
 
 async fn create(

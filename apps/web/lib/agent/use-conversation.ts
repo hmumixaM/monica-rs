@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { AskError, readConversation, type Message, type Run } from './sessions';
+import { AskError, readConversation, type Edit, type Message, type Run } from './sessions';
 
-const empty = { id: '', messages: [] as Message[], run: null as Run | null, loaded: false, failure: '' };
+const empty = { id: '', messages: [] as Message[], run: null as Run | null, edits: [] as Edit[], loaded: false, failure: '' };
 
 export function useConversation(id: string) {
   const [view, setView] = useState(empty);
@@ -34,11 +34,13 @@ export function useConversation(id: string) {
         active = page.chat.running;
         setView(previous => {
           const run = page.run;
+          const edits = page.edits ?? [];
           const same = previous.id === id && previous.messages === messages && !previous.failure
             && previous.run?.id === run?.id && previous.run?.status === run?.status
             && previous.run?.progress === run?.progress && previous.run?.error === run?.error
+            && JSON.stringify(previous.edits) === JSON.stringify(edits)
             && previous.run?.model === run?.model && JSON.stringify(previous.run?.draft) === JSON.stringify(run?.draft);
-          return same ? previous : { id, messages, run, loaded: true, failure: '' };
+          return same ? previous : { id, messages, run, edits, loaded: true, failure: '' };
         });
       } catch (error) {
         if (controller.signal.aborted) return;

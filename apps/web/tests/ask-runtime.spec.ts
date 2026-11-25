@@ -1,14 +1,16 @@
 import { expect, test, type Page } from '@playwright/test';
+import type { Edit } from '../lib/agent/sessions';
 
 type Chat = { id: string; title: string; people: unknown[]; updatedAt: string; running: boolean };
 type Message = Record<string, unknown>;
 type Run = { id: string; status: string; progress: string; model: string; error: string; draft: Message | null };
 
 async function server(page: Page) {
-  const chats = new Map<string, { chat: Chat; messages: Message[]; run: Run | null }>();
+  const chats = new Map<string, { chat: Chat; messages: Message[]; run: Run | null; edits?: Edit[] }>();
   const unexpected: string[] = [];
   const submissions: string[] = [];
   const cancelled: string[] = [];
+  const decisions: unknown[] = [];
   let dropStart = false;
   let editGate: Promise<void> | undefined;
   const submitted = new Set<string>();
@@ -68,6 +70,14 @@ async function server(page: Page) {
       if (row.run) row.run.status = 'cancelled';
       return route.fulfill({ status: 204 });
     }
+    if (path.includes('/edits/') && method === 'POST') {
+      const edit = row.edits?.find(item => path.endsWith(`/${item.id}`));
+      if (!edit) return route.fulfill({ status: 404 });
+      const decision = route.request().postDataJSON();
+      decisions.push(decision);
+      edit.status = decision.confirm ? 'applied' : 'dismissed';
+      return route.fulfill({ json: edit });
+    }
     if (method === 'DELETE') { chats.delete(id); return route.fulfill({ status: 204 }); }
     if (method === 'PATCH') {
       await editGate;
@@ -75,11 +85,11 @@ async function server(page: Page) {
       return route.fulfill({ json: row.chat });
     }
     const cursor = Number(url.searchParams.get('after') ?? '0');
-    return route.fulfill({ json: { chat: row.chat, run: row.run, more: false,
+    return route.fulfill({ json: { chat: row.chat, run: row.run, edits: row.edits, more: false,
       rows: row.messages.map((message, index) => ({ seq: index + 1, message })).filter(message => message.seq > cursor),
     } });
   });
-  return { chats, unexpected, cancelled, submissions, profile,
+  return { chats, unexpected, cancelled, submissions, decisions, profile,
     disconnectNextStart() { dropStart = true; },
     holdPeopleEdit() {
       let release!: () => void;
@@ -198,4 +208,37 @@ test('the question uses the visible person selection while a save is pending', a
   await send.click();
   await expect(page.getByRole('button', { name: '停止回答' })).toBeVisible();
   expect([...api.chats.values()][0].chat.people).toEqual([]);
+});
+
+test('Ask previews a saved edit and sends an approval without the editable payload', async ({ page }) => {
+  const api = await server(page);
+  await page.goto('/ask');
+  await ask(page, '把她的常驻地改成上海');
+  await expect(page.getByRole('button', { name: '停止回答' })).toBeVisible();
+  const row = [...api.chats.values()][0];
+  const editId = crypto.randomUUID();
+  row.edits = [{
+    id: editId, status: 'pending', result: null,
+    preview: {
+      title: '补录联系人资料', people: [{ id: api.profile, name: '合成联系人' }],
+      before: { 常驻地: '杭州' }, after: { 常驻地: '上海' },
+    },
+  }];
+  row.messages.push({
+    role: 'toolResult', toolName: 'propose_monica_edit', toolCallId: 'edit-fixture',
+    isError: false, details: { editId },
+  });
+  row.chat.running = false;
+  row.run = { ...row.run!, status: 'done', progress: '' };
+  const card = page.getByRole('region', { name: '补录联系人资料' });
+  await expect(card).toContainText('杭州');
+  await expect(card).toContainText('上海');
+  await expect(card.getByRole('link', { name: '合成联系人' })).toBeVisible();
+  expect(api.decisions).toEqual([]);
+  await card.getByRole('button', { name: '确认写入' }).click();
+  await expect(card).toContainText('已应用');
+  expect(api.decisions).toEqual([{ confirm: true }]);
+  await page.reload();
+  await expect(card).toContainText('已应用');
+  await expect(card.getByRole('button', { name: '确认写入' })).toHaveCount(0);
 });

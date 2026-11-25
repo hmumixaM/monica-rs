@@ -1,4 +1,5 @@
 mod agent;
+mod edits;
 mod lookup;
 mod sandbox;
 mod script_worker;
@@ -47,6 +48,7 @@ pub(crate) fn routes() -> Router<AppState> {
             get(read).patch(edit).delete(delete),
         )
         .route("/api/v1/ask/chats/{id}/runs", post(start))
+        .route("/api/v1/ask/chats/{id}/edits/{edit}", post(edits::decide))
         .route(
             "/api/v1/ask/chats/{id}/runs/{run}",
             axum::routing::delete(cancel),
@@ -238,12 +240,14 @@ async fn read(
         "SELECT id,status,progress,error,model,draft FROM crm.ask_runs WHERE chat_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1",
     )
     .bind(id).fetch_optional(&mut *tx).await?;
+    let edits = edits::list(&mut tx, id).await?;
     tx.commit().await?;
     #[derive(Serialize)]
     struct Page {
         chat: Chat,
         rows: Vec<SavedMessage>,
         run: Option<RunView>,
+        edits: Vec<edits::EditView>,
         more: bool,
     }
     Ok((
@@ -252,6 +256,7 @@ async fn read(
             chat,
             rows,
             run,
+            edits,
             more,
         }),
     )

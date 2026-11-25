@@ -21,17 +21,17 @@ pub fn routes() -> Router<AppState> {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct DateWrite {
-    kind: String,
-    label: Option<String>,
-    precision: String,
-    year: Option<i32>,
-    month: Option<i32>,
-    day: Option<i32>,
+pub(crate) struct DateWrite {
+    pub(crate) kind: String,
+    pub(crate) label: Option<String>,
+    pub(crate) precision: String,
+    pub(crate) year: Option<i32>,
+    pub(crate) month: Option<i32>,
+    pub(crate) day: Option<i32>,
 }
 
 impl DateWrite {
-    fn normalize(mut self, today: (i32, i32, i32)) -> Result<Self> {
+    pub(crate) fn normalize(mut self, today: (i32, i32, i32)) -> Result<Self> {
         if !["birthday", "anniversary", "other"].contains(&self.kind.as_str()) {
             return Err(invalid("kind"));
         }
@@ -141,8 +141,20 @@ async fn save(
     input: DateWrite,
 ) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
-    person(&mut tx, id).await?;
-    let today:(i32,i32,i32)=sqlx::query_as("SELECT extract(year from now() AT TIME ZONE 'UTC')::int,extract(month from now() AT TIME ZONE 'UTC')::int,extract(day from now() AT TIME ZONE 'UTC')::int").fetch_one(&mut *tx).await?;
+    let row = save_locked(&mut tx, id, date, actor, input).await?;
+    tx.commit().await?;
+    Ok(row)
+}
+
+pub(crate) async fn save_locked(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    date: Option<Uuid>,
+    actor: Uuid,
+    input: DateWrite,
+) -> Result<Value> {
+    person(tx, id).await?;
+    let today:(i32,i32,i32)=sqlx::query_as("SELECT extract(year from now() AT TIME ZONE 'UTC')::int,extract(month from now() AT TIME ZONE 'UTC')::int,extract(day from now() AT TIME ZONE 'UTC')::int").fetch_one(&mut **tx).await?;
     let p = input.normalize(today)?;
     if let Some(date) = date {
         let exists: bool = sqlx::query_scalar(
@@ -150,38 +162,36 @@ async fn save(
         )
         .bind(date)
         .bind(id)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await?;
         if !exists {
             return Err(ApiError(StatusCode::NOT_FOUND, "not_found"));
         }
     }
     let same:Option<Uuid>=sqlx::query_scalar("SELECT id FROM crm.profile_dates WHERE profile_id=$1 AND kind=$2 AND label IS NOT DISTINCT FROM $3 AND date_precision=$4 AND year IS NOT DISTINCT FROM $5 AND month IS NOT DISTINCT FROM $6 AND day IS NOT DISTINCT FROM $7")
-        .bind(id).bind(&p.kind).bind(&p.label).bind(&p.precision).bind(p.year).bind(p.month).bind(p.day).fetch_optional(&mut *tx).await?;
+        .bind(id).bind(&p.kind).bind(&p.label).bind(&p.precision).bind(p.year).bind(p.month).bind(p.day).fetch_optional(&mut **tx).await?;
     if let Some(same) = same {
         if date.is_some_and(|date| date != same) {
             return Err(ApiError(StatusCode::CONFLICT, "birthday_exists"));
         }
-        let row = presented(&mut tx, same).await?;
-        tx.commit().await?;
+        let row = presented(tx, same).await?;
         return Ok(row);
     }
     if p.kind == "birthday" {
-        let conflict:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.profile_dates WHERE profile_id=$1 AND kind='birthday' AND ($2::uuid IS NULL OR id<>$2))").bind(id).bind(date).fetch_one(&mut *tx).await?;
+        let conflict:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.profile_dates WHERE profile_id=$1 AND kind='birthday' AND ($2::uuid IS NULL OR id<>$2))").bind(id).bind(date).fetch_one(&mut **tx).await?;
         if conflict {
             return Err(ApiError(StatusCode::CONFLICT, "birthday_exists"));
         }
     }
     let saved = date.unwrap_or_else(Uuid::new_v4);
     sqlx::query("INSERT INTO crm.profile_dates(id,profile_id,kind,label,date_precision,year,month,day,updated_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,label=excluded.label,date_precision=excluded.date_precision,year=excluded.year,month=excluded.month,day=excluded.day,updated_by=excluded.updated_by,updated_at=now()")
-        .bind(saved).bind(id).bind(p.kind).bind(p.label).bind(p.precision).bind(p.year).bind(p.month).bind(p.day).bind(actor).execute(&mut *tx).await?;
-    let row = presented(&mut tx, saved).await?;
-    sqlx::query("INSERT INTO crm.audit_events(user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'profile',$3,$4)").bind(actor).bind(if date.is_some(){"profile.date.updated"}else{"profile.date.added"}).bind(id).bind(&row).execute(&mut *tx).await?;
+        .bind(saved).bind(id).bind(p.kind).bind(p.label).bind(p.precision).bind(p.year).bind(p.month).bind(p.day).bind(actor).execute(&mut **tx).await?;
+    let row = presented(tx, saved).await?;
+    sqlx::query("INSERT INTO crm.audit_events(user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'profile',$3,$4)").bind(actor).bind(if date.is_some(){"profile.date.updated"}else{"profile.date.added"}).bind(id).bind(&row).execute(&mut **tx).await?;
     sqlx::query("UPDATE crm.profiles SET generation=generation+1 WHERE id=$1")
         .bind(id)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
-    tx.commit().await?;
     Ok(row)
 }
 

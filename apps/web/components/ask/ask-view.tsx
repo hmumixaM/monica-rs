@@ -1,23 +1,25 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { ArrowUp, Brain, Check, ChevronRight, CircleAlert, Download, Ellipsis, MessageSquarePlus, Search, Sparkles, Square, Trash2, Upload, X } from "lucide-react";
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { useSearchParams } from "@/router/navigation";
 import {
-  activeConversation, chooseModel, cliTitle, createConversation, deleteConversation, editConversation,
+  activeConversation, chooseModel, cliTitle, createConversation, decideEdit, deleteConversation, editConversation,
   exportConversation, importConversation, importLegacy, legacyConversations, listConversations,
   modelChoices, run, selectConversation, stop, TOOL_LABELS,
-  type CliQueryDetails, type Conversation, type LegacyChat, type Message,
+  type CliQueryDetails, type Conversation, type Edit, type LegacyChat, type Message,
 } from "../../lib/agent/sessions";
 import { useConversation } from "../../lib/agent/use-conversation";
-import { fetchJson } from "../../lib/queries";
+import { directoryKey } from "../../lib/directory";
+import { fetchJson, queryKeys } from "../../lib/queries";
 import { Button, IconButton } from "../ui/button";
 import { Select } from "../ui/field";
 import { Markdown } from "../ui/markdown";
 import { Menu } from "../ui/menu";
 import { PersonPicker, type PickedPerson } from "../ui/person-picker";
-import { Avatar, Failure, Page, PageHeader } from "../ui/primitives";
+import { Avatar, Failure, Page, PageHeader, formatDateTime } from "../ui/primitives";
 import styles from "./ask.module.css";
 
 const STARTERS = ["我最近和谁联系得最多？", "有哪些很久没联系、值得问候的老朋友？", "接下来一个月有谁过生日？"];
@@ -25,7 +27,7 @@ const modelLabel = (name: string) => name.split("/").at(-1) === "deepseek-v4-pro
 const PERSON_STARTERS = ["TA 最近在忙什么？", "我们上次聊了什么？", "我答应过 TA 什么还没做的事？"];
 
 type Step = { id: string; label: string; detail: string; script?: string; queries?: CliQueryDetails; failed: boolean; done: boolean };
-type Turn = { question: string; steps: Step[]; thinking: string[]; answer: string };
+type Turn = { question: string; steps: Step[]; editIds: string[]; thinking: string[]; answer: string };
 
 /** A question, what Monica looked up for it, and what it said. */
 function turns(messages: Message[]): Turn[] {
@@ -34,12 +36,17 @@ function turns(messages: Message[]): Turn[] {
   for (const message of messages) {
     if (message.role === "user") {
       steps.clear();
-      result.push({ question: message.content, steps: [], thinking: [], answer: "" });
+      result.push({ question: message.content, steps: [], editIds: [], thinking: [], answer: "" });
       continue;
     }
     const turn = result.at(-1);
     if (!turn) continue;
     if (message.role === "toolResult") {
+      if (message.toolName === "propose_monica_edit") {
+        const detail = message.details as { editId?: unknown } | undefined;
+        if (typeof detail?.editId === "string" && !turn.editIds.includes(detail.editId)) turn.editIds.push(detail.editId);
+        continue;
+      }
       const step = steps.get(message.toolCallId);
       if (step) {
         step.done = true;
@@ -59,6 +66,7 @@ function turns(messages: Message[]): Turn[] {
           turn.thinking.push(part.thinking);
         }
         if (part.type === "toolCall" && message.stopReason !== "error" && message.stopReason !== "aborted") {
+          if (part.name === "propose_monica_edit") continue;
           const args = part.arguments as Record<string, unknown>;
           const script = part.name === "monica_cli" && typeof args.script === "string" ? args.script : undefined;
           const label = part.name === "monica_cli" ? cliTitle(args.title) : TOOL_LABELS[part.name] ?? part.name;
@@ -100,6 +108,71 @@ function Steps({ steps, live }: { steps: Step[]; live: boolean }) {
       {!step.done && !live && <span>查询未完成</span>}
     </li>)}</ol>
   </details>;
+}
+
+function EditFields({ fields }: { fields: Record<string, unknown> }) {
+  const entries = Object.entries(fields).filter(([, value]) => value !== null && value !== undefined
+    && (!Array.isArray(value) || value.length > 0));
+  if (!entries.length) return <p className={styles.editEmpty}>无记录</p>;
+  return <dl className={styles.editFields}>{entries.map(([label, value]) => <div key={label}>
+    <dt>{label}</dt>
+    <dd>{typeof value === "boolean" ? (value ? "是" : "否") : Array.isArray(value) ? value.join("、") : label === "发生时间" && typeof value === "string" ? formatDateTime(value) : String(value)}</dd>
+  </div>)}</dl>;
+}
+
+function EditCard({ chat, edit, refresh }: { chat: string; edit: Edit; refresh: () => void }) {
+  const client = useQueryClient();
+  const [submitting, setSubmitting] = useState(false);
+  const [failure, setFailure] = useState("");
+  const [receipt, setReceipt] = useState<Edit | null>(null);
+  const current = edit.status === "pending" && receipt ? receipt : edit;
+  const pending = current.status === "pending";
+  const status = { pending: "待确认", applied: "已应用", dismissed: "已取消", stale: "预览已过期" }[current.status];
+
+  async function decide(confirm: boolean) {
+    setSubmitting(true);
+    setFailure("");
+    try {
+      const saved = await decideEdit(chat, current.id, confirm);
+      setReceipt(saved);
+      if (saved.status === "applied") {
+        for (const person of saved.preview.people) {
+          void client.invalidateQueries({ queryKey: queryKeys.profile(person.id) });
+        }
+        for (const key of [directoryKey, queryKeys.home, ["tags"], ["timeline"], ["insights"]]) {
+          void client.invalidateQueries({ queryKey: key });
+        }
+      }
+      refresh();
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return <section className={styles.editCard} aria-label={current.preview.title}>
+    <header><strong>{current.preview.title}</strong><span role="status">{status}</span></header>
+    {current.preview.people.length > 0 && <details className={styles.editPeople} open={pending || undefined}>
+      <summary>涉及 {current.preview.people.length} 位联系人</summary>
+      <ul>{current.preview.people.map(person => <li key={person.id}><a href={`/profiles/${person.id}`}>{person.name}</a></li>)}</ul>
+    </details>}
+    {pending ? <>
+      {current.preview.before && <><p className={styles.editLabel}>当前</p><EditFields fields={current.preview.before} /></>}
+      <p className={styles.editLabel}>拟写入</p>
+      <EditFields fields={current.preview.after} />
+      <div className={styles.editActions}>
+        <Button variant="primary" disabled={submitting} onClick={() => void decide(true)}>确认写入</Button>
+        <Button variant="secondary" disabled={submitting} onClick={() => void decide(false)}>取消</Button>
+      </div>
+    </> : <details className={styles.editPeople}>
+      <summary>查看编辑内容</summary>
+      <EditFields fields={current.preview.after} />
+    </details>}
+    {current.result?.message && <p className={styles.editEmpty}>{current.result.message}</p>}
+    {current.result?.link && <a href={current.result.link}>查看记录</a>}
+    {failure && <Failure>{failure}</Failure>}
+  </section>;
 }
 
 export function AskView() {
@@ -317,6 +390,10 @@ export function AskView() {
               <p className={styles.question}>{turn.question}</p>
               <div className={styles.answer}>
                 <Steps steps={turn.steps} live={live} />
+                {turn.editIds.map(editId => {
+                  const edit = state.edits.find(row => row.id === editId);
+                  return edit && <EditCard key={edit.id} chat={id} edit={edit} refresh={state.refresh} />;
+                })}
                 {turn.thinking.length > 0 && <Thinking key={id} parts={turn.thinking} />}
                 {turn.answer.trim() && <Markdown>{turn.answer}</Markdown>}
                 {live && <p className={styles.status} role="status"><span aria-hidden="true" />{state.run?.progress}</p>}
