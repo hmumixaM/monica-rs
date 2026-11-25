@@ -236,12 +236,12 @@ print(json.dumps(dict(sha256=h,byte_length=len(data),media_type='image/png',obje
                 self.assertEqual(db.execute("SELECT count(*) FROM crm.media_links WHERE entity_id=%s AND media_id=%s AND role='manual-image'", (native_mid, old_asset)).fetchone()[0], 1)
                 # Simulate restart after decoding, before public-link commit, with
                 # a damaged derived receipt. The healthy source must be decoded.
-                native_ledger.execute("UPDATE decoded SET asset='invalid json' WHERE path=?", ('attach/a/2026/Img/' + filename + '_h.dat',)); native_ledger.commit()
+                native_ledger.execute("UPDATE verified_decodes SET asset='invalid json' WHERE path=?", ('attach/a/2026/Img/' + filename + '_h.dat',)); native_ledger.commit()
                 db.execute("DELETE FROM crm.media_links WHERE entity_id=%s AND role LIKE 'wechat-group-image:%%'", (native_mid,))
                 with redirect_stdout(io.StringIO()):
                     native.run()
                 self.assertEqual(current_sha(), expected)
-                receipt = native_ledger.execute('SELECT asset FROM decoded WHERE path=?', ('attach/a/2026/Img/' + filename + '_h.dat',)).fetchone()[0]
+                receipt = native_ledger.execute('SELECT asset FROM verified_decodes WHERE path=?', ('attach/a/2026/Img/' + filename + '_h.dat',)).fetchone()[0]
                 self.assertEqual(json.loads(receipt)['sha256'], expected)
                 self.assertEqual(db.execute('SELECT counts FROM crm.wechat_image_runs WHERE id=%s', (native.run_id,)).fetchone()[0]['total'], 1)
                 moved_group = uuid.uuid4()
@@ -301,7 +301,10 @@ print(json.dumps(dict(sha256=h,byte_length=len(data),media_type='image/png',obje
                 orphan = worker.decode(source, media, decoder, str(orphan_path.relative_to(source)), {'PATH': os.environ['PATH']})
                 orphan_blob = media / orphan['object_path']
                 os.utime(orphan_blob, (time.time() - 25 * 3600,) * 2)
-                native_ledger.execute('INSERT INTO decoded VALUES(?,?,?)', (str(orphan_path.relative_to(source)), worker.digest(orphan_path), json.dumps(orphan))); native_ledger.commit()
+                native_ledger.execute('INSERT INTO verified_decodes VALUES(?,?,?,?)',
+                                      (str(orphan_path.relative_to(source)), worker.digest(orphan_path),
+                                       json.dumps(orphan), worker.digest(decoder)))
+                native_ledger.commit()
                 db.execute("INSERT INTO wechat.connection_payloads(content_hash,payload) VALUES('orphan-ref',%s)", (Jsonb({'body': f'<msg><img md5="{orphan_key}"/></msg>'}),))
                 db.execute("UPDATE crm.connection_evidence SET revision=5,content_hash='orphan-ref' WHERE id=%s", (native_mid,))
                 db.execute("UPDATE wechat.connection_record_heads SET revision=5,content_hash='orphan-ref' WHERE connection_id=%s", (connection,))

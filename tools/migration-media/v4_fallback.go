@@ -13,7 +13,7 @@ import (
 func validDecodedImage(data []byte, ext string) bool {
 	switch ext {
 	case "jpg", "jpeg", "png", "gif":
-		_, _, err := image.DecodeConfig(bytes.NewReader(data))
+		_, _, err := image.Decode(bytes.NewReader(data))
 		return err == nil
 	default:
 		return true
@@ -23,7 +23,7 @@ func validDecodedImage(data []byte, ext string) bool {
 // The pinned decoder accepts the first padding-valid AES boundary, before
 // validating the decoded image. An aligned plaintext length can accidentally
 // look padded as well. Retry the known boundary/key combinations only when
-// the original decoder failed or returned an invalid image header.
+// the original decoder failed or returned invalid pixels.
 func decodeV4Fallback(data []byte) ([]byte, string, error) {
 	if len(data) < 15 {
 		return nil, "", errors.New("invalid v4 header")
@@ -54,38 +54,44 @@ func decodeV4Fallback(data []byte) ([]byte, string, error) {
 			for offset := 0; offset < len(part); offset += aes.BlockSize {
 				block.Decrypt(part[offset:offset+aes.BlockSize], body[offset:offset+aes.BlockSize])
 			}
-			if len(part) > 0 {
+			prefixes := make([][]byte, 0, 2)
+			if len(part) != 0 {
 				padding := int(part[len(part)-1])
-				if padding == 0 || padding > aes.BlockSize || padding > len(part) ||
-					!bytes.Equal(part[len(part)-padding:], bytes.Repeat([]byte{byte(padding)}, padding)) {
-					continue
+				if padding > 0 && padding <= aes.BlockSize && padding <= len(part) &&
+					bytes.Equal(part[len(part)-padding:], bytes.Repeat([]byte{byte(padding)}, padding)) {
+					prefixes = append(prefixes, part[:len(part)-padding])
 				}
-				part = part[:len(part)-padding]
+			}
+			// Block-aligned WeChat exports may omit padding entirely.
+			if boundary == length {
+				prefixes = append(prefixes, part)
 			}
 			end := len(body) - int(xorLength)
-			decoded := make([]byte, 0, len(body))
-			decoded = append(decoded, part...)
-			decoded = append(decoded, body[int(boundary):end]...)
-			for _, value := range body[end:] {
-				decoded = append(decoded, value^dat2img.V4XorKey)
-			}
-			for _, format := range dat2img.Formats {
-				if !bytes.HasPrefix(decoded, format.Header) {
-					continue
+			for _, prefix := range prefixes {
+				decoded := make([]byte, 0, len(body))
+				decoded = append(decoded, prefix...)
+				decoded = append(decoded, body[int(boundary):end]...)
+				for _, value := range body[end:] {
+					decoded = append(decoded, value^dat2img.V4XorKey)
 				}
-				ext := format.Ext
-				if ext == "wxgf" {
-					decoded, ext, err = convertWXGF(decoded)
-					if err != nil {
-						last = conversionFailure("wxgf_conversion_failed", err)
-						break
+				for _, format := range dat2img.Formats {
+					if !bytes.HasPrefix(decoded, format.Header) {
+						continue
 					}
+					ext := format.Ext
+					if ext == "wxgf" {
+						decoded, ext, err = convertWXGF(decoded)
+						if err != nil {
+							last = conversionFailure("wxgf_conversion_failed", err)
+							break
+						}
+					}
+					if validDecodedImage(decoded, ext) {
+						return decoded, ext, nil
+					}
+					last = conversionFailure("decoded_image_invalid", errors.New("invalid image candidate"))
+					break
 				}
-				if validDecodedImage(decoded, ext) {
-					return decoded, ext, nil
-				}
-				last = conversionFailure("decoded_image_invalid", errors.New("invalid image candidate"))
-				break
 			}
 		}
 	}

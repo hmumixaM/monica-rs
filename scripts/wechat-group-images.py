@@ -245,6 +245,7 @@ class Worker:
         self.env = env
         self.run_id = None
         self.last_guard = 0
+        self.decoder_sha256 = None
         scope = SCOPE
         if getattr(args, 'include_direct', False):
             scope = scope.replace("c.conversation_type='group'", "c.conversation_type IN ('group','direct')")
@@ -288,7 +289,9 @@ class Worker:
         self.ledger.executescript('''CREATE TABLE IF NOT EXISTS identity(value TEXT NOT NULL,run_id TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS files(md5 TEXT,path TEXT,quality TEXT,tier INTEGER,bytes INTEGER,mtime INTEGER,PRIMARY KEY(md5,path));
  CREATE INDEX IF NOT EXISTS files_hash ON files(md5,tier);
- CREATE TABLE IF NOT EXISTS decoded(path TEXT PRIMARY KEY,raw_sha256 TEXT NOT NULL,asset TEXT NOT NULL);''')
+ CREATE TABLE IF NOT EXISTS verified_decodes(path TEXT PRIMARY KEY,raw_sha256 TEXT NOT NULL,asset TEXT NOT NULL,decoder_sha256 TEXT NOT NULL);''')
+        if not self.decoder_sha256:
+            self.decoder_sha256 = digest(self.args.decoder)
         stamp = json.dumps([*identity, self.args.account, self.source_owner, str(self.source), str(self.media)], separators=(',', ':'))
         prior = self.ledger.execute('SELECT value,run_id FROM identity').fetchone()
         if prior and prior[0] != stamp:
@@ -356,14 +359,14 @@ class Worker:
                 try:
                     path = safe_file(self.source, relative)
                     raw_hash = digest(path)
-                    cached = self.ledger.execute('SELECT asset FROM decoded WHERE path=? AND raw_sha256=?', (relative, raw_hash)).fetchone()
+                    cached = self.ledger.execute('SELECT asset FROM verified_decodes WHERE path=? AND raw_sha256=? AND decoder_sha256=?', (relative, raw_hash, self.decoder_sha256)).fetchone()
                     if cached:
                         try:
                             verify_asset(self.media, json.loads(cached[0]))
                         except (ValueError, OSError, KeyError, TypeError):
                             # The receipt is derived state, not a reason to skip
                             # a healthy source forever. Rebuild it with the codec.
-                            self.ledger.execute('DELETE FROM decoded WHERE path=?', (relative,))
+                            self.ledger.execute('DELETE FROM verified_decodes WHERE path=?', (relative,))
                             self.ledger.commit()
                             cached = None
                     if cached:
@@ -374,7 +377,7 @@ class Worker:
                         asset = decode(self.source, self.media, self.args.decoder, relative, self.env)
                         if digest(path) != raw_hash:
                             raise ValueError('source changed during decode')
-                        self.ledger.execute('INSERT OR REPLACE INTO decoded VALUES(?,?,?)', (relative, raw_hash, json.dumps(asset)))
+                        self.ledger.execute('INSERT OR REPLACE INTO verified_decodes(path,raw_sha256,asset,decoder_sha256) VALUES(?,?,?,?)', (relative, raw_hash, json.dumps(asset), self.decoder_sha256))
                         self.ledger.commit()
                         self.db.execute('UPDATE crm.wechat_image_runs SET copied_bytes=copied_bytes+%s WHERE id=%s', (asset['byte_length'], self.run_id))
                         # Pace copied input/output bytes at 2 MiB/s; checksum

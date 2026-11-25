@@ -126,6 +126,9 @@ func transform(data []byte, kind string) ([]byte, string, error) {
 		dat2img.FFmpegMode = true
 		typeName := http.DetectContentType(data)
 		if strings.HasPrefix(typeName, "image/") {
+			if !validDecodedImage(data, strings.TrimPrefix(typeName, "image/")) {
+				return nil, "", conversionFailure("decoded_image_invalid", errors.New("invalid image pixels"))
+			}
 			return data, typeName, nil
 		}
 		// V3 WXGF and BMP share the same XOR relationship between their
@@ -136,10 +139,12 @@ func transform(data []byte, kind string) ([]byte, string, error) {
 		if !matchedWXGF {
 			out, ext, err = dat2img.Dat2Image(data)
 		}
-		if err != nil || !validDecodedImage(out, ext) {
-			if len(data) >= 6 && (bytes.Equal(data[:6], dat2img.V4Format1.Header) || bytes.Equal(data[:6], dat2img.V4Format2.Header)) {
-				out, ext, err = decodeV4Fallback(data)
-			}
+		if err == nil && !validDecodedImage(out, ext) {
+			err = conversionFailure("decoded_image_invalid", errors.New("invalid image pixels"))
+		}
+		if err != nil && len(data) >= 6 &&
+			(bytes.Equal(data[:6], dat2img.V4Format1.Header) || bytes.Equal(data[:6], dat2img.V4Format2.Header)) {
+			out, ext, err = decodeV4Fallback(data)
 		}
 		if err != nil {
 			var failure *codecFailure
@@ -152,6 +157,9 @@ func transform(data []byte, kind string) ([]byte, string, error) {
 			out, ext, err = convertWXGF(out)
 			if err != nil {
 				return nil, "", conversionFailure("wxgf_conversion_failed", err)
+			}
+			if !validDecodedImage(out, ext) {
+				return nil, "", conversionFailure("decoded_image_invalid", errors.New("invalid WXGF pixels"))
 			}
 		}
 		if ext == "jpg" {
