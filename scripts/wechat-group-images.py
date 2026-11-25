@@ -221,7 +221,7 @@ def candidates(ledger, references):
 def decode(source, media, decoder, relative, env):
     with subprocess.Popen([str(decoder), '--source-root', str(source), '--target-root', str(media)],
                           stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                          env=env, start_new_session=True) as proc:
+                          env={**env, 'MONICA_MIGRATION_STRICT_PIXELS': '1'}, start_new_session=True) as proc:
         try:
             output, _ = proc.communicate(json.dumps({'path': relative, 'kind': 'image'}).encode(), timeout=45)
             if proc.returncode != 0:
@@ -236,6 +236,16 @@ def decode(source, media, decoder, relative, env):
     asset = json.loads(output)
     verify_asset(media, asset)
     return asset
+
+
+def verify_pixels(media, asset, env):
+    subprocess.run(
+        ['ffmpeg', '-v', 'error', '-nostdin', '-threads', '1', '-err_detect', 'explode',
+         '-xerror', '-i', str(media / asset['object_path']), '-frames:v', '1', '-f', 'null', '-'],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        env={key: env[key] for key in ('PATH', 'TMPDIR', 'LD_LIBRARY_PATH') if key in env},
+        check=True, timeout=20,
+    )
 
 
 class Worker:
@@ -340,10 +350,12 @@ class Worker:
             for saved, proof in existing:
                 try:
                     verify_asset(self.media, saved)
+                    verify_pixels(self.media, saved, self.env)
                     saved_q = proof.rsplit(':', 1)[-1]
                     if best is None or ranks[saved_q] > ranks[best[1]]:
                         best = saved, saved_q
-                except (OSError, ValueError, KeyError):
+                except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+                    state = 'decode_failed'
                     continue
             if best:
                 asset, q = best

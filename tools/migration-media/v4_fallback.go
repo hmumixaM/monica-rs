@@ -2,22 +2,39 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/aes"
 	"encoding/binary"
 	"errors"
 	"image"
+	"os"
+	"os/exec"
+	"time"
 
 	"github.com/sjzar/chatlog/pkg/util/dat2img"
 )
 
 func validDecodedImage(data []byte, ext string) bool {
 	switch ext {
+	case "wxgf":
+		// The container is checked after conversion to an image format.
+		return true
 	case "jpg", "jpeg", "png", "gif":
-		_, _, err := image.Decode(bytes.NewReader(data))
-		return err == nil
-	default:
+		if _, _, err := image.Decode(bytes.NewReader(data)); err != nil {
+			return false
+		}
+	}
+	if os.Getenv("MONICA_MIGRATION_STRICT_PIXELS") != "1" {
 		return true
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, "ffmpeg", "-v", "error", "-nostdin", "-threads", "1",
+		"-err_detect", "explode", "-xerror", "-protocol_whitelist", "pipe", "-i", "pipe:0",
+		"-frames:v", "1", "-f", "null", "-")
+	command.Stdin = bytes.NewReader(data)
+	command.Env = []string{"PATH=" + os.Getenv("PATH")}
+	return command.Run() == nil
 }
 
 // The pinned decoder accepts the first padding-valid AES boundary, before
