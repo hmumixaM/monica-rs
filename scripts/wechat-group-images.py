@@ -239,9 +239,10 @@ def decode(source, media, decoder, relative, env):
 
 
 def verify_pixels(media, asset, env):
+    input_format = ['-f', 'jpeg_pipe'] if asset['media_type'] == 'image/jpeg' else []
     subprocess.run(
         ['ffmpeg', '-v', 'error', '-nostdin', '-threads', '1', '-err_detect', 'explode',
-         '-xerror', '-i', str(media / asset['object_path']), '-frames:v', '1', '-f', 'null', '-'],
+         '-xerror', *input_format, '-i', str(media / asset['object_path']), '-frames:v', '1', '-f', 'null', '-'],
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         env={key: env[key] for key in ('PATH', 'TMPDIR', 'LD_LIBRARY_PATH') if key in env},
         check=True, timeout=20,

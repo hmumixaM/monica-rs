@@ -29,9 +29,14 @@ func validDecodedImage(data []byte, ext string) bool {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, "ffmpeg", "-v", "error", "-nostdin", "-threads", "1",
-		"-err_detect", "explode", "-xerror", "-protocol_whitelist", "pipe", "-i", "pipe:0",
-		"-frames:v", "1", "-f", "null", "-")
+	args := []string{"-v", "error", "-nostdin", "-threads", "1",
+		"-err_detect", "explode", "-xerror", "-protocol_whitelist", "pipe"}
+	// Complete small JPEGs can fall below FFmpeg's auto-probe threshold.
+	if ext == "jpg" || ext == "jpeg" {
+		args = append(args, "-f", "jpeg_pipe")
+	}
+	args = append(args, "-i", "pipe:0", "-frames:v", "1", "-f", "null", "-")
+	command := exec.CommandContext(ctx, "ffmpeg", args...)
 	command.Stdin = bytes.NewReader(data)
 	command.Env = []string{"PATH=" + os.Getenv("PATH")}
 	return command.Run() == nil
