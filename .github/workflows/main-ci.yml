@@ -1,5 +1,7 @@
 name: Rust validation
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
 concurrency:
   group: rust-validation-${{ github.ref }}
   cancel-in-progress: true
