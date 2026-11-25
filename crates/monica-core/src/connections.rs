@@ -881,6 +881,19 @@ async fn project_revision_reserved(
         .execute(&mut **tx)
         .await?;
     }
+    // Native chat photos are derived from one source revision. Discard the
+    // attachment binding when that revision changes, including image-to-text.
+    if matches!(provider, Provider::Wechat)
+        && kind == "message"
+        && previous
+            .as_ref()
+            .is_some_and(|(revision, _)| *revision < row.revision)
+    {
+        sqlx::query("DELETE FROM crm.media_links WHERE entity_type='message_event' AND entity_id=$1 AND role LIKE 'wechat-group-image:%' AND EXISTS(SELECT FROM crm.source_connections s WHERE s.id=$2 AND s.external_account LIKE 'native-chatlog-%')")
+            .bind(eid).bind(cid).execute(&mut **tx).await?;
+        sqlx::query("UPDATE crm.wechat_group_images i SET state='pending',quality='none',media_id=NULL,attempts=0 FROM crm.wechat_image_runs r WHERE r.id=i.run_id AND r.account=$2::uuid::text AND i.message_id=$1 AND EXISTS(SELECT FROM crm.source_connections s WHERE s.id=$2 AND s.external_account LIKE 'native-chatlog-%')")
+            .bind(eid).bind(cid).execute(&mut **tx).await?;
+    }
     let new_message: Option<MessagePosition> = sqlx::query_as("SELECT conversation_id,occurred_at,direction FROM crm.message_search WHERE message_id=$1 AND NOT tombstone").bind(eid).fetch_optional(&mut **tx).await?;
     refresh_conversations(tx, old_message, new_message).await?;
     Ok(true)

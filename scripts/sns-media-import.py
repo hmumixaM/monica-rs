@@ -9,6 +9,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 import sqlite3
 import struct
@@ -199,6 +200,12 @@ def public_image(fetch, photo, external, slot):
     raise ValueError('sns_public_image_unavailable')
 
 
+# A native event may need the downloaded and decoded copy at once. Keep
+# headroom for these copies and the colocated PostgreSQL cluster.
+NATIVE_MIN_FREE = 3 * 1024**3
+NATIVE_STAGE_TARGET = 512 * 1024**2
+
+
 def import_event(db, source, media, state, runtime, cache, event_id, native_event=None):
     scripts=Path(__file__).resolve().parent
     fetch=module('sns_source_frame',scripts.parent/'tools/sns-decrypt/fetch_frame.py')
@@ -251,24 +258,27 @@ def import_event(db, source, media, state, runtime, cache, event_id, native_even
     pending=[(key,photo)for key,photo in identities if saved.get(key,{}).get('status')not in('ready','source_only')]
     if not pending:return dict(ready=0,failed=0)
     staged=[];ready=0
+    staged_bytes = 0
     stage=event_state/'stage';objects=stage/'objects';receipt=event_state/'receipt'
     objects.mkdir(parents=True,exist_ok=True);receipt.mkdir(exist_ok=True)
     raw_sources = None
     for key,photo in pending:
+        if native_event and (shutil.disk_usage(state).free < NATIVE_MIN_FREE or staged_bytes >= NATIVE_STAGE_TARGET):
+            break
         if photo['media_type']=='video' and not photo.get('source_url'):
             saved[key]=dict(status='source_only',code='source_has_cover_only');atomic(ledger,saved);continue
         if saved.get(key,{}).get('status')=='downloaded':
             row = saved[key]['row']
             if photo['media_type'] != 'video':
-                staged.append((key,row));continue
+                staged.append((key,row));staged_bytes += row['media']['byte_length'];continue
             video = module('sns_video_stream',scripts/'sns-video.py')
             decoded = objects/row['media']['sha256']
             if decoded.is_file() and video.source_digest_matches(fetch, row, decoded):
-                staged.append((key,row));continue
+                staged.append((key,row));staged_bytes += row['media']['byte_length'];continue
             saved[key] = dict(status='failed',code='source_digest_mismatch')
             atomic(ledger,saved)
         live = photo['role'].startswith('live-media-')
-        if live:
+        if live and not native_event:
             archived = db.execute('''
                 SELECT a.sha256,a.byte_length FROM crm.media_links l JOIN crm.media_assets a ON a.id=l.media_id
                 WHERE l.entity_type='social_post' AND l.entity_id=%s AND l.role=%s AND a.media_type='video/mp4'
@@ -355,6 +365,7 @@ def import_event(db, source, media, state, runtime, cache, event_id, native_even
             if photo.get('_interaction'):
                 header['interaction_id'] = photo['_interaction']
             saved[key]=dict(status='downloaded',row=header);staged.append((key,header))
+            staged_bytes += header['media']['byte_length']
         except Exception as error:
             # Exceptions from HTTP/XML may include image credentials. Persist
             # only the exception class, never its text, request URL or stderr.
@@ -375,4 +386,9 @@ def import_event(db, source, media, state, runtime, cache, event_id, native_even
         publish(db, request)
         for key,_ in staged:saved[key]=dict(status='ready');ready+=1
         atomic(ledger,saved)
+        if native_event:
+            shutil.rmtree(stage)
+    if native_event:
+        return dict(ready=ready, failed=sum(saved.get(key, {}).get('status') not in ('ready', 'source_only')
+                                            for key, _ in identities))
     return dict(ready=ready,failed=sum(saved.get(key,{}).get('status')=='failed'for key,_ in identities))

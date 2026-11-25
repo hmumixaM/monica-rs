@@ -7,14 +7,49 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import sqlite3
 import subprocess
 import tempfile
+import uuid
 from types import SimpleNamespace
 import sys
 
 import psycopg
 from monica_imports.media_store import MARKER, MediaStore
+
+
+class EventDeadline(BaseException):
+    pass
+
+
+def deadline_expired(_signum, _frame):
+    raise EventDeadline()
+
+
+def clean_staging(db, state, account):
+    stages = []
+    for path in state.iterdir():
+        if not path.is_dir() or path.is_symlink():
+            continue
+        try:
+            event_id = uuid.UUID(path.name)
+        except ValueError:
+            continue
+        stages.append((path.stat().st_mtime_ns, event_id, path))
+    queue = dict(db.execute("""SELECT q.event_id,q.version FROM crm.native_moments_media q
+        JOIN crm.source_connections c ON c.id=q.connection_id
+        WHERE c.provider='wechat' AND c.external_account=%s AND q.event_id=ANY(%s)""",
+        (account, [event_id for _, event_id, _ in stages])).fetchall())
+    kept = 0
+    for _, event_id, path in sorted(stages, reverse=True):
+        if event_id not in queue or kept >= 2:
+            shutil.rmtree(path)
+        else:
+            for revision in path.iterdir():
+                if revision.is_dir() and not revision.is_symlink() and revision.name != str(queue[event_id]):
+                    shutil.rmtree(revision)
+            kept += 1
 
 
 def run(db, source, media, state, runtime, account, cache=None):
@@ -23,39 +58,46 @@ def run(db, source, media, state, runtime, account, cache=None):
     spec.loader.exec_module(images)
     if not db.execute("SELECT pg_try_advisory_lock(hashtextextended('monica-native-moments-media',0))").fetchone()[0]:
         return
+    clean_staging(db, state, account)
+    if shutil.disk_usage(media).free < images.NATIVE_MIN_FREE:
+        db.execute("""UPDATE crm.native_moments_media q SET retry_at=now()+interval '5 minutes'
+            FROM crm.source_connections c WHERE c.id=q.connection_id AND c.provider='wechat'
+              AND c.external_account=%s AND q.retry_at<=now()""", (account,))
+        return
     due = db.execute("""
         SELECT q.event_id, q.connection_id, q.version, q.attempts
         FROM crm.native_moments_media q JOIN crm.source_connections s ON s.id=q.connection_id
-        WHERE s.provider='wechat' AND s.external_account=%s AND s.enabled
-          AND q.retry_at<=now()
-        ORDER BY q.retry_at,q.event_id LIMIT 3
-    """, (account,)).fetchall()
-    for event_id, connection, version, attempts in due:
-        stage = state / str(event_id)
-        stage.mkdir(exist_ok=True)
-        if stage.resolve() != stage:
-            raise ValueError('invalid desktop media staging path')
-        for item in stage.iterdir():
-            if re.fullmatch(r'[0-9]+', item.name) and item.name != str(version) and item.is_dir() and not item.is_symlink():
-                shutil.rmtree(item)
-        revision = stage / str(version)
-        try:
-            result = images.import_event(db, source, media, revision, runtime, cache, event_id,
-                                         native_event=(connection, version))
-            failed = result['failed']
-        except (OSError, ValueError, OverflowError, KeyError, psycopg.Error):
-            if db.closed or db.broken:
-                raise
-            failed = True
-        if failed:
-            delay = min(24 * 3600, 300 * 2**min(attempts, 9))
-            db.execute("""UPDATE crm.native_moments_media SET attempts=attempts+1,
-                          retry_at=now()+make_interval(secs=>%s) WHERE event_id=%s AND version=%s""",
-                       (delay, event_id, version))
-        else:
-            if stage.is_dir():
-                shutil.rmtree(stage)
-            db.execute('DELETE FROM crm.native_moments_media WHERE event_id=%s AND version=%s', (event_id, version))
+        WHERE s.provider='wechat' AND s.external_account=%s AND s.enabled AND q.retry_at<=now()
+        ORDER BY q.retry_at,q.event_id LIMIT 1
+    """, (account,)).fetchone()
+    if not due:
+        return
+    event_id, connection, version, attempts = due
+    delay = min(24 * 3600, 300 * 2**min(attempts, 9))
+    # Record backoff before doing any I/O, including hard interruption or quit.
+    if not db.execute("""UPDATE crm.native_moments_media SET attempts=attempts+1,
+        retry_at=now()+make_interval(secs=>%s) WHERE event_id=%s AND version=%s RETURNING 1""",
+        (delay, event_id, version)).fetchone():
+        return
+    stage = state / str(event_id)
+    stage.mkdir(exist_ok=True)
+    if stage.resolve() != stage:
+        raise ValueError('invalid desktop media staging path')
+    previous_handler = signal.signal(signal.SIGALRM, deadline_expired)
+    signal.alarm(360)
+    try:
+        result = images.import_event(db, source, media, stage/str(version), runtime, cache, event_id,
+                                     native_event=(connection, version))
+    except (EventDeadline, OSError, ValueError, OverflowError, KeyError, psycopg.Error):
+        if db.closed or db.broken:
+            raise
+        return
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous_handler)
+    if not result['failed']:
+        shutil.rmtree(stage)
+        db.execute('DELETE FROM crm.native_moments_media WHERE event_id=%s AND version=%s', (event_id, version))
 
 
 def recover_chat_images(db, snapshots, media, state, runtime, account):

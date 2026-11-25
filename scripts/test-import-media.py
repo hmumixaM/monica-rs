@@ -104,6 +104,37 @@ class PublicationContract(unittest.TestCase):
         self.assertIsNotNone(self.db.execute('SELECT 1 FROM crm.media_links WHERE entity_id=%s AND media_id=%s',
                                             (self.event,old)).fetchone())
 
+    def test_native_owned_video_can_be_replaced_then_retired(self):
+        connection = uuid.uuid4()
+        self.db.execute("""INSERT INTO crm.source_connections
+            (id,provider,external_account,display_name,connection_method,state,enabled)
+            VALUES(%s,'wechat','native-chatlog-test','Fixture','collector','connected',true)""", (connection,))
+        self.db.execute("UPDATE crm.scheduler_control SET paused=false")
+        self.db.execute("UPDATE crm.adapter_controls SET enabled=true,paused=false WHERE provider='wechat'")
+        self.content.update(source_tid='90', coordinate_format='chatlog_sns_xml',
+                            raw_content='<TimelineObject><id>100</id></TimelineObject>')
+        self.content['media'][0]['media_type'] = 'video'
+        self.db.execute("UPDATE crm.timeline_events SET connection_id=%s,external_id='post:90',content=%s,version=2 WHERE id=%s",
+                        (connection, Jsonb(self.content), self.event))
+        manifest = self.request.stage/'manifest.json'
+        row = json.loads(manifest.read_text())['rows'][0]
+        for clip in (b'first verified clip', b'second verified clip'):
+            asset = dict(self.asset, sha256=hashlib.sha256(clip).hexdigest(), byte_length=len(clip), media_type='video/mp4')
+            (self.request.stage/'objects'/asset['sha256']).write_bytes(clip)
+            row.update(media=asset, full_video=True)
+            manifest.write_text(json.dumps(dict(rows=[row])))
+            request = replace(self.request, manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest(),
+                              native_event=(connection, 2))
+            with patch('monica_imports.sns_publication.module', return_value=SimpleNamespace(validate=lambda *_args, **_kwargs: asset)):
+                publish(self.db, request)
+        attached = self.db.execute("SELECT a.sha256 FROM crm.media_links l JOIN crm.media_assets a ON a.id=l.media_id WHERE l.entity_id=%s", (self.event,)).fetchall()
+        self.assertEqual(attached, [(asset['sha256'],)])
+        self.content['media'] = []
+        self.db.execute('UPDATE crm.timeline_events SET content=%s,version=3 WHERE id=%s', (Jsonb(self.content), self.event))
+        for table in ('media_slots', 'media_links'):
+            self.assertFalse(self.db.execute(f'SELECT 1 FROM crm.{table} WHERE entity_id=%s', (self.event,)).fetchone())
+        self.assertEqual(self.db.execute('SELECT count(*) FROM crm.media_assets').fetchone(), (2,))
+
     def test_wrong_database_or_changed_source_never_publishes(self):
         with self.assertRaises(ValueError):
             publish(self.db,replace(self.request,target=replace(self.request.target,system_id='another-cluster')))

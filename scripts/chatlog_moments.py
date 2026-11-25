@@ -163,7 +163,10 @@ def moments_media(obj: ET.Element) -> list[dict[str, Any]]:
         media_rows.append({'role': f'media-{index + 1}', 'source_media_id': media.findtext('id'), 'source_md5': url_element.attrib.get('md5') if url_element is not None else None, 'media_type': 'video' if media_type in {'6', '15'} else 'image', 'source_url': source_url or None, 'thumbnail_url': thumbnail_url or None, 'width': width, 'height': height, 'byte_length': total_size, 'duration_ms': duration_ms, 'description': media.findtext('description') or None})
         motion = live_node(media)
         if media_rows[-1]['media_type'] == 'image':
-            media_rows[-1]['live_motion_url'] = motion.findtext('url') if motion is not None else None
+            motion_url = motion.find('url') if motion is not None else None
+            media_rows[-1]['live_motion_url'] = motion_url.text if motion_url is not None else None
+            if motion_url is not None and motion_url.get('md5'):
+                media_rows[-1]['live_motion_md5'] = motion_url.get('md5')
     parent_type = obj.findtext('ContentObject/type')
     if parent_type == '5':
         for item in media_rows:

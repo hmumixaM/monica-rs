@@ -207,22 +207,27 @@ class RecentImages(images.Worker):
                 self.resources = None
 
     def scan_resources(self):
-        self.discover()
-        # Ready publications are reused. Previously unavailable files can arrive
-        # later even when the message and its source JSON have not changed.
-        self.db.execute("UPDATE crm.wechat_group_images SET state='pending' WHERE run_id=%s AND state<>'available' AND state<>'pending'", (self.run_id,))
+        complete = self.discover()
         batch_size = getattr(self.args, 'batch_size', None)
-        batch = [mid for (mid,) in self.db.execute("""SELECT message_id FROM crm.wechat_group_images
-            WHERE run_id=%s AND state='pending' ORDER BY attempts,updated_at,message_id LIMIT %s""",
-            (self.run_id, batch_size))] if batch_size else None
-        scoped = ' AND m.message_id=ANY(%s)' if batch is not None else ''
-        scope_args = (*self.query_args, batch) if batch is not None else self.query_args
+        if batch_size:
+            batch = [mid for (mid,) in self.db.execute("""SELECT message_id FROM crm.wechat_group_images
+                WHERE run_id=%s AND (state='pending' OR
+                  (state IN ('source_missing','no_reference','decode_failed') AND updated_at<now()-interval '30 minutes'))
+                ORDER BY attempts,updated_at,message_id LIMIT %s""", (self.run_id, batch_size))]
+            scoped = ' AND m.message_id=ANY(%s)'
+            scope_args = (*self.query_args, batch)
+        else:
+            # Reuse successful links; previously missing cache files may arrive.
+            self.db.execute("UPDATE crm.wechat_group_images SET state='pending' WHERE run_id=%s AND state<>'available' AND state<>'pending'", (self.run_id,))
+            batch = None
+            scoped = " AND EXISTS(SELECT FROM crm.wechat_group_images i WHERE i.run_id=%s AND i.message_id=m.message_id AND i.state='pending')"
+            scope_args = (*self.query_args, self.run_id)
         requested = set()
         folders = defaultdict(set)
         after = images.NIL
         while True:
             self.guard()
-            rows = self.db.execute(self.current_sql + scoped + " AND m.message_id>%s AND EXISTS(SELECT 1 FROM crm.wechat_group_images i WHERE i.run_id=%s AND i.message_id=m.message_id AND i.state='pending') ORDER BY m.message_id LIMIT 100", (*scope_args, after, self.run_id)).fetchall()
+            rows = self.db.execute(self.current_sql + scoped + " AND m.message_id>%s ORDER BY m.message_id LIMIT 100", (*scope_args, after)).fetchall()
             if not rows:
                 break
             for row in rows:
@@ -256,7 +261,10 @@ class RecentImages(images.Worker):
                 for (mid,) in rows:
                     self.item(mid)
                 self.report()
-        self.db.execute("UPDATE crm.wechat_image_runs SET status='complete',heartbeat_at=now(),completed_at=now() WHERE id=%s", (self.run_id,))
+        if complete and (batch is None or len(batch) < batch_size):
+            self.db.execute("UPDATE crm.wechat_image_runs SET status='complete',heartbeat_at=now(),completed_at=now() WHERE id=%s", (self.run_id,))
+        else:
+            self.db.execute('UPDATE crm.wechat_image_runs SET heartbeat_at=now() WHERE id=%s', (self.run_id,))
         self.report()
 
 

@@ -180,8 +180,27 @@ def check_media(app):
                 event_id = db.execute("SELECT id FROM crm.timeline_events WHERE external_id='post:888'").fetchone()[0]
                 post = request(client, url, '/api/v1/timeline/' + str(event_id))
                 assert post['media'][0]['live_media_id']
+                assert source_bytes(original) == before
+
+                storage = original/'db_storage'
+                with closing(sqlite3.connect(storage/'sns/sns.db')) as source, source:
+                    xml = source.execute('SELECT content FROM SnsTimeLine WHERE tid=888').fetchone()[0]
+                    start, end = xml.index('<mediaList>'), xml.index('</mediaList>') + len('</mediaList>')
+                    source.execute('UPDATE SnsTimeLine SET content=? WHERE tid=888', (xml[:start]+xml[end:],))
+                with closing(sqlite3.connect(storage/'message/message_0.db')) as source, source:
+                    table = 'Msg_' + hashlib.md5(b'synthetic@chatroom').hexdigest()
+                    source.execute(f'UPDATE {table} SET local_type=1,message_content=? WHERE server_id=123', ('Fixture updated',))
+                before = source_bytes(original)
+
+                def revised_media_removed():
+                    return db.execute("""SELECT EXISTS(SELECT FROM crm.message_search WHERE body='Fixture updated')
+                        AND EXISTS(SELECT FROM crm.timeline_events WHERE id=%s AND content->'media'='[]'::jsonb)
+                        AND NOT EXISTS(SELECT FROM crm.media_links WHERE entity_type IN ('social_post','message_event'))
+                        AND EXISTS(SELECT FROM crm.media_assets)""", (event_id,)).fetchone()[0]
+
+                wait(process, revised_media_removed, 'retiring replaced source attachments', timeout=100)
         assert source_bytes(original) == before
-        print('Packaged desktop imported a Moments still, playable motion and a resource-linked chat image. Original fixture bytes and the local loopback origin stayed intact.')
+        print('Packaged desktop imported and retired Moments and chat media across source revisions. The fixture bytes, saved media and local loopback origin stayed intact.')
 
 
 if __name__ == '__main__':

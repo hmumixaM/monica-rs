@@ -288,6 +288,11 @@ fn native_postgres_server_lifecycle() {
             None,
         )
         .unwrap();
+    let config: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(root.join("chatlog/chatlog-server.json")).unwrap())
+            .unwrap();
+    let address: std::net::SocketAddr = config["http_addr"].as_str().unwrap().parse().unwrap();
+    assert!(address.ip().is_loopback() && address.port() > 0);
     assert_ne!(supervisor.status().server_pid, old_server);
     assert_eq!(supervisor.status().postgres_pid, old_postgres);
     assert_eq!(supervisor.status().url.as_deref(), Some(url.as_str()));

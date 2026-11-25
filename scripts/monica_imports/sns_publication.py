@@ -115,7 +115,8 @@ def publish(db, request: Publication):
             db.execute("SELECT pg_advisory_xact_lock(hashtextextended('media-gc:'||%s,0))", (digest,))
         events = {}
         for event_id in sorted({r['event_id'] for r in rows}):
-            saved = db.execute("SELECT provider,external_id,content,source_account_id,connection_id,version FROM crm.timeline_events WHERE id=%s AND status='active' FOR UPDATE", (event_id,)).fetchone()
+            row_lock = ' FOR UPDATE NOWAIT' if request.native_event else ' FOR UPDATE'
+            saved = db.execute("SELECT provider,external_id,content,source_account_id,connection_id,version FROM crm.timeline_events WHERE id=%s AND status='active'" + row_lock, (event_id,)).fetchone()
             require(saved and saved[0] == 'wechat')
             if request.native_event:
                 require(saved[4:] == (connection, version))
@@ -171,7 +172,7 @@ def publish(db, request: Publication):
             # The unique slot arbitrates concurrent publishers. RETURNING must
             # confirm the winner before inserting a potentially duplicate link.
             native = entity_type == 'social_post' and role == f'media-{slot}' and asset['media_type'] == 'video/mp4'
-            if native:
+            if native and not request.native_event:
                 require(original.get('media_type') == 'video')
                 superseded = db.execute("""
                     SELECT a.id,a.media_type FROM crm.media_assets a WHERE a.id IN (

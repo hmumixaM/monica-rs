@@ -546,10 +546,13 @@ pub(crate) async fn run_native_wechat_media(
         .ok()
         .filter(|_| images);
     let due: bool = if images {
-        if cache.is_none() {
+        if !cache
+            .as_deref()
+            .is_some_and(|path| std::path::Path::new(path).is_dir())
+        {
             return Ok(());
         }
-        sqlx::query_scalar("SELECT EXISTS(SELECT FROM crm.wechat_image_control WHERE enabled AND NOT paused) AND EXISTS(SELECT FROM crm.source_connections s JOIN crm.conversations c ON c.connection_id=s.id WHERE s.provider='wechat' AND s.external_account=$1 AND s.enabled AND NOT EXISTS(SELECT FROM crm.wechat_image_runs r WHERE r.account=s.id::text AND r.heartbeat_at>now()-interval '5 minutes'))")
+        sqlx::query_scalar("SELECT EXISTS(SELECT FROM crm.wechat_image_control WHERE enabled AND NOT paused) AND EXISTS(SELECT FROM crm.source_connections s JOIN crm.conversations c ON c.connection_id=s.id WHERE s.provider='wechat' AND s.external_account=$1 AND s.enabled AND NOT EXISTS(SELECT FROM crm.wechat_image_runs r WHERE r.account=s.id::text AND r.heartbeat_at>now()-CASE WHEN r.status='running' THEN interval '15 seconds' ELSE interval '5 minutes' END))")
             .bind(&account).fetch_one(pool).await?
     } else {
         sqlx::query_scalar("SELECT EXISTS(SELECT FROM crm.native_moments_media q JOIN crm.source_connections s ON s.id=q.connection_id WHERE s.provider='wechat' AND s.external_account=$1 AND s.enabled AND q.retry_at<=now())")

@@ -317,17 +317,33 @@ class Worker:
         self.db.execute("INSERT INTO crm.wechat_image_runs(id,account) VALUES(%s,%s) ON CONFLICT(id) DO UPDATE SET status='indexing',discovery_complete=false,error_code=NULL,completed_at=NULL,heartbeat_at=now()", (self.run_id, self.args.account))
 
     def discover(self):
+        limit = getattr(self.args, 'batch_size', None)
         after = NIL
+        complete = True
         while True:
             self.guard()
-            rows = self.db.execute(self.discover_sql + ' AND m.message_id>%s ORDER BY m.message_id LIMIT 500', (*self.query_args, after)).fetchall()
+            if limit:
+                # The native worker only admits new/relocated rows in bounded
+                # batches. Revisions requeue their existing row transactionally.
+                rows = self.db.execute(self.discover_sql + """ AND NOT EXISTS (
+                      SELECT FROM crm.wechat_group_images i WHERE i.run_id=%s
+                        AND i.message_id=m.message_id AND i.conversation_id=m.conversation_id
+                        AND i.day=(m.occurred_at AT TIME ZONE 'UTC')::date)
+                      ORDER BY m.message_id LIMIT %s""", (*self.query_args, self.run_id, limit+1)).fetchall()
+                complete = len(rows) <= limit
+                rows = rows[:limit]
+            else:
+                rows = self.db.execute(self.discover_sql + ' AND m.message_id>%s ORDER BY m.message_id LIMIT 500', (*self.query_args, after)).fetchall()
             if not rows:
                 break
             with self.db.transaction():
                 for mid, group, day, *_ in rows:
-                    self.db.execute('INSERT INTO crm.wechat_group_images(run_id,message_id,conversation_id,day) VALUES(%s,%s,%s,%s) ON CONFLICT(run_id,message_id) DO UPDATE SET conversation_id=excluded.conversation_id,day=excluded.day WHERE (crm.wechat_group_images.conversation_id,crm.wechat_group_images.day) IS DISTINCT FROM (excluded.conversation_id,excluded.day)', (self.run_id, mid, group, day))
+                    self.db.execute('INSERT INTO crm.wechat_group_images(run_id,message_id,conversation_id,day) VALUES(%s,%s,%s,%s) ON CONFLICT(run_id,message_id) DO UPDATE SET conversation_id=excluded.conversation_id,day=excluded.day WHERE (wechat_group_images.conversation_id,wechat_group_images.day) IS DISTINCT FROM (excluded.conversation_id,excluded.day)', (self.run_id, mid, group, day))
+            if limit:
+                break
             after = rows[-1][0]
-        self.db.execute("UPDATE crm.wechat_image_runs SET discovery_complete=true,status='running',heartbeat_at=now() WHERE id=%s", (self.run_id,))
+        self.db.execute("UPDATE crm.wechat_image_runs SET discovery_complete=%s,status='running',heartbeat_at=now() WHERE id=%s", (complete, self.run_id))
+        return complete
 
     def references(self, row):
         return image_references(*row[3:])

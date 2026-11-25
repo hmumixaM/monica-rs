@@ -222,7 +222,7 @@ impl Chatlog {
                 "data_dir": source,
                 "data_key": key,
                 "work_dir": work,
-                "http_addr": self.url(),
+                "http_addr": format!("127.0.0.1:{}", self.preferences.port),
                 "desktop_mode": true,
             }),
         )?;
