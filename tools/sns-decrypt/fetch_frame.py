@@ -7,6 +7,7 @@ import argparse
 from contextlib import closing, contextmanager, nullcontext
 import hashlib
 import json
+import re
 from pathlib import Path
 import sqlite3
 import struct
@@ -69,6 +70,31 @@ def live_assets(obj):
                        source_md5=url.get('md5'), parent_media_id=media.findtext('id'))
 
 
+def legacy_video_keys(address, token, seeds):
+    """Recognize the URL and optional key spellings used by Chatlog's video cache."""
+    urls = list(dict.fromkeys((address.strip(), address.strip().replace('http://', 'https://', 1),
+                              address.strip().replace('https://', 'http://', 1))))
+    if token and 'token=' not in address:
+        query_token = 'token=' + quote_plus(token) + '&idx=1'
+        for value in tuple(urls):
+            path, sep, query = value.partition('?')
+            urls.extend((path + '?' + query_token + ('&' + query if sep else ''),
+                         value + ('&' if sep else '?') + query_token))
+    return (hashlib.md5((url + '|' + key).encode()).hexdigest() + '.bin'
+            for url in urls for key in seeds)
+
+
+def verified_video_cache(path, expected_md5):
+    with path.open('rb') as data:
+        if data.read(8)[4:] != b'ftyp':
+            return False
+        data.seek(0)
+        digest = hashlib.md5()
+        for block in iter(lambda: data.read(1024 * 1024), b''):
+            digest.update(block)
+        return digest.hexdigest() == expected_md5
+
+
 def frame(source, external, slot, cache_root=None, source_tid=None, destination=None, thumbnail=False,
           source_media_id=None, source_kind=None, live_motion=False, raw_xml=None):
     if not 1 <= slot <= 100:
@@ -84,12 +110,14 @@ def frame(source, external, slot, cache_root=None, source_tid=None, destination=
         finder_rows = finder.findall('mediaList/media') if finder is not None else []
         finder_cover = source_kind == 'wechat_channels' and slot <= len(finder_rows)
         parent_media_id = None
+        parent = None
         if live_motion:
             index = slot - len(finder_rows) - 1
             if not 0 <= index < len(regular):
                 raise ValueError('live photo slot absent')
-            parent_media_id = regular[index].findtext('id')
-            media = live_node(regular[index])
+            parent = regular[index]
+            parent_media_id = parent.findtext('id')
+            media = live_node(parent)
             if media is None or media.findtext('id') != source_media_id:
                 raise ValueError('live photo motion identity mismatch')
         elif finder_cover:
@@ -140,11 +168,17 @@ def frame(source, external, slot, cache_root=None, source_tid=None, destination=
         if video and selected is not url:
             raise ValueError('native video source unavailable')
         fetch = (fetch_url or '') if native_video or finder_cover else (fetch_url or '').replace('http://', 'https://', 1)
-        fetch = fetch.replace('/150?', '/0?')
-        if fetch.endswith('/150'):
-            fetch = fetch[:-4] + '/0'
+        if not video:
+            fetch = fetch.replace('/150?', '/0?')
+            if fetch.endswith('/150'):
+                fetch = fetch[:-4] + '/0'
         if token and 'token=' not in fetch:
-            fetch += ('&' if '?' in fetch else '?') + 'token=' + quote_plus(token) + '&idx=1'
+            query_token = 'token=' + quote_plus(token) + '&idx=1'
+            if video:
+                prefix, sep, query = fetch.partition('?')
+                fetch = prefix + '?' + query_token + ('&' + query if sep else '')
+            else:
+                fetch += ('&' if '?' in fetch else '?') + query_token
         parsed = urlsplit(fetch)
         if (parsed.scheme not in (('http', 'https') if native_video or finder_cover else ('https',)) or not parsed.hostname or
                 not cdn(fetch) or
@@ -161,10 +195,27 @@ def frame(source, external, slot, cache_root=None, source_tid=None, destination=
             next_url += ('&' if '?' in next_url else '?') + 'token=' + quote_plus(token) + '&idx=1'
         cache_urls = dict.fromkeys([fetch, next_url, fetch_url or ''])
         cache_seeds = ['', seed] if seed == '0' else [seed]
-        candidate = next((path for url in cache_urls for key in cache_seeds
-                          if (path := cache / (hashlib.md5((url + '|' + key).encode()).hexdigest() + '.bin')).is_file()
-                          and not path.is_symlink()), None)
+        filenames = [hashlib.md5((u + '|' + key).encode()).hexdigest() + '.bin'
+                     for u in cache_urls for key in cache_seeds]
+        expected_md5 = (url.get('md5') or '').lower() if url is not None else ''
+        source_digest = expected_md5 if video and re.fullmatch(r'[a-f0-9]{32}', expected_md5) else None
+        if source_digest:
+            enc_nodes = (media.find('.//enc'), parent.find('.//enc') if parent is not None else None)
+            seeds = list(dict.fromkeys([seed, attrs.get('key', ''), '',
+                                       '0', *[node.get('key', '') for node in enc_nodes if node is not None]]))
+            filenames.extend(legacy_video_keys(fetch_url, token, seeds))
         limit = 512 * 1024 * 1024 if video else 32 * 1024 * 1024
+        candidate = None
+        for filename in dict.fromkeys(filenames):
+            path = cache / filename
+            if path.is_symlink() or not path.is_file():
+                continue
+            if not 0 < path.stat().st_size <= limit:
+                continue
+            if source_digest and not verified_video_cache(path, source_digest):
+                continue
+            candidate = path
+            break
         cached = candidate is not None
         if candidate is not None:
             if candidate.stat().st_size > limit:
@@ -193,7 +244,8 @@ def frame(source, external, slot, cache_root=None, source_tid=None, destination=
                     source_md5=url.attrib.get('md5') if url is not None else None,
                     source_media_id=media.findtext('id'),
                     raw_xml_sha256=xml_hash(xml), parent_media_id=parent_media_id,
-                    downloaded_sha256=digest.hexdigest(), cached=cached), bytes(data) if data is not None else None
+                    downloaded_sha256=digest.hexdigest(), cached=cached,
+                    verified_cached_video=bool(cached and source_digest)), bytes(data) if data is not None else None
 
 
 def main():

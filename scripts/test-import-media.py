@@ -69,7 +69,7 @@ class PublicationContract(unittest.TestCase):
                    source_url='https://szzjwxsns.video.qq.com/motion', full_video=True, media=asset)
         manifest.write_text(json.dumps(dict(rows=[row])))
         request = replace(self.request, manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest())
-        fake_video = SimpleNamespace(validate=lambda *args: asset)
+        fake_video = SimpleNamespace(validate=lambda *args, **kwargs: asset)
         with patch('monica_imports.sns_publication.module', return_value=fake_video):
             with self.assertRaises(ValueError):
                 publish(self.db, request)

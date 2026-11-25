@@ -546,7 +546,7 @@ class Consumer:
                         ((m->>'role')||'-poster', m->>'media_type'='video' AND m->>'thumbnail_url' IS NOT NULL)
                     ) slot(role, expected)
                     WHERE slot.expected AND (e.occurred_at>=%s OR
-                        (m->>'media_type'='video' AND nullif(m->>'source_url','') IS NOT NULL)) AND NOT EXISTS (
+                        (slot.role=m->>'role' AND m->>'media_type'='video' AND nullif(m->>'source_url','') IS NOT NULL)) AND NOT EXISTS (
                         SELECT 1 FROM crm.media_links l JOIN crm.media_assets a ON a.id=l.media_id
                         WHERE l.entity_type='social_post' AND l.entity_id=e.id AND l.role=slot.role
                           AND a.media_type LIKE CASE WHEN slot.role=m->>'role' AND m->>'media_type'='video'

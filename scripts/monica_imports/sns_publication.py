@@ -83,7 +83,10 @@ def publish(db, request: Publication):
         require(canonical(source).st_size == asset['byte_length'])
         if video:
             verifier=module('sns_video_validation','sns-video.py')
-            actual=verifier.validate(source,request.runtime)
+            source_md5 = row.get('source_md5') if row.get('verified_cached_video') else None
+            require(not row.get('verified_cached_video') or
+                    (isinstance(source_md5, str) and re.fullmatch(r'[a-fA-F0-9]{32}', source_md5)))
+            actual=verifier.validate(source,request.runtime,source_md5=source_md5)
         else:
             checked = subprocess.run([str(request.validator)], input=source.read_bytes(),
                                      capture_output=True, timeout=15,

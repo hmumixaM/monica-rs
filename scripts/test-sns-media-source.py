@@ -45,6 +45,24 @@ class SourceMedia(unittest.TestCase):
   self.assertEqual(header['raw_xml_sha256'],hashlib.sha256(xml.encode()).hexdigest())
   self.assertEqual((header['parent_media_id'],header['source_media_id'],dest.read_bytes()),('still','motion',b'original motion'))
 
+ def test_legacy_video_cache_variants_require_the_exact_original_bytes(self):
+  clip = bytes.fromhex('00000018667479706d703432') + b'full cached video'
+  source_md5 = hashlib.md5(clip).hexdigest()
+  address = 'http://szzjwxsns.video.qq.com/motion?format=mp4'
+  xml = (f'<TimelineObject><id>127</id><ContentObject><mediaList><media><id>still</id><type>2</type>'
+         f'<LivePhoto><liveMedia><id>clip</id><type>6</type><url token="synthetic" md5="{source_md5}">'
+         f'{address}</url><enc key="123"/></liveMedia></LivePhoto></media></mediaList></ContentObject></TimelineObject>')
+  bogus = address + '&token=synthetic&idx=1'
+  wrong_key = hashlib.md5((bogus+'|123').encode()).hexdigest()+'.bin'
+  (self.cache/wrong_key).write_bytes(clip[:-1] + b'?')
+  self.cached('https://szzjwxsns.video.qq.com/motion?token=synthetic&idx=1&format=mp4', clip)
+  dest = self.root/'motion'
+  with patch.object(fetch, 'build_opener', side_effect=AssertionError('network should not be needed')):
+      header, _ = fetch.frame(self.db, '127', 1, destination=dest, cache_root=self.cache,
+                              live_motion=True, source_media_id='clip', raw_xml=xml)
+  self.assertTrue(header['verified_cached_video'])
+  self.assertEqual(dest.read_bytes(), clip)
+
  def test_native_video_poster_uses_its_source_thumbnail_cdn(self):
   with sqlite3.connect(self.db)as db:db.execute('INSERT INTO SnsTimeLine VALUES(?,?)',('124','<TimelineObject><id>124</id><ContentObject><mediaList><media><id>987</id><type>15</type><url>http://snsvideo.c2c.wechat.com/video</url><thumb>http://vweixinthumb.tc.qq.com/poster/0</thumb></media></mediaList></ContentObject></TimelineObject>'))
   self.cached('http://vweixinthumb.tc.qq.com/poster/0',b'video poster')
