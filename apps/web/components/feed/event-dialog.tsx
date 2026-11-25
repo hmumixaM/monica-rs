@@ -23,7 +23,7 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
   const dialog = useRef<HTMLDialogElement>(null);
   const [detail, setDetail] = useState<EventDetail | null>(null);
   const [error, setError] = useState("");
-  const [playingMotion, setPlayingMotion] = useState<string>();
+  const [playingMotion, setPlayingMotion] = useState<number>();
   const close = useZoomFrom(dialog, origin);
 
   useEffect(() => { dialog.current?.showModal(); }, []);
@@ -63,7 +63,7 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
       {photoMedia.map((item, index) => {
         const original = item.ready !== false ? localMediaUrl(item.id) : undefined;
         const motion = localMediaUrl(item.live_media_id);
-        const playing = !!motion && playingMotion === motion;
+        const playing = !!motion && playingMotion === index;
         return <figure key={item.id || index} className={styles.detailPhoto}>
           {playing
             ? <div className={styles.detailMotion}>
@@ -77,7 +77,7 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
             </a>
             : <span><Unavailable>{`${isVideo(item) ? "视频" : "动态照片"} ${index + 1} · 暂时无法读取`}</Unavailable></span>}
           {motion && <button type="button" className={styles.liveButton}
-            onClick={() => setPlayingMotion(playing ? undefined : motion)}>{playing ? "查看静态图" : "播放实况"}</button>}
+            onClick={() => setPlayingMotion(playing ? undefined : index)}>{playing ? "查看静态图" : "播放实况"}</button>}
           <figcaption>图片 {index + 1}</figcaption>
         </figure>;
       })}

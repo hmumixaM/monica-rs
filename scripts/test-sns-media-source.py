@@ -29,18 +29,20 @@ class SourceMedia(unittest.TestCase):
  def test_type_54_album_keeps_photos_and_identifies_nested_motion(self):
   still='http://szmmsns.qpic.cn/photo/0'
   movie='http://szzjwxsns.video.qq.com/movie'
-  xml=f'<TimelineObject><id>126</id><ContentObject><type>54</type><mediaList><media><id>still</id><type>2</type><url>{still}</url><LivePhoto><liveMedia><id>motion</id><type>6</type><url>{movie}</url></liveMedia></LivePhoto></media></mediaList></ContentObject></TimelineObject>'
+  xml=f'<TimelineObject><id>126</id><contentDesc>&#2;</contentDesc><ContentObject><type>54</type><mediaList><media><id>still</id><type>2</type><url>{still}</url><LivePhoto><liveMedia><id>motion</id><type>6</type><url>{movie}</url></liveMedia></LivePhoto></media></mediaList></ContentObject></TimelineObject>'
   with sqlite3.connect(self.db) as db:
-   db.execute('INSERT INTO SnsTimeLine VALUES(?,?)',('126',xml))
+   db.execute('INSERT INTO SnsTimeLine VALUES(?,?)',('126',xml.encode() + b'\0'))
   _,obj=fetch.post_xml(xml)
   [photo]=moments.moments_media(obj)
   [motion]=fetch.live_assets(obj)
   self.assertEqual(photo['media_type'],'image')
   self.assertNotIn('source_kind',photo)
+  self.assertEqual(photo['live_motion_url'],movie)
   self.assertEqual((motion['role'],motion['parent_media_id']),('live-media-1','still'))
   self.cached(movie,b'original motion')
   dest=self.root/'movie.mp4'
   header,_=fetch.frame(self.db,'126',1,cache_root=self.cache,destination=dest,source_media_id='motion',live_motion=True)
+  self.assertEqual(header['raw_xml_sha256'],hashlib.sha256(xml.encode()).hexdigest())
   self.assertEqual((header['parent_media_id'],header['source_media_id'],dest.read_bytes()),('still','motion',b'original motion'))
 
  def test_native_video_poster_uses_its_source_thumbnail_cdn(self):

@@ -11,9 +11,13 @@ from pathlib import Path
 import sqlite3
 import struct
 import sys
+import xml.etree.ElementTree as ET
 from urllib.parse import quote_plus, urlsplit
 from urllib.request import Request, HTTPRedirectHandler, build_opener
-import xml.etree.ElementTree as ET
+scripts = str(Path(__file__).resolve().parents[2] / 'scripts')
+if scripts not in sys.path:
+    sys.path.insert(0, scripts)
+from chatlog_moments import live_node, parse_moments_xml
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -22,7 +26,7 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 @contextmanager
-def read_post(source, external, source_tid=None):
+def read_post(source, external, source_tid=None, *, missing_ok=False):
     source = Path(source)
     if source.resolve(strict=True) != source or not external.isdigit():
         raise ValueError('invalid source selection')
@@ -30,27 +34,28 @@ def read_post(source, external, source_tid=None):
         number = int(source_tid if source_tid is not None else external)
         signed = number - 2 ** 64 if number >= 2 ** 63 else number
         row = db.execute('SELECT content FROM SnsTimeLine WHERE tid IN(?,?)', (external, signed)).fetchone()
-        if not row:
+        if not row and not missing_ok:
             raise ValueError('source record absent')
-        yield row[0]
+        yield source_xml(row[0]) if row else None
+
+
+def source_xml(value):
+    if isinstance(value, bytes):
+        if value.startswith(b'\x28\xb5\x2f\xfd'):
+            import zstandard
+            value = zstandard.ZstdDecompressor().decompress(value, max_output_size=32 * 1024 * 1024)
+        value = value.decode('utf-8')
+    return (value or '').replace('\0', '')
 
 
 def post_xml(xml):
-    root = ET.fromstring(xml)
+    root, _ = parse_moments_xml(xml)
     obj = root if root.tag == 'TimelineObject' else root.find('TimelineObject')
     return root, obj
 
 
 def xml_hash(xml):
     return hashlib.sha256(xml.encode() if isinstance(xml, str) else xml).hexdigest()
-
-
-def live_node(media):
-    live = media.find('LivePhoto')
-    if live is None:
-        return None
-    nested = live.find('liveMedia')
-    return nested if nested is not None else live
 
 
 def live_assets(obj):

@@ -480,7 +480,7 @@ fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
             resolved["source_media_type"] = json!(kind);
         }
         for dimension in ["width", "height"] {
-            if !resolved[dimension].as_u64().is_some_and(|value| value > 0)
+            if resolved[dimension].as_u64().is_none_or(|value| value == 0)
                 && item[dimension].as_u64().is_some_and(|value| value > 0)
             {
                 resolved[dimension] = item[dimension].clone();
@@ -507,36 +507,59 @@ fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
             seen.insert(poster["id"].to_string());
         }
     }
-    let mut motion = std::collections::BTreeMap::new();
-    for item in local {
+    let mut motion: std::collections::BTreeMap<_, Vec<_>> = Default::default();
+    for item in &local {
         if let Some(slot) = item["role"]
             .as_str()
             .and_then(|role| role.strip_prefix("live-media-"))
             && item["media_type"] == "video/mp4"
         {
             if item["ready"] == true && item["id"].is_string() {
-                // Ambiguous slots can carry different historical revisions.
-                motion
-                    .entry(slot.to_owned())
-                    .and_modify(|id| *id = Value::Null)
-                    .or_insert_with(|| item["id"].clone());
+                motion.entry(slot).or_default().push(item);
             }
         } else if seen.insert(item["id"].to_string()) {
-            result.push(item);
+            result.push(item.clone());
         }
     }
+    let normalized_url = |url: &str| {
+        url.trim_start_matches("http://")
+            .trim_start_matches("https://")
+            .to_owned()
+    };
     for image in &mut result {
-        if let Some(id) = image["role"]
+        let expected_url = image.as_object_mut().unwrap().remove("live_motion_url");
+        if let Some(candidates) = image["role"]
             .as_str()
             .and_then(|role| role.strip_prefix("media-"))
             .and_then(|slot| motion.get(slot))
-            .filter(|id| id.is_string())
             && image["media_type"]
                 .as_str()
                 .is_some_and(|kind| kind.starts_with("image"))
             && image["source_media_type"] != "video"
         {
-            image["live_media_id"] = id.clone();
+            let legacy = expected_url.is_none();
+            let expected_url = expected_url
+                .as_ref()
+                .and_then(Value::as_str)
+                .map(normalized_url);
+            let mut matches = candidates.iter().filter(|clip| {
+                if let Some(expected) = &expected_url {
+                    clip["source_urls"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .chain(std::iter::once(&clip["source_url"]))
+                        .filter_map(Value::as_str)
+                        .any(|url| normalized_url(url) == *expected)
+                } else {
+                    legacy
+                }
+            });
+            if let Some(clip) = matches.next()
+                && matches.next().is_none()
+            {
+                image["live_media_id"] = clip["id"].clone();
+            }
         }
     }
     result
@@ -690,6 +713,30 @@ mod tests {
         assert_eq!(media[0]["live_media_id"], "motion");
         assert_eq!(media[1]["source_kind"], "wechat_channels");
         assert_eq!(media[1]["source_media_type"], "video");
+
+        let mut revised = remote;
+        revised[0]["live_motion_url"] = json!("https://cdn.example/current-motion");
+        let mut attachments = local;
+        attachments[2]["source_url"] = json!("http://cdn.example/old-motion");
+        assert!(
+            merge_media(&revised, &attachments)[0]
+                .get("live_media_id")
+                .is_none()
+        );
+        attachments.as_array_mut().unwrap().push(json!({
+            "role":"live-media-1","id":"new-motion","media_type":"video/mp4","ready":true,
+            "source_url":"http://cdn.example/current-motion"
+        }));
+        assert_eq!(
+            merge_media(&revised, &attachments)[0]["live_media_id"],
+            "new-motion"
+        );
+        revised[0]["live_motion_url"] = Value::Null;
+        assert!(
+            merge_media(&revised, &attachments)[0]
+                .get("live_media_id")
+                .is_none()
+        );
     }
 
     #[tokio::test]

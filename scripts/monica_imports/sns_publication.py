@@ -111,7 +111,8 @@ def publish(db, request: Publication):
             original = next((item for item in content['media'] if item.get('role') == f'media-{slot}'), None)
             require(original is not None)
             role = row.get('asset_role', f'media-{slot}')
-            if role == f'live-media-{slot}':
+            live = role == f'live-media-{slot}'
+            if live:
                 require(row['media']['media_type'] == 'video/mp4' and original.get('media_type') == 'image'
                         and original.get('source_media_id') == row['parent_media_id']
                         and content.get('raw_xml_sha256') == row['raw_xml_sha256'])
@@ -134,10 +135,17 @@ def publish(db, request: Publication):
             db.execute("INSERT INTO crm.media_provenance(media_id,source,source_record_id,source_url) VALUES(%s,'wechat',%s,%s) ON CONFLICT DO NOTHING", (media_id, provenance, source_url))
             # The unique slot arbitrates concurrent publishers. RETURNING must
             # confirm the winner before inserting a potentially duplicate link.
-            existing = db.execute("INSERT INTO crm.media_slots(entity_type,entity_id,media_id,role) VALUES('social_post',%s,%s,%s) ON CONFLICT(entity_type,entity_id,role) DO UPDATE SET media_id=crm.media_slots.media_id RETURNING media_id", (row['event_id'], media_id, role)).fetchone()
-            require(existing[0] == media_id)
-            linked = db.execute("SELECT media_id FROM crm.media_links WHERE entity_type='social_post' AND entity_id=%s AND role=%s FOR UPDATE", (row['event_id'], role)).fetchall()
-            require(all(r[0] == media_id for r in linked))
+            if live:
+                # Keep old links as source history while advancing the active slot.
+                db.execute("""INSERT INTO crm.media_slots(entity_type,entity_id,media_id,role)
+                    VALUES('social_post',%s,%s,%s) ON CONFLICT(entity_type,entity_id,role) DO UPDATE SET
+                    media_id=excluded.media_id,generation=crm.media_slots.generation+1,updated_at=now()
+                    WHERE crm.media_slots.media_id<>excluded.media_id""", (row['event_id'], media_id, role))
+            else:
+                existing = db.execute("INSERT INTO crm.media_slots(entity_type,entity_id,media_id,role) VALUES('social_post',%s,%s,%s) ON CONFLICT(entity_type,entity_id,role) DO UPDATE SET media_id=crm.media_slots.media_id RETURNING media_id", (row['event_id'], media_id, role)).fetchone()
+                require(existing[0] == media_id)
+                linked = db.execute("SELECT media_id FROM crm.media_links WHERE entity_type='social_post' AND entity_id=%s AND role=%s FOR UPDATE", (row['event_id'], role)).fetchall()
+                require(all(r[0] == media_id for r in linked))
             db.execute("INSERT INTO crm.media_links(entity_type,entity_id,media_id,role,source_account_id) VALUES('social_post',%s,%s,%s,%s) ON CONFLICT DO NOTHING", (row['event_id'], media_id, role, source_account))
         from psycopg.types.json import Jsonb
         metadata = dict(manifest_sha256=request.manifest_sha256, records=len(rows), before_links=before,

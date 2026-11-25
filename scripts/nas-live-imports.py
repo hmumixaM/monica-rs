@@ -534,11 +534,11 @@ class Consumer:
                 self.journal.execute('PRAGMA user_version=1')
         if runtime is not None and self.journal.execute('PRAGMA user_version').fetchone()[0] == 1:
             images = module('sns_event_images', 'sns-media-import.py')
-            historical = images.historical_motion_events(self.db, snapshot, lambda: STOP)
+            historical = images.historical_motion_events(self.db, snapshot, self.args.media, lambda: STOP)
             if historical is not None:
                 with self.journal:
                     self.journal.executemany(
-                        'INSERT INTO sns_pending(event_id,attempts) VALUES(?,1) ON CONFLICT DO NOTHING',
+                        'INSERT INTO sns_pending(event_id,attempts,retry_at) VALUES(?,1,?) ON CONFLICT DO NOTHING',
                         historical,
                     )
                     self.journal.execute('PRAGMA user_version=2')
