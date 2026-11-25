@@ -11,7 +11,7 @@ The subsequent [2026-11-12 skill-based review](reviews/2026-11-12-rust-parity-re
 - Content-addressed media, range/conditional reads, resumable uploads, durable publication recovery, OCR/face boundaries and managed external processes.
 - Multi-account Mail with Gmail/Graph/IMAP, WhatsApp import and bridge, Apple native source pages, evidence/revisions/coverage and account ownership controls.
 - Stateless browser model transport, bounded model slots, persistent incremental Memory, classification and derived jobs, tested with fake model servers.
-- Vite/React Router same-origin UI, first-class Sources/Mail/Evidence and browser agent UI. Tauri tray/settings, PostgreSQL and child process lifecycle, independent data directories and default-off sources.
+- Vite/React Router same-origin UI, first-class Sources/Mail/Evidence and Ask Monica. Ask runs in the Rust server, saves checkpoints and conversations in PostgreSQL, and runs generated JavaScript in a WebAssembly guest with a read-only query bridge. Tauri tray/settings, PostgreSQL and child process lifecycle, independent data directories and default-off sources.
 - Optional real pgoutput WAL capture, independent pipeline status and fenced retries. See CDC.md for exact behavior and maintenance prerequisites.
 
 The static frozen-contract audit covers166 registered operations. This is not a substitute for behavior tests. Evidence is held in the differential scripts, Rust tests, UI tests and isolated validation logs. The final report records the current registration audit and selected behavioral evidence separately; the historical148-operation CRM smoke ledger is not a whole-platform implementation certification.

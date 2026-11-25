@@ -1,4 +1,5 @@
 mod ai;
+mod ask;
 mod auth;
 mod cache;
 mod cdc;
@@ -280,6 +281,8 @@ async fn run() -> Result<()> {
             ));
             let listener = tokio::net::TcpListener::bind(listen).await?;
             tracing::info!(address=%listener.local_addr()?,"server ready; authentication enabled, business API in progress");
+            state.pool = pools.background.clone();
+            let ask_worker = ask::launch(state, pools.control.clone());
             let stopping = runtime.clone();
             let (stopped, drained) = tokio::sync::oneshot::channel::<()>();
             let served = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
@@ -293,6 +296,8 @@ async fn run() -> Result<()> {
                             tracing::error!("background supervisor stopped; exiting for managed recovery");
                         } => {},
                     }
+                    ask_worker.abort();
+                    let _ = ask_worker.await;
                     if let Err(error) = stopping.shutdown().await { tracing::error!(%error,"background shutdown failed"); }
                     let _ = stopped.send(());
                 });

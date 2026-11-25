@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use sqlx::Row;
 use uuid::Uuid;
 #[path = "ai_browser.rs"]
-mod browser;
+pub(crate) mod browser;
 #[path = "ai_settings.rs"]
 mod settings;
 type Result<T> = std::result::Result<T, ApiError>;

@@ -199,7 +199,7 @@ impl OpenAiProvider {
         }
         bail!("model retry limit")
     }
-    /// Stateless transport for the browser agent, which owns the retry budget.
+    /// Single-attempt streaming transport. The caller owns the retry budget.
     pub async fn forward(&self, body: &Value) -> Result<reqwest::Response> {
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(15))

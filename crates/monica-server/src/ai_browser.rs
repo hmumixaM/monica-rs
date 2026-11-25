@@ -1,4 +1,4 @@
-//! Stateless browser-owned agent transport. No transcript or tool loop on server.
+//! Ask model selection and shared LiteLLM transport.
 use super::{ApiError, AppState, Result, user};
 use axum::{
     Json, Router,
@@ -23,15 +23,24 @@ pub(super) fn routes() -> Router<AppState> {
 }
 async fn model(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     user(&s, &h).await?;
+    Ok(Json(model_settings(&s).await?))
+}
+pub(crate) async fn model_settings(s: &AppState) -> Result<Value> {
     let row = sqlx::query(
         "SELECT enabled,execution_enabled,qa_enabled,model,model_routes,qa_models,context_window,max_tokens FROM crm.ai_settings WHERE id",
     )
     .fetch_one(&s.pool)
     .await?;
-    let models = choices(&row);
-    Ok(Json(
+    let mut models = choices(&row);
+    let presets: Vec<_> = models
+        .iter()
+        .filter_map(|model| deepseek_medium(model))
+        .filter(|preset| !models.contains(preset))
+        .collect();
+    models.extend(presets);
+    Ok(
         json!({"enabled":row.get::<bool,_>("enabled")&&row.get::<bool,_>("execution_enabled")&&row.get::<bool,_>("qa_enabled"),"model":models[0],"models":models,"context_window":row.get::<i32,_>("context_window"),"max_tokens":row.get::<i32,_>("max_tokens")}),
-    ))
+    )
 }
 /// The models a question may be answered with: the configured one first, then
 /// the others the user may pick.
@@ -48,6 +57,26 @@ fn choices(row: &sqlx::postgres::PgRow) -> Vec<String> {
     }
     models
 }
+pub(crate) fn deepseek_medium(model: &str) -> Option<String> {
+    let name = model.rsplit('/').next()?;
+    (name == "deepseek-v4-pro").then(|| format!("{model}-medium"))
+}
+
+fn resolve_choice<'a>(models: &'a [String], requested: Option<&str>) -> (&'a str, bool) {
+    if let Some(requested) = requested {
+        if let Some(model) = models.iter().find(|model| model.as_str() == requested) {
+            return (model, false);
+        }
+        if let Some(model) = models
+            .iter()
+            .find(|model| deepseek_medium(model).as_deref() == Some(requested))
+        {
+            return (model, true);
+        }
+    }
+    (&models[0], false)
+}
+
 #[derive(Deserialize)]
 struct Completion {
     /// One of the configured choices; anything else means the default.
@@ -66,7 +95,7 @@ fn yes() -> bool {
 impl Completion {
     /// The request as the provider receives it: the configured model, and an
     /// output limit no larger than the configured one. Everything else is the
-    /// browser agent's own conversation; the provider rejects what it cannot read.
+    /// agent's conversation; the provider rejects what it cannot read.
     fn body(mut self, model: &str, max: i32) -> Value {
         let model_name = model.rsplit('/').next().unwrap_or(model);
         if model_name == "deepseek-flash" || model_name.starts_with("deepseek-v4-") {
@@ -106,6 +135,27 @@ async fn completion(State(s): State<AppState>, request: Request) -> Result<Respo
         Ok(Json(input)) => input,
         Err(rejection) => return Ok(rejection.into_response()),
     };
+    forward(&s, input, resources).await
+}
+
+pub(crate) async fn ask_completion(s: &AppState, body: Value) -> Result<Response> {
+    let resources = s
+        .resources
+        .try_acquire_model_stream(4 * 1024 * 1024)
+        .ok_or(ApiError(
+            StatusCode::TOO_MANY_REQUESTS,
+            "模型服务正忙，请稍后重试",
+        ))?;
+    let input = serde_json::from_value(body)
+        .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "问答请求格式无效"))?;
+    forward(s, input, resources).await
+}
+
+async fn forward(
+    s: &AppState,
+    input: Completion,
+    resources: monica_core::resources::ResourcePermit,
+) -> Result<Response> {
     let row = sqlx::query(
         "SELECT enabled,execution_enabled,qa_enabled,model,model_routes,qa_models,base_url,max_tokens FROM crm.ai_settings WHERE id",
     )
@@ -121,12 +171,13 @@ async fn completion(State(s): State<AppState>, request: Request) -> Result<Respo
         ));
     }
     let models = choices(&row);
-    let model = input
-        .model
-        .clone()
-        .filter(|model| models.contains(model))
-        .unwrap_or_else(|| models[0].clone());
-    let body = input.body(&model, row.get("max_tokens"));
+    let (model, medium) = resolve_choice(&models, input.model.as_deref());
+    let mut body = input.body(model, row.get("max_tokens"));
+    if medium {
+        // DeepSeek maps its compatibility value "medium" to the native high
+        // rung. Use the native spelling for older LiteLLM transforms as well.
+        body["reasoning_effort"] = json!("high");
+    }
     let provider = monica_core::ai::configured_provider(&s.pool, Some(&s.credentials))
         .await
         .map_err(|_| ApiError(StatusCode::SERVICE_UNAVAILABLE, "模型服务配置无效"))?

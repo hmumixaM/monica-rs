@@ -236,6 +236,7 @@ pub fn routes(state: AppState) -> Router {
         .merge(crate::faces::routes())
         .merge(crate::pages::routes(state.clone()))
         .merge(crate::ai::routes())
+        .merge(crate::ask::routes())
         .merge(crate::collector::routes())
         .merge(crate::connections::routes())
         .merge(crate::cdc::routes())
@@ -764,8 +765,8 @@ mod tests {
     }
 }
 
-// Only the MCP dispatcher constructs this scoped in-process router. No request
-// header can select an actor. The dispatcher exposes an explicit tool allowlist.
+// Internal dispatchers reach these routes through explicit tool allowlists.
+// No request header can select a delegated actor.
 pub(crate) fn delegated_routes(mut state: AppState, actor: (Uuid, String)) -> Router {
     state.delegated_actor = Some(actor);
     routes(state)
