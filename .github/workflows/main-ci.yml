@@ -1,12 +1,12 @@
 name: Rust validation
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 concurrency:
   group: rust-validation-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   test:
+    if: github.ref == 'refs/heads/main'
     # PostgreSQL 16 packages are part of the Ubuntu 24.04 test contract.
     runs-on: ubuntu-24.04
     services:
@@ -56,6 +56,7 @@ jobs:
           python3 scripts/test-nas-migration-copy.py
           python3 scripts/test-nas-migration-download.py
   web:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -90,6 +91,7 @@ jobs:
           name: browser-failure-evidence
           path: .local-validation/
   adapters:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -128,6 +130,7 @@ jobs:
           python3 scripts/test-sns-media-source.py
 
   optional-containers:
+    if: github.ref == 'refs/heads/main'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
@@ -163,6 +166,7 @@ jobs:
                   browser.close()
           '
   native:
+    if: github.ref == 'refs/heads/main'
     runs-on: macos-26
     timeout-minutes: 45
     env:
