@@ -177,6 +177,9 @@ async fn forward(
         // DeepSeek maps its compatibility value "medium" to the native high
         // rung. Use the native spelling for older LiteLLM transforms as well.
         body["reasoning_effort"] = json!("high");
+        // Older LiteLLM versions need an explicit pass-through for this
+        // parameter on DeepSeek routes. Scope it to this server-owned preset.
+        body["allowed_openai_params"] = json!(["reasoning_effort"]);
     }
     let provider = monica_core::ai::configured_provider(&s.pool, Some(&s.credentials))
         .await

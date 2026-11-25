@@ -148,6 +148,7 @@ async fn ask_runs_without_a_browser_and_recovers_a_stream_after_real_tag_lookup(
             async move {
                 assert_eq!(body["model"],"deepseek-v4-pro");
                 assert_eq!(body["reasoning_effort"],"high");
+                assert_eq!(body["allowed_openai_params"],json!(["reasoning_effort"]));
                 let messages = body["messages"].as_array().unwrap();
                 if attempt==0 {
                     let call = json!({"index":0,"id":"tag-fixture","function":{"name":"monica_cli","arguments":json!({"title":"按 QD 标签筛选联系人","script":script}).to_string()}});
