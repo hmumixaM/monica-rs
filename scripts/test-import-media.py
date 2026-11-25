@@ -130,6 +130,14 @@ class PublicationContract(unittest.TestCase):
                              {'sns_pending': 0, 'sns_ready': 0, 'sns_failed': 0})
         self.assertEqual(self.db.execute('SELECT entity_type,entity_id,role FROM crm.media_links').fetchall(),
                          [('social_interaction', comment, 'media-1')])
+        self.assertEqual(self.consumer.journal.execute('SELECT count(*) FROM sns_queue_seeds').fetchone()[0], 1)
+        images = fixtures.live.module('sns_reuse_comment_test', 'sns-media-import.py')
+        (self.args.sns_cache/name).unlink()
+        with patch.object(images, 'archived_xml', side_effect=AssertionError('must reuse the verified asset')):
+            self.assertEqual(images.import_event(self.db, snapshot, self.args.media, self.request.stage.parent/'fresh-state',
+                                                self.args.sns_runtime, self.args.sns_cache, self.event),
+                             {'ready': 1, 'failed': 0})
+        self.assertEqual(self.db.execute('SELECT count(*) FROM crm.media_links').fetchone()[0], 1)
 
 
 if __name__ == '__main__':

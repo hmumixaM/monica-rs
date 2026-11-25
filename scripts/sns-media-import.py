@@ -253,7 +253,8 @@ def import_event(db, source, media, state, runtime, cache, event_id):
                 digest, length = archived[0]
                 if archived_file(media, digest, length):
                     saved[key]=dict(status='ready');ready+=1;atomic(ledger,saved);continue
-        if not live and not photo.get('_interaction') and link_existing(db,media,event_id,photo['role'],photo.get('source_url'),photo['media_type']):
+        if not live and link_existing(db, media, event_id, photo['role'], photo.get('source_url'),
+                                      photo['media_type'], interaction_id=photo.get('_interaction')):
             saved[key]=dict(status='ready');ready+=1;atomic(ledger,saved);continue
         role=photo['role'];slot=photo.get('_slot')or int(role.removeprefix('media-'))
         try:

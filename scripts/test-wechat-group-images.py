@@ -64,11 +64,13 @@ class Images(unittest.TestCase):
         spec.loader.exec_module(recent)
         key = 'f' * 32
         with tempfile.TemporaryDirectory() as folder, closing(sqlite3.connect(':memory:')) as metadata, closing(sqlite3.connect(':memory:')) as ledger:
+            self.assertFalse(recent.supports_resources(metadata))
             metadata.executescript('''
                 CREATE TABLE ChatName2Id(user_name TEXT PRIMARY KEY);
                 CREATE TABLE MessageResourceInfo(chat_id, message_svr_id, message_create_time, message_local_type, packed_info);
                 INSERT INTO ChatName2Id VALUES ('peer'), ('other');
             ''')
+            self.assertTrue(recent.supports_resources(metadata))
             resource = bytes.fromhex('12220a20') + key.encode()
             metadata.execute('INSERT INTO MessageResourceInfo VALUES (1,-1,101,3,?)', (resource,))
             metadata.execute('INSERT INTO MessageResourceInfo VALUES (2,-1,101,47,?)', (resource,))

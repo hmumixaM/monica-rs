@@ -101,6 +101,19 @@ def resource_hash(metadata, peer, record, server, timestamp):
     return None
 
 
+def supports_resources(db):
+    if db is None:
+        return False
+    required = {
+        'ChatName2Id': {'user_name'},
+        'MessageResourceInfo': {
+            'chat_id', 'message_svr_id', 'message_create_time', 'message_local_type', 'packed_info',
+        },
+    }
+    return all(columns <= {row[1] for row in db.execute(f'PRAGMA table_info({table})')}
+               for table, columns in required.items())
+
+
 def cache_folders(peer, day):
     identity = hashlib.md5(peer.encode('utf-8')).hexdigest()
     first = day.replace(day=1)
@@ -176,7 +189,7 @@ class RecentImages(images.Worker):
                 self.resource_signature = publish_snapshot(path, target, progress=lambda *_: self.guard())
             connection = closing(sqlite3.connect(target.as_uri() + '?mode=ro&immutable=1', uri=True))
         with connection as resource:
-            self.resources = resource
+            self.resources = resource if supports_resources(resource) else None
             try:
                 self.scan_resources()
             finally:

@@ -125,6 +125,7 @@ class Consumer:
         self.journal.execute('CREATE TABLE IF NOT EXISTS delivered(provider TEXT,stream TEXT,external_id TEXT,account TEXT,digest TEXT,receipt TEXT,PRIMARY KEY(provider,stream,external_id,account))')
         self.journal.execute('CREATE TABLE IF NOT EXISTS source_files(path TEXT PRIMARY KEY,signature TEXT)')
         self.journal.execute('CREATE TABLE IF NOT EXISTS sns_pending(event_id TEXT PRIMARY KEY,attempts INTEGER NOT NULL DEFAULT 0,retry_at REAL NOT NULL DEFAULT 0)')
+        self.journal.execute('CREATE TABLE IF NOT EXISTS sns_queue_seeds(name TEXT PRIMARY KEY)')
         self.last_path = None
         self.last_input_time = None
         self.last_input = None
@@ -534,8 +535,7 @@ class Consumer:
             return {}
         # Recover already acknowledged pages from the existing live boundary.
         # Record the seed and its work in one transaction so restart is safe.
-        sns_version = self.journal.execute('PRAGMA user_version').fetchone()[0]
-        if sns_version < 3:
+        if not self.journal.execute("SELECT 1 FROM sns_queue_seeds WHERE name='moments-and-comments'").fetchone():
             missing = self.db.execute("""
                 SELECT e.id FROM crm.timeline_events e
                 WHERE e.provider='wechat' AND e.event_type='post' AND e.status='active' AND (
@@ -567,7 +567,9 @@ class Consumer:
                     'INSERT INTO sns_pending(event_id,attempts) VALUES(?,1) ON CONFLICT DO NOTHING',
                     [(str(event_id),) for (event_id,) in missing],
                 )
-                self.journal.execute(f'PRAGMA user_version={3 if sns_version == 2 else 1}')
+                self.journal.execute("INSERT INTO sns_queue_seeds VALUES('moments-and-comments')")
+                if self.journal.execute('PRAGMA user_version').fetchone()[0] == 0:
+                    self.journal.execute('PRAGMA user_version=1')
         if runtime is not None and self.journal.execute('PRAGMA user_version').fetchone()[0] == 1:
             images = module('sns_event_images', 'sns-media-import.py')
             historical = images.historical_motion_events(self.db, snapshot, self.args.media, lambda: STOP)
@@ -577,7 +579,7 @@ class Consumer:
                         'INSERT INTO sns_pending(event_id,attempts,retry_at) VALUES(?,1,?) ON CONFLICT DO NOTHING',
                         historical,
                     )
-                    self.journal.execute('PRAGMA user_version=3')
+                    self.journal.execute('PRAGMA user_version=2')
         pending = self.journal.execute('SELECT count(*) FROM sns_pending').fetchone()[0]
         if runtime is None:
             return dict(sns_pending=pending, sns_runtime_configured=False)

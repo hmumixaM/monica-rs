@@ -13,7 +13,7 @@ def matches_source(media, role, source_url):
     return False
 
 
-def link_existing(db, media_root, event_id, role, source_url, media_kind='image'):
+def link_existing(db, media_root, event_id, role, source_url, media_kind='image', *, interaction_id=None):
     """Reuse the unique verified file already bound to this exact URL."""
     from psycopg.types.json import Jsonb
 
@@ -37,38 +37,46 @@ def link_existing(db, media_root, event_id, role, source_url, media_kind='image'
     with db.transaction():
         row = db.execute(
             "SELECT content,source_account_id FROM crm.timeline_events "
-            "WHERE id=%s AND provider='wechat' FOR UPDATE", (event_id,),
+            "WHERE id=%s AND provider='wechat' AND status='active' FOR UPDATE", (event_id,),
         ).fetchone()
+        entity_type, entity_id = 'social_post', event_id
+        if row and interaction_id is not None:
+            entity_type, entity_id = 'social_interaction', interaction_id
+            row = db.execute("""
+                SELECT metadata,author_account_id FROM crm.social_interactions
+                WHERE id=%s AND post_id=%s AND provider='wechat'
+                  AND interaction_type IN ('comment','reply') AND NOT is_deleted FOR UPDATE
+            """, (entity_id, event_id)).fetchone()
         if not row or not any(matches_source(item, role, source_url) for item in row[0].get('media', [])):
             raise ValueError('sns_source_revision_changed')
-        lock = 'media-slot:social_post:' + str(event_id) + ':' + role
+        lock = f'media-slot:{entity_type}:{entity_id}:{role}'
         if not db.execute('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))', (lock,)).fetchone()[0]:
             raise BlockingIOError('sns_slot_busy')
         prior = db.execute(
             "SELECT media_id FROM crm.media_links "
-            "WHERE entity_type='social_post' AND entity_id=%s AND role=%s", (event_id, role),
+            "WHERE entity_type=%s AND entity_id=%s AND role=%s", (entity_type, entity_id, role),
         ).fetchall()
         if any(item[0] != media_id for item in prior):
             raise ValueError('sns_slot_identity_conflict')
         chosen = db.execute(
             "INSERT INTO crm.media_slots(entity_type,entity_id,role,media_id) "
-            "VALUES('social_post',%s,%s,%s) ON CONFLICT(entity_type,entity_id,role) "
+            "VALUES(%s,%s,%s,%s) ON CONFLICT(entity_type,entity_id,role) "
             "DO UPDATE SET media_id=crm.media_slots.media_id RETURNING media_id",
-            (event_id, role, media_id),
+            (entity_type, entity_id, role, media_id),
         ).fetchone()[0]
         if chosen != media_id:
             raise ValueError('sns_slot_identity_conflict')
         inserted = db.execute(
             "INSERT INTO crm.media_links(entity_type,entity_id,role,media_id,source_account_id) "
-            "VALUES('social_post',%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-            (event_id, role, media_id, row[1]),
+            "VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+            (entity_type, entity_id, role, media_id, row[1]),
         ).rowcount
         if inserted:
             metadata = dict(role=role, media_id=str(media_id), source_url=source_url,
                             sha256=digest, files_deleted=0, references_deleted=0)
             db.execute(
                 "INSERT INTO crm.audit_events(action,entity_type,entity_id,metadata) "
-                "VALUES('media.sns_existing_file_linked','social_post',%s,%s)",
-                (event_id, Jsonb(metadata)),
+                "VALUES('media.sns_existing_file_linked',%s,%s,%s)",
+                (entity_type, entity_id, Jsonb(metadata)),
             )
     return True
