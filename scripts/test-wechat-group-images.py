@@ -2,6 +2,7 @@
 """Focused, offline regressions. Optional PG contract uses a disposable database."""
 import base64
 from contextlib import closing, redirect_stdout
+from datetime import date
 import importlib.util
 import io
 import json
@@ -56,6 +57,35 @@ class Images(unittest.TestCase):
                 self.assertEqual(ledger.execute('SELECT md5,path,quality FROM files ORDER BY md5').fetchall(),[(identity,str(alias.relative_to(source)),'high')for identity in ('c'*32,'d'*32)])
                 image.unlink()
                 self.assertEqual(recent.requested_catalog(source,metadata,ledger,{key},lambda:None),0)
+
+    def test_resource_database_resolves_only_the_same_chat_and_message(self):
+        spec = importlib.util.spec_from_file_location('recent_images', ROOT/'scripts/nas-wechat-images.py')
+        recent = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(recent)
+        key = 'f' * 32
+        with tempfile.TemporaryDirectory() as folder, closing(sqlite3.connect(':memory:')) as metadata, closing(sqlite3.connect(':memory:')) as ledger:
+            metadata.executescript('''
+                CREATE TABLE ChatName2Id(user_name TEXT PRIMARY KEY);
+                CREATE TABLE MessageResourceInfo(chat_id, message_svr_id, message_create_time, message_local_type, packed_info);
+                INSERT INTO ChatName2Id VALUES ('peer'), ('other');
+            ''')
+            resource = bytes.fromhex('12220a20') + key.encode()
+            metadata.execute('INSERT INTO MessageResourceInfo VALUES (1,-1,101,3,?)', (resource,))
+            metadata.execute('INSERT INTO MessageResourceInfo VALUES (2,-1,101,47,?)', (resource,))
+            self.assertEqual(recent.resource_hash(metadata, 'peer', 'server:18446744073709551615', None, 101), key)
+            self.assertIsNone(recent.resource_hash(metadata, 'peer', None, '-1', 100))
+            self.assertIsNone(recent.resource_hash(metadata, 'other', None, '-1', 101))
+            metadata.execute('INSERT INTO MessageResourceInfo VALUES (1,-1,101,3,?)', (resource,))
+            self.assertIsNone(recent.resource_hash(metadata, 'peer', None, '-1', 101))
+            ledger.execute('CREATE TABLE files(md5 TEXT,path TEXT,quality TEXT,tier INTEGER,bytes INTEGER,mtime INTEGER,PRIMARY KEY(md5,path))')
+            source = Path(folder).resolve()
+            folders = recent.cache_folders('peer', date(2026, 11, 1))
+            path = folders[0] / 'Img' / (key + '_t.dat')
+            for item in (path, Path('attach/unrelated/2026-10/Img') / path.name):
+                (source / item).parent.mkdir(parents=True)
+                (source / item).write_bytes(PNG)
+            recent.resource_catalog(source, ledger, {folder: {key} for folder in folders}, lambda: None)
+            self.assertEqual(ledger.execute('SELECT path,quality FROM files').fetchall(), [(str(path), 'thumbnail')])
 
     def test_no_run_does_not_open_database_or_source(self):
         result = subprocess.run([sys.executable, str(ROOT / 'scripts/wechat-group-images.py')],

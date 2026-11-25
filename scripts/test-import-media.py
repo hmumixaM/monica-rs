@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import sqlite3
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -91,6 +92,44 @@ class PublicationContract(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT count(*) FROM crm.media_assets').fetchone()[0],0)
         self.assertEqual(self.db.execute('SELECT count(*) FROM crm.media_links').fetchone()[0],0)
         self.assertFalse((self.request.state/'result.json').exists())
+
+    def test_comment_only_post_uses_archived_xml_after_the_live_snapshot_loses_it(self):
+        comment = uuid.uuid4()
+        media = {**self.content['media'][0], 'source_md5': None}
+        self.db.execute('UPDATE crm.timeline_events SET content=%s WHERE id=%s',
+                        (Jsonb({'source_tid': '100', 'media': []}), self.event))
+        self.db.execute("""
+            INSERT INTO crm.social_interactions
+                (id,post_id,provider,external_id,interaction_type,author_external_id,occurred_at,content,metadata)
+            VALUES(%s,%s,'wechat','100:comment:77','reply','peer','2026-11-14','{}',%s)
+        """, (comment, self.event, Jsonb({'media': [media]})))
+        raw = ('<SnsObject><TimelineObject><id>100</id></TimelineObject><LocalExtraInfo>'
+               '<comment_user_list><user_comment><comment_64id>77</comment_64id><username>peer</username>'
+               f'<imagelist><imageinfo><media_id>101</media_id><url>{self.url}</url></imageinfo></imagelist>'
+               '</user_comment></comment_user_list></LocalExtraInfo></SnsObject>')
+        evidence = uuid.uuid4()
+        self.db.execute("INSERT INTO crm.content_objects(id,content_kind,sha256,byte_length,payload_json) VALUES (%s,'social_post',%s,2,'{}')",
+                        (evidence, 'a'*64))
+        self.db.execute("""
+            INSERT INTO crm.legacy_social_versions(id,event_id,content_object_id,content_hash,observed_at,original)
+            VALUES(%s,%s,%s,'synthetic',now(),%s)
+        """, (uuid.uuid4(), self.event, evidence, Jsonb({'raw_content': raw})))
+        snapshot = self.args.chatlog/'sns/sns.db'
+        snapshot.parent.mkdir()
+        with sqlite3.connect(snapshot) as source:
+            source.execute('CREATE TABLE SnsTimeLine(tid INTEGER PRIMARY KEY,content TEXT)')
+        self.args.sns_runtime = self.request.stage.parent/'runtime'
+        self.args.sns_cache = self.request.stage.parent/'cache'
+        self.args.sns_cache.mkdir()
+        name = hashlib.md5((self.url+'|').encode()).hexdigest()+'.bin'
+        (self.args.sns_cache/name).write_bytes((self.request.stage/'objects'/self.asset['sha256']).read_bytes())
+        with patch('monica_imports.sns_publication.subprocess.run', return_value=self.validator):
+            self.assertEqual(self.consumer.import_sns_media(self.args.chatlog),
+                             {'sns_pending': 0, 'sns_ready': 1, 'sns_failed': 0})
+            self.assertEqual(self.consumer.import_sns_media(self.args.chatlog),
+                             {'sns_pending': 0, 'sns_ready': 0, 'sns_failed': 0})
+        self.assertEqual(self.db.execute('SELECT entity_type,entity_id,role FROM crm.media_links').fetchall(),
+                         [('social_interaction', comment, 'media-1')])
 
 
 if __name__ == '__main__':

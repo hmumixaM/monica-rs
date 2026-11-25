@@ -404,7 +404,7 @@ class Consumer:
         paths = [*root.glob('contact/contact.db'),*root.glob('message/message_[0-9]*.db'),*root.glob('message/biz_message_[0-9]*.db'),*root.glob('sns/sns.db')]
         if not paths or len(paths) > 1024:
             raise ValueError('explicit Chatlog export unavailable')
-        for path in sorted(paths):
+        for path in sorted(paths, key=lambda path: (path.name != 'sns.db', path)):
             if STOP:
                 return destination
             if path.resolve() != path:
@@ -454,7 +454,9 @@ class Consumer:
             reader_state.mkdir(parents=True,exist_ok=True)
             self.legacy.bind_reader_target(self.db,reader_state,own,importer.id)
             scan = self.legacy.reader.Reader(reader_state,source,own,self.legacy.atomic,lambda p:json.loads(Path(p).read_text()),own_id=own,allow_unknown_source_sender=True)
+            queued_moments = False
             def emit(frame):
+                nonlocal queued_moments
                 with self.db.transaction():
                     before = self.db.execute("SELECT inserted,changed,unchanged FROM crm.legacy_chatlog_snapshots WHERE id=%s",(importer.id,)).fetchone()
                     importer.page(frame)
@@ -473,7 +475,11 @@ class Consumer:
                 posts = []
                 for record in frame['batch']['records']:
                     value = record['content']
-                    if value.get('kind') != 'post' or not value.get('media') or 'raw_content' not in value:
+                    if value.get('kind') != 'post' or 'raw_content' not in value:
+                        continue
+                    if not value.get('media') and not any(
+                        item.get('media') and not item.get('is_deleted') for item in value.get('interactions', [])
+                    ):
                         continue
                     root, _ = self.legacy.reader.moments.parse_moments_xml(value['raw_content'])
                     obj = root if root.tag == 'TimelineObject' else root.find('TimelineObject')
@@ -487,15 +493,32 @@ class Consumer:
                         'INSERT INTO sns_pending(event_id) VALUES(?) '
                         'ON CONFLICT(event_id) DO UPDATE SET retry_at=0', posts,
                     )
+                queued_moments |= bool(posts)
                 self.legacy.atomic(reader_state/frame['ack_path'],dict(page_sha256=frame['page_sha256'],receipt_id=str(importer.id)))
                 self.counters['chatlog_pages'] += 1
                 self.progress('chatlog_received')
             try:
-                while not STOP and scan.step(emit):
-                    pass
+                while not STOP and scan.step(emit, prefer_moments=True):
+                    if queued_moments:
+                        break
                 importer.settle_revocations()
-            finally:
+            except BaseException:
                 scan.close()
+                raise
+
+        try:
+            if queued_moments and not STOP:
+                # Fetch from the freshly queued page before scanning message
+                # shards, with no source-import lock held during network I/O.
+                status = self.import_sns_media(source)
+                for key in ('sns_ready', 'sns_failed'):
+                    earlier_media[key] = earlier_media.get(key, 0) + status.get(key, 0)
+                with self.chatlog_control():
+                    while not STOP and scan.step(emit, prefer_moments=True):
+                        pass
+                    importer.settle_revocations()
+        finally:
+            scan.close()
 
         if not STOP:
             status = self.import_sns_media(source)
@@ -511,11 +534,12 @@ class Consumer:
             return {}
         # Recover already acknowledged pages from the existing live boundary.
         # Record the seed and its work in one transaction so restart is safe.
-        if self.journal.execute('PRAGMA user_version').fetchone()[0] == 0:
+        sns_version = self.journal.execute('PRAGMA user_version').fetchone()[0]
+        if sns_version < 3:
             missing = self.db.execute("""
                 SELECT e.id FROM crm.timeline_events e
-                WHERE e.provider='wechat' AND e.event_type='post' AND e.occurred_at>=%s
-                  AND e.content ? 'source_tid' AND EXISTS (
+                WHERE e.provider='wechat' AND e.event_type='post' AND e.status='active' AND (
+                  (e.occurred_at>=%s AND e.content ? 'source_tid' AND EXISTS (
                     SELECT 1 FROM jsonb_array_elements(coalesce(e.content->'media','[]')) m
                     CROSS JOIN LATERAL (VALUES
                         (m->>'role', m->>'media_type'='image' OR (m->>'media_type'='video' AND m->>'source_url' IS NOT NULL)),
@@ -524,14 +548,26 @@ class Consumer:
                     WHERE slot.expected AND NOT EXISTS (
                         SELECT 1 FROM crm.media_links l WHERE l.entity_type='social_post' AND l.entity_id=e.id AND l.role=slot.role
                     )
+                  )) OR EXISTS (
+                    SELECT 1 FROM crm.social_interactions i
+                    CROSS JOIN LATERAL jsonb_array_elements(
+                        CASE WHEN jsonb_typeof(i.metadata->'media')='array' THEN i.metadata->'media' ELSE '[]' END
+                    ) m
+                    WHERE i.post_id=e.id AND i.provider='wechat' AND i.interaction_type IN ('comment','reply')
+                      AND NOT i.is_deleted AND coalesce(i.occurred_at,e.occurred_at)>=%s AND m->>'media_type'='image'
+                      AND NOT EXISTS (
+                        SELECT 1 FROM crm.media_links l WHERE l.entity_type='social_interaction'
+                          AND l.entity_id=i.id AND l.role=m->>'role'
+                      )
                   )
-            """, (self.args.since,)).fetchall()
+                )
+            """, (self.args.since, self.args.since)).fetchall()
             with self.journal:
                 self.journal.executemany(
                     'INSERT INTO sns_pending(event_id,attempts) VALUES(?,1) ON CONFLICT DO NOTHING',
                     [(str(event_id),) for (event_id,) in missing],
                 )
-                self.journal.execute('PRAGMA user_version=1')
+                self.journal.execute(f'PRAGMA user_version={3 if sns_version == 2 else 1}')
         if runtime is not None and self.journal.execute('PRAGMA user_version').fetchone()[0] == 1:
             images = module('sns_event_images', 'sns-media-import.py')
             historical = images.historical_motion_events(self.db, snapshot, self.args.media, lambda: STOP)
@@ -541,7 +577,7 @@ class Consumer:
                         'INSERT INTO sns_pending(event_id,attempts,retry_at) VALUES(?,1,?) ON CONFLICT DO NOTHING',
                         historical,
                     )
-                    self.journal.execute('PRAGMA user_version=2')
+                    self.journal.execute('PRAGMA user_version=3')
         pending = self.journal.execute('SELECT count(*) FROM sns_pending').fetchone()[0]
         if runtime is None:
             return dict(sns_pending=pending, sns_runtime_configured=False)

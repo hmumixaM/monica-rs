@@ -343,10 +343,12 @@ class Reader:
                 self.db.execute("INSERT INTO files(name,stamp,pin,cycle,pin_stamp,phase) VALUES(?,?,?,?,?,'names') ON CONFLICT(name) DO UPDATE SET stamp=excluded.stamp,pin=excluded.pin,cycle=excluded.cycle,table_name='',row_id=0,phase='names',done=0,pin_stamp=excluded.pin_stamp,retry_after=0,error=NULL",(name,current,str(pin),cycle,stamp(pin)))
                 self.db.execute('DELETE FROM names WHERE file=?',(name,))
             if row:Path(row['pin']).unlink(missing_ok=True)
-    def step(self,emit):
+    def step(self,emit,prefer_moments=False):
         if self.pending(emit):return True
         self.discover()
-        state=self.db.execute('SELECT * FROM files WHERE done=0 AND retry_after<=? ORDER BY served,name LIMIT 1',(time.time(),)).fetchone()
+        state=self.db.execute("""SELECT * FROM files WHERE done=0 AND retry_after<=?
+            ORDER BY CASE WHEN ? AND name='sns/sns.db' THEN 0 ELSE 1 END, served,name LIMIT 1""",
+            (time.time(), prefer_moments)).fetchone()
         if state is None:
             if self.db.execute('SELECT count(*) FROM files WHERE done=0 AND error IS NOT NULL').fetchone()[0]:raise RuntimeError('Chatlog independent snapshot retry pending')
             return False

@@ -450,6 +450,8 @@ class Importer:
                         same=same and datetime.fromisoformat(value)==datetime.fromisoformat(actual)
                     elif field=='content':same=same and (actual.get('text') or '')==value['text']
                     else:same=same and actual==value
+                if 'media' in item and current['metadata'].get('media') != item['media']:
+                    same = False
                 if same:continue
                 if self.verifying:raise ValueError("Chatlog interaction differs from its snapshot")
                 co,_=self.content('social_interaction',item)

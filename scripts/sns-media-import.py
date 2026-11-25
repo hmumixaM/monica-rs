@@ -13,6 +13,11 @@ from pathlib import Path
 import sqlite3
 import struct
 import subprocess
+from urllib.error import HTTPError
+from urllib.parse import urlsplit
+from urllib.request import Request, build_opener
+import xml.etree.ElementTree as ET
+from chatlog_moments import comment_images, parse_moments_xml
 from monica_imports.sns_publication import DatabaseTarget, Publication, publish
 from monica_imports.source_media import link_existing
 
@@ -116,6 +121,72 @@ def historical_motion_events(db, source, media, stopped):
                         pending.append((str(event_id), -occurred.timestamp() if occurred else 0))
                         break
     return pending
+def archived_xml(db, event):
+    row = db.execute("""
+        SELECT raw FROM (
+            SELECT v.original->>'raw_content' AS raw, v.observed_at AS seen
+            FROM crm.legacy_social_versions v WHERE v.event_id=%s
+            UNION ALL
+            SELECT o.payload_json->>'raw_content', v.created_at
+            FROM crm.legacy_chatlog_versions v JOIN crm.content_objects o
+              ON o.id=(v.saved_row->>'raw_object_id')::uuid
+            WHERE v.entity_type='post' AND v.entity_id=%s AND v.saved_row ? 'raw_object_id'
+        ) source WHERE raw IS NOT NULL ORDER BY seen DESC LIMIT 1
+    """, (event, event)).fetchone()
+    return row[0] if row else None
+
+
+def comment_xml(raw, external, comment, author):
+    if raw is None:
+        return None
+    root, _ = parse_moments_xml(raw)
+    if root.findtext('TimelineObject/id') != external:
+        return None
+    for index, item in enumerate(root.findall('LocalExtraInfo/comment_user_list/user_comment')):
+        username = item.findtext('username') or ''
+        created = item.findtext('create_time')
+        key = next((value for value in (item.findtext('comment_64id'), item.findtext('comment_id'))
+                    if value and value != '0'), f'{username}:{created or index}')
+        if f'{external}:comment:{key}' != comment or username != author or item.findtext('b_deleted') == '1':
+            continue
+        post = ET.Element('TimelineObject')
+        ET.SubElement(post, 'id').text = external
+        ET.SubElement(ET.SubElement(post, 'ContentObject'), 'mediaList').extend(comment_images(item))
+        return ET.tostring(post, encoding='unicode')
+    return None
+
+
+def normalized_url(value):
+    return value.replace('http://', 'https://', 1) if value else None
+
+
+def public_image(fetch, photo, external, slot):
+    """Fetch the exact stored CDN reference when a raw snapshot no longer contains it."""
+    original = photo.get('source_url') or photo.get('thumbnail_url')
+    options = [original]
+    if not photo.get('source_md5') or photo.get('source_kind') == 'wechat_channels':
+        options.append(photo.get('thumbnail_url'))
+    for url in dict.fromkeys(options):
+        if not url:
+            continue
+        url = normalized_url(url)
+        parsed = urlsplit(url)
+        host = parsed.hostname or ''
+        if (parsed.scheme != 'https' or parsed.username or parsed.password or parsed.port not in (None, 443)
+                or not (host in ('mmsns.c2c.wechat.com', 'mmsns.hk.wechat.com', 'wxapp.tc.qq.com', 'vweixinthumb.tc.qq.com')
+                        or host.endswith(('.qpic.cn', '.qlogo.cn', '.video.qq.com')))):
+            continue
+        try:
+            request = Request(url, headers={'User-Agent': 'MicroMessenger Client', 'Accept': 'image/*'})
+            with build_opener(fetch.NoRedirect()).open(request, timeout=10) as response:
+                data = response.read(32 * 1024 * 1024 + 1)
+        except HTTPError:
+            continue
+        if len(data) <= 32 * 1024 * 1024 and data.startswith((b'\xff\xd8\xff', b'\x89PNG\r\n\x1a\n')):
+            return dict(source_url=normalized_url(original), external_id=external, slot=slot,
+                        source_media_id=photo.get('source_media_id'), source_md5=photo.get('source_md5'),
+                        source_reference_sha256=hashlib.sha256(json.dumps(photo, sort_keys=True).encode()).hexdigest()), data
+    raise ValueError('sns_public_image_unavailable')
 
 
 def import_event(db, source, media, state, runtime, cache, event_id):
@@ -123,10 +194,16 @@ def import_event(db, source, media, state, runtime, cache, event_id):
     fetch=module('sns_source_frame',scripts.parent/'tools/sns-decrypt/fetch_frame.py')
     state=Path(state);state.mkdir(parents=True,exist_ok=True)
     assert state.resolve()==state and media.resolve()==media and source.resolve()==source
-    row=db.execute("SELECT external_id,content FROM crm.timeline_events WHERE id=%s AND provider='wechat'",(event_id,)).fetchone()
-    if not row:raise ValueError('sns_import_event_missing')
+    row=db.execute("SELECT external_id,content FROM crm.timeline_events WHERE id=%s AND provider='wechat' AND status='active'",(event_id,)).fetchone()
+    if not row:return dict(ready=0,failed=0)
     external,content=row
     identities=[]
+    comments = db.execute("""
+        SELECT id::text,external_id,author_external_id,metadata->'media' FROM crm.social_interactions
+        WHERE post_id=%s AND provider='wechat' AND interaction_type IN ('comment','reply') AND NOT is_deleted
+          AND jsonb_typeof(metadata->'media')='array' AND metadata->'media'<>'[]'
+        ORDER BY id
+    """, (event_id,)).fetchall()
     for photo in content.get('media',[]):
         if photo.get('media_type')not in('image','video'):continue
         value=[str(event_id),photo.get('role'),photo.get('source_media_id'),photo.get('source_md5'),photo.get('source_url'),photo.get('thumbnail_url')]
@@ -140,6 +217,14 @@ def import_event(db, source, media, state, runtime, cache, event_id):
         value = [str(event_id), motion['role'], motion['source_media_id'], motion['source_md5'],
                  motion['source_url'], content['raw_xml_sha256']]
         identities.append((hashlib.sha256(json.dumps(value).encode()).hexdigest(), motion))
+    for interaction, comment, author, media_slots in comments:
+        for photo in media_slots:
+            if photo.get('media_type') != 'image':
+                continue
+            value = [str(event_id), interaction, photo.get('role'), photo.get('source_media_id'),
+                     photo.get('source_md5'), photo.get('source_url'), photo.get('thumbnail_url')]
+            key = hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+            identities.append((key, {**photo, '_interaction': interaction, '_comment': comment, '_author': author}))
     if not identities:return dict(ready=0,failed=0)
     event_state=state/str(event_id);event_state.mkdir(exist_ok=True)
     ledger=event_state/'photos.json'
@@ -151,6 +236,7 @@ def import_event(db, source, media, state, runtime, cache, event_id):
     staged=[];ready=0
     stage=event_state/'stage';objects=stage/'objects';receipt=event_state/'receipt'
     objects.mkdir(parents=True,exist_ok=True);receipt.mkdir(exist_ok=True)
+    raw_sources = None
     for key,photo in pending:
         if photo['media_type']=='video' and not photo.get('source_url'):
             saved[key]=dict(status='source_only',code='source_has_cover_only');atomic(ledger,saved);continue
@@ -167,7 +253,7 @@ def import_event(db, source, media, state, runtime, cache, event_id):
                 digest, length = archived[0]
                 if archived_file(media, digest, length):
                     saved[key]=dict(status='ready');ready+=1;atomic(ledger,saved);continue
-        if not live and link_existing(db,media,event_id,photo['role'],photo.get('source_url'),photo['media_type']):
+        if not live and not photo.get('_interaction') and link_existing(db,media,event_id,photo['role'],photo.get('source_url'),photo['media_type']):
             saved[key]=dict(status='ready');ready+=1;atomic(ledger,saved);continue
         role=photo['role'];slot=photo.get('_slot')or int(role.removeprefix('media-'))
         try:
@@ -181,20 +267,50 @@ def import_event(db, source, media, state, runtime, cache, event_id):
                             or header['source_url'] != photo['source_url'].replace('http://', 'https://', 1)):
                         raise ValueError('live photo source revision changed')
             else:
-                header,data=fetch.frame(source,external,slot,cache_root=cache,source_tid=content.get('source_tid'),thumbnail=photo.get('_thumbnail',False),source_media_id=photo.get('source_media_id'),source_kind=photo.get('source_kind'))
-                encoded=json.dumps(header).encode()
-                private_frame=struct.pack('>I',len(encoded))+encoded+data
-                decoded=subprocess.run([str(runtime/'node-run'),str(scripts.parent/'tools/sns-decrypt/decrypt.cjs'),str(runtime/'wasm')],input=private_frame,capture_output=True,timeout=45)
-                if decoded.returncode:raise ValueError('sns_decode_failed')
-                checked=subprocess.run([str(runtime/'validate')],input=decoded.stdout,capture_output=True,timeout=20)
+                if raw_sources is None:
+                    try:
+                        with fetch.read_post(source, external, content.get('source_tid'), missing_ok=True) as xml:
+                            live_xml = xml
+                    except (FileNotFoundError, ValueError, sqlite3.Error):
+                        live_xml = None
+                    raw_sources = tuple(dict.fromkeys(filter(None, (live_xml, archived_xml(db, event_id)))))
+                header, data = None, None
+                for raw in raw_sources:
+                    try:
+                        selected_xml = comment_xml(raw, external, photo['_comment'], photo['_author']) if photo.get('_interaction') else raw
+                        if selected_xml is None:
+                            continue
+                        proof, payload = fetch.frame(source, external, slot, cache_root=cache,
+                            thumbnail=photo.get('_thumbnail',False), source_media_id=photo.get('source_media_id'),
+                            source_kind=photo.get('source_kind'), raw_xml=selected_xml)
+                    except (HTTPError, ET.ParseError, ValueError, IndexError):
+                        continue
+                    expected = normalized_url(photo.get('source_url') or photo.get('thumbnail_url'))
+                    if (proof['source_url'] == expected and proof['source_media_id'] == photo.get('source_media_id')
+                            and proof['source_md5'] == photo.get('source_md5')):
+                        if photo.get('_interaction'):
+                            proof['raw_xml_sha256'] = fetch.xml_hash(raw)
+                        header, data = proof, payload
+                        break
+                if header is None:
+                    header, data = public_image(fetch, photo, external, slot)
+                if not data.startswith((b'\xff\xd8\xff', b'\x89PNG\r\n\x1a\n')):
+                    encoded=json.dumps(header).encode()
+                    private_frame=struct.pack('>I',len(encoded))+encoded+data
+                    decoded=subprocess.run([str(runtime/'node-run'),str(scripts.parent/'tools/sns-decrypt/decrypt.cjs'),str(runtime/'wasm')],input=private_frame,capture_output=True,timeout=45)
+                    if decoded.returncode:raise ValueError('sns_decode_failed')
+                    data=decoded.stdout
+                checked=subprocess.run([str(runtime/'validate')],input=data,capture_output=True,timeout=20)
                 if checked.returncode:raise ValueError('sns_pixels_failed')
                 asset=json.loads(checked.stdout)
                 target=objects/asset['sha256']
                 if not target.exists():
-                    with target.open('xb')as output:output.write(decoded.stdout);output.flush();os.fsync(output.fileno())
+                    with target.open('xb')as output:output.write(data);output.flush();os.fsync(output.fileno())
                 header.pop('seed',None)
                 header.update(media=asset,full_pixels=True)
             header.update(event_id=str(event_id),asset_role=role)
+            if photo.get('_interaction'):
+                header['interaction_id'] = photo['_interaction']
             saved[key]=dict(status='downloaded',row=header);staged.append((key,header))
         except Exception as error:
             # Exceptions from HTTP/XML may include image credentials. Persist

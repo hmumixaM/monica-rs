@@ -312,15 +312,21 @@ class Worker:
             after = rows[-1][0]
         self.db.execute("UPDATE crm.wechat_image_runs SET discovery_complete=true,status='running',heartbeat_at=now() WHERE id=%s", (self.run_id,))
 
+    def references(self, row):
+        return image_references(*row[3:])
+
+    def candidate_files(self, row, references):
+        return candidates(self.ledger, references)
+
     def item(self, mid):
         self.guard()
         row = self.db.execute(self.current_sql + ' AND m.message_id=%s', (*self.query_args, mid)).fetchone()
         state, q, asset = 'source_changed', 'none', None
         if row:
-            refs = image_references(*row[3:])
+            refs = self.references(row)
             reference_hash = hashlib.sha256(json.dumps(sorted(refs), separators=(',', ':')).encode()).hexdigest()
             provenance_prefix = 'group-image:' + str(mid) + ':' + reference_hash
-            choices = candidates(self.ledger, refs)
+            choices = self.candidate_files(row, refs)
             state = 'no_reference' if not refs else 'source_missing'
             # Reuse assets published by the original import, as well as this worker.
             # An opaque filename never earns an original/high quality claim.

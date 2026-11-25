@@ -4,7 +4,7 @@ No credentials, frame, or request URL is written to disk or diagnostic output.
 This is a one-shot fetch, not a watcher or recurring audit.
 """
 import argparse
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, nullcontext
 import hashlib
 import json
 from pathlib import Path
@@ -70,10 +70,12 @@ def live_assets(obj):
 
 
 def frame(source, external, slot, cache_root=None, source_tid=None, destination=None, thumbnail=False,
-          source_media_id=None, source_kind=None, live_motion=False):
+          source_media_id=None, source_kind=None, live_motion=False, raw_xml=None):
     if not 1 <= slot <= 100:
         raise ValueError('invalid source selection')
-    with read_post(source, external, source_tid) as xml:
+    source = Path(source)
+    context = read_post(source, external, source_tid) if raw_xml is None else nullcontext(raw_xml)
+    with context as xml:
         root, obj = post_xml(xml)
         if obj is None or obj.findtext('id') != external:
             raise ValueError('source identity mismatch')
