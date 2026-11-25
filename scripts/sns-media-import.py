@@ -250,7 +250,15 @@ def import_event(db, source, media, state, runtime, cache, event_id):
         if photo['media_type']=='video' and not photo.get('source_url'):
             saved[key]=dict(status='source_only',code='source_has_cover_only');atomic(ledger,saved);continue
         if saved.get(key,{}).get('status')=='downloaded':
-            staged.append((key,saved[key]['row']));continue
+            row = saved[key]['row']
+            if photo['media_type'] != 'video':
+                staged.append((key,row));continue
+            video = module('sns_video_stream',scripts/'sns-video.py')
+            decoded = objects/row['media']['sha256']
+            if decoded.is_file() and video.source_digest_matches(fetch, row, decoded):
+                staged.append((key,row));continue
+            saved[key] = dict(status='failed',code='source_digest_mismatch')
+            atomic(ledger,saved)
         live = photo['role'].startswith('live-media-')
         if live:
             archived = db.execute('''

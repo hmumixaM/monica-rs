@@ -28,6 +28,16 @@ def validate(path,runtime,source_md5=None):
     return dict(sha256=digest.hexdigest(),byte_length=path.stat().st_size,media_type='video/mp4',width=stream['width'],height=stream['height'],duration_ms=round(float(info['format']['duration'])*1000))
 
 
+def source_digest_matches(fetch, row, decoded):
+    expected = (row.get('source_md5') or '').lower()
+    if not re.fullmatch(r'[0-9a-f]{32}', expected) or row.get('downloaded_md5') == expected:
+        return True
+    try:
+        return fetch.verified_video_cache(decoded, expected)
+    except FileNotFoundError:
+        return False
+
+
 def obtain(fetch,source,external,slot,cache,source_tid,stage,runtime,source_media_id=None,live_motion=False,raw_xml=None):
     scripts=Path(__file__).resolve().parent
     with tempfile.TemporaryDirectory(prefix='.video-',dir=stage)as temporary:
@@ -54,10 +64,7 @@ def obtain(fetch,source,external,slot,cache,source_tid,stage,runtime,source_medi
                     out.flush();os.fsync(out.fileno())
                 finally:
                     if child.poll()is None:child.kill();child.wait()
-        expected = (header.get('source_md5') or '').lower()
-        if (not source_md5 and re.fullmatch(r'[0-9a-f]{32}', expected)
-                and header.get('downloaded_md5') != expected
-                and not fetch.verified_video_cache(decoded, expected)):
+        if not source_md5 and not source_digest_matches(fetch, header, decoded):
             raise ValueError('sns_video_source_digest_mismatch')
         asset=validate(decoded,runtime,source_md5=source_md5)
         target=stage/'objects'/asset['sha256']

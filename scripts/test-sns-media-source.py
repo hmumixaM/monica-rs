@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('frame',ROOT/'tools/sns-decrypt/fetch_frame.py');fetch=importlib.util.module_from_spec(spec);spec.loader.exec_module(fetch)
 spec=importlib.util.spec_from_file_location('moments',ROOT/'scripts/chatlog_moments.py');moments=importlib.util.module_from_spec(spec);spec.loader.exec_module(moments)
+spec=importlib.util.spec_from_file_location('sns_video',ROOT/'scripts/sns-video.py');video=importlib.util.module_from_spec(spec);spec.loader.exec_module(video)
 from unittest.mock import patch
 class SourceMedia(unittest.TestCase):
  def setUp(self):
@@ -63,6 +64,16 @@ class SourceMedia(unittest.TestCase):
   self.assertTrue(header['verified_cached_video'])
   self.assertEqual(header['downloaded_md5'],source_md5)
   self.assertEqual(dest.read_bytes(), clip)
+
+ def test_staged_video_needs_original_digest_before_resume(self):
+  original = b'\x00\x00\x00\x18ftypmp42original video'
+  decoded = self.root/'staged.mp4'
+  decoded.write_bytes(original)
+  expected = hashlib.md5(original).hexdigest()
+  self.assertTrue(video.source_digest_matches(fetch, {'source_md5': expected}, decoded))
+  decoded.write_bytes(original + b'mismatch')
+  self.assertFalse(video.source_digest_matches(fetch, {'source_md5': expected}, decoded))
+  self.assertTrue(video.source_digest_matches(fetch, {'source_md5': expected, 'downloaded_md5': expected}, decoded))
 
  def test_native_video_poster_uses_its_source_thumbnail_cdn(self):
   with sqlite3.connect(self.db)as db:db.execute('INSERT INTO SnsTimeLine VALUES(?,?)',('124','<TimelineObject><id>124</id><ContentObject><mediaList><media><id>987</id><type>15</type><url>http://snsvideo.c2c.wechat.com/video</url><thumb>http://vweixinthumb.tc.qq.com/poster/0</thumb></media></mediaList></ContentObject></TimelineObject>'))
