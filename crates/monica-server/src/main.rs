@@ -129,7 +129,7 @@ fn main() -> Result<()> {
     // Decoders have their own process limits and do not need runtime workers.
     // Starting those workers first races Linux's address-space limit with their
     // stack allocation and can reject an otherwise valid upload.
-    if monica_core::media::probe_entry()? {
+    if ask::script_worker_entry()? || monica_core::media::probe_entry()? {
         return Ok(());
     }
     tokio::runtime::Builder::new_multi_thread()

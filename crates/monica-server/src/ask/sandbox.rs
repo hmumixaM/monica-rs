@@ -1,18 +1,17 @@
 //! Fresh WASM instance per script. No WASI, and the only data import is the
 //! bounded JSON bridge. Every address received from the guest is bounds-checked.
+use super::SCRIPT_RESULT_BYTES;
 use anyhow::{Context, Result, anyhow, ensure};
 use std::sync::OnceLock;
 use wasmi::{
-    AsContext, AsContextMut, Caller, Config, Engine, Error, ExternType, Linker, Memory, MemoryType,
-    Module, Store, StoreLimits, StoreLimitsBuilder, Val,
+    AsContext, AsContextMut, Caller, Engine, Error, ExternType, Linker, Memory, MemoryType, Module,
+    Store, StoreLimits, StoreLimitsBuilder, Val,
 };
 
-const MAX_JSON: usize = 65_536;
-const MAX_OUTPUT: usize = 48_000;
+pub(super) const SOURCE_BYTES: usize = 32_000;
+pub(super) const LOOKUP_INPUT_BYTES: usize = 65_536;
+pub(super) const LOOKUP_REPLY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_MEMORY: usize = 64 * 1024 * 1024;
-// An instruction budget bounds guest CPU without charging for host I/O
-// or time the operating system spends running other Monica work.
-const FUEL: u64 = 160_000_000;
 const ASSET: &[u8] = include_bytes!("../../assets/quickjs/quickjs.wasm");
 type Bridge<'a> = dyn FnMut(&str) -> Result<String> + 'a;
 
@@ -27,7 +26,7 @@ fn module() -> Result<&'static Module> {
     static MODULE: OnceLock<Result<Module, String>> = OnceLock::new();
     MODULE
         .get_or_init(|| {
-            let engine = Engine::new(Config::default().consume_fuel(true));
+            let engine = Engine::default();
             Module::new(&engine, ASSET).map_err(|err| err.to_string())
         })
         .as_ref()
@@ -35,7 +34,7 @@ fn module() -> Result<&'static Module> {
 }
 
 pub(super) fn execute(source: &str, bridge: &mut Bridge<'_>) -> Result<String> {
-    ensure!(source.len() <= 32_000, "JavaScript 查询脚本过长。");
+    ensure!(source.len() <= SOURCE_BYTES, "JavaScript 查询脚本过长。");
     let module = module()?;
     let mut store = Store::new(
         module.engine(),
@@ -47,7 +46,6 @@ pub(super) fn execute(source: &str, bridge: &mut Bridge<'_>) -> Result<String> {
         },
     );
     store.limiter(|host| &mut host.limits);
-    store.set_fuel(FUEL)?;
     let memory = Memory::new(&mut store, MemoryType::new(256, Some(32_768)))?;
     store.data_mut().memory = Some(memory);
     let mut linker = Linker::new(module.engine());
@@ -123,7 +121,7 @@ pub(super) fn execute(source: &str, bridge: &mut Bridge<'_>) -> Result<String> {
             &mut store,
             (ctx, input, program.len() as i32, filename, 0, 0),
         )
-        .map_err(|_| anyhow!("JavaScript 达到运行限制，或调用了不支持的功能。"))?;
+        .map_err(|_| anyhow!("JavaScript 查询执行失败，或调用了不支持的功能。"))?;
     let exception = instance
         .get_typed_func::<(i32, i32), i32>(&store, "na")?
         .call(&mut store, (ctx, result))?;
@@ -145,7 +143,7 @@ pub(super) fn execute(source: &str, bridge: &mut Bridge<'_>) -> Result<String> {
     let ptr = instance
         .get_typed_func::<(i32, i32), i32>(&store, "$")?
         .call(&mut store, (ctx, result))?;
-    c_string(&store, ptr, MAX_OUTPUT + 1)
+    c_string(&store, ptr, SCRIPT_RESULT_BYTES + 1)
         .map(str::to_owned)
         .context("脚本输出过长。请先用 JavaScript 汇总，再返回需要的资料。")
 }
@@ -237,7 +235,7 @@ fn lookup(mut caller: Caller<'_, Guest<'_>>, args: &[Val]) -> Result<i32> {
     let ptr = instance
         .get_typed_func::<(i32, i32), i32>(&caller, "$")?
         .call(&mut caller, (ctx, value))?;
-    let text = c_string(&caller, ptr, MAX_JSON).map(str::to_owned);
+    let text = c_string(&caller, ptr, LOOKUP_INPUT_BYTES).map(str::to_owned);
     instance
         .get_typed_func::<(i32, i32), ()>(&caller, "S")?
         .call(&mut caller, (ctx, ptr))?;
@@ -245,7 +243,7 @@ fn lookup(mut caller: Caller<'_, Guest<'_>>, args: &[Val]) -> Result<i32> {
         Ok(text) => (caller.data_mut().bridge)(&text)?,
         Err(_) => r#"{"error":"查询参数过长或格式无效。"}"#.into(),
     };
-    ensure!(response.len() <= 2 * 1024 * 1024, "查询结果过长。");
+    ensure!(response.len() <= LOOKUP_REPLY_BYTES, "查询结果过长。");
     js_string(&mut caller, ctx, &response)
 }
 
@@ -346,7 +344,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sandbox_uses_only_its_json_lookup_and_stops_runaway_code() {
+    fn sandbox_uses_only_its_json_lookup() {
         let mut lookups = 0;
         let mut bridge = |input: &str| {
             lookups += 1;
@@ -364,7 +362,6 @@ mod tests {
             r#"[12,"undefined","undefined","undefined","undefined","undefined"]"#
         );
         assert_eq!(lookups, 1);
-        assert!(execute("while (true) {}", &mut |_| unreachable!()).is_err());
         assert!(
             execute("throw new Error('测试失败')", &mut |_| unreachable!())
                 .unwrap_err()

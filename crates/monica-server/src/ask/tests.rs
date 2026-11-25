@@ -139,7 +139,7 @@ async fn ask_runs_without_a_browser_and_recovers_a_stream_after_real_tag_lookup(
     let attempts = Arc::new(AtomicUsize::new(0));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
-    let script = r#"const a = cli("directory",{tags:["qd"],limit:1}); const b = cli("directory",{tags:["QD"],offset:a.next_offset}); return {total:a.total, rows:[...a.rows,...b.rows], initials:cli("directory",{query:"zs"}).rows.map(p=>p.name), security:[typeof require,typeof fetch,typeof process]};"#;
+    let script = r#"const a = cli("directory",{tags:["qd"],limit:1,fields:["link","name"]}); const b = cli("directory",{tags:["QD"],offset:a.next_offset,fields:["link","name"]}); return {total:a.total, rows:[...a.rows,...b.rows], initials:cli("directory",{query:"zs"}).rows.map(p=>p.name), security:[typeof require,typeof fetch,typeof process]};"#;
     let fake = Router::new().route("/v1/chat/completions",post({
         let attempts = attempts.clone();
         move |Json(body): Json<Value>| {
@@ -158,6 +158,7 @@ async fn ask_runs_without_a_browser_and_recovers_a_stream_after_real_tag_lookup(
                 assert_eq!(saved["tool_call_id"],"tag-fixture");
                 let output: Value = serde_json::from_str(saved["content"].as_str().unwrap()).unwrap();
                 assert_eq!(output["total"],2);
+                assert!(output["rows"].as_array().unwrap().iter().all(|row| row.as_object().is_some_and(|row| row.len() == 2 && row.contains_key("link") && row.contains_key("name"))));
                 assert_eq!(output["initials"],json!(["张三"]));
                 assert_eq!(output["security"],json!(["undefined","undefined","undefined"]));
                 for person in people { assert!(output["rows"].as_array().unwrap().iter().any(|row| row["link"]==format!("/profiles/{person}"))); }
@@ -465,4 +466,16 @@ async fn long_transcripts_page_by_bytes_and_import_checks_auth_first(pool: PgPoo
             .unwrap()
             .starts_with('3')
     );
+}
+
+#[test]
+fn result_above_the_old_limit_reaches_the_model_context() {
+    let result = "x".repeat(90_000);
+    let history = vec![
+        json!({"role":"user","content":"summarize"}),
+        json!({"role":"assistant","content":[{"type":"toolCall","id":"fixture","name":"monica_cli","arguments":{"script":"return something"}}]}),
+        json!({"role":"toolResult","toolCallId":"fixture","content":[{"type":"text","text":result}]}),
+    ];
+    let wire = model_context(&history, "system", "", "fixture", 560_000);
+    assert_eq!(wire[3]["content"], result);
 }

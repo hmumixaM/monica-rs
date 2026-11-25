@@ -1,6 +1,6 @@
 //! The only bridge reachable by a generated script. Paths, methods and response
 //! projections are selected here, never supplied by the script.
-use super::{Actor, sandbox};
+use super::{Actor, script_worker};
 use crate::auth::{AppState, delegated_routes};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use axum::{
@@ -17,7 +17,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
     time::Duration,
 };
-use tokio::sync::{OnceCell, mpsc, oneshot};
+use tokio::sync::OnceCell;
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -26,70 +26,127 @@ const LOOKUP_BYTES: usize = 256 * 1024;
 const DIRECTORY_BYTES: usize = 32 * 1024 * 1024;
 const TRACE_BYTES: usize = 64 * 1024;
 const MAX_BATCH: usize = 6;
+const FIELDS_HELP: &str = "每个查询可用 fields 指定返回字段，如 [\"profile_id\",\"headline\"] 或 [\"memory.summary\"]。列表按条筛字段，保留总数、分页和查询失败信息。batch 的每项可在 args 中指定 fields。";
 
-const COMMANDS: &[(&str, &str, &str)] = &[
-    (
-        "directory",
-        "query?, type?, tags?, company?, school?, provider?, sort?, limit?, offset?",
-        "按筛选条件列出联系人。tags 是标签名称或 ID 数组，必须全部匹配。type 默认 person，也支持 group、all。sort 可用 relevance、name、last_contact、messages、birthday。按 next_offset 翻页，limit 最大 500。",
-    ),
-    (
-        "directory_facets",
-        "kind, query?, limit?, offset?",
-        "列出标签、公司或学校。kind 可用 tags、companies、schools。",
-    ),
-    (
-        "find_people",
-        "query",
-        "按关键词查联系人，返回 profile_id。",
-    ),
-    (
-        "get_person",
-        "profile_id",
-        "查人物资料、标签、工作教育经历、近况、来源和往来统计。",
-    ),
-    (
-        "search_messages",
-        "query, profile_id?, chat?, since?, before?",
-        "搜索私聊和群聊，查询词用 | 分隔，最多 6 个，每项按原文匹配。可按人物、direct/group 或时间筛选。",
-    ),
-    (
-        "read_messages",
-        "profile_id, since?, until?, before?",
-        "按时间阅读人物的私聊和群里发言。用返回的 earlier 继续往前翻。",
-    ),
-    (
-        "get_posts",
-        "profile_id, cursor?",
-        "查人物的朋友圈、Instagram 和 LinkedIn 动态，按 next 翻页。",
-    ),
-    ("search_records", "query", "搜索动态、笔记和人物资料。"),
-    (
-        "search_mail",
-        "query?, profile_id?, before?",
-        "按关键词或人物搜索收录的邮件、短信等来源记录，按 earlier 翻页。",
-    ),
-    (
-        "read_record",
-        "record_id, offset?",
-        "读一条邮件或来源记录的正文，按 next_offset 翻页。",
-    ),
-    (
-        "relationship_overview",
-        "",
-        "查看最近联系、许久未联系、生日纪念日和近况回顾。",
-    ),
+struct CommandSpec {
+    name: &'static str,
+    parameters: &'static str,
+    description: &'static str,
+    list: Option<&'static str>,
+    fields: &'static str,
+}
+
+impl CommandSpec {
+    fn parameters(&self) -> String {
+        if self.parameters.is_empty() {
+            "fields?".into()
+        } else {
+            format!("{}, fields?", self.parameters)
+        }
+    }
+}
+
+const COMMANDS: &[CommandSpec] = &[
+    CommandSpec {
+        name: "directory",
+        parameters: "query?, type?, tags?, company?, school?, provider?, sort?, limit?, offset?",
+        description: "按筛选条件列出联系人。tags 是标签名称或 ID 数组，必须全部匹配。type 默认 person，也支持 group、all。sort 可用 relevance、name、last_contact、messages、birthday。按 next_offset 翻页，limit 最大 500。",
+        list: Some("rows"),
+        fields: "profile_id name headline companies schools tags city providers type summary birthday last_contact messages members link",
+    },
+    CommandSpec {
+        name: "directory_facets",
+        parameters: "kind, query?, limit?, offset?",
+        description: "列出标签、公司或学校。kind 可用 tags、companies、schools。",
+        list: Some("rows"),
+        fields: "id name",
+    },
+    CommandSpec {
+        name: "find_people",
+        parameters: "query",
+        description: "按关键词查联系人，返回 profile_id。",
+        list: None,
+        fields: "profile_id name summary",
+    },
+    CommandSpec {
+        name: "get_person",
+        parameters: "profile_id",
+        description: "查人物资料、标签、工作教育经历、近况、来源和往来统计。",
+        list: None,
+        fields: "profile_id name city note summary tags chat memory.summary memory.facts recent_weeks career sources relationships groups link",
+    },
+    CommandSpec {
+        name: "search_messages",
+        parameters: "query, profile_id?, chat?, since?, before?",
+        description: "搜索私聊和群聊，查询词用 | 分隔，最多 6 个，每项按原文匹配。可按人物、direct/group 或时间筛选。",
+        list: Some("messages"),
+        fields: "at from text link group chat_with profile_id",
+    },
+    CommandSpec {
+        name: "read_messages",
+        parameters: "profile_id, since?, until?, before?",
+        description: "按时间阅读人物的私聊和群里发言。用返回的 earlier 继续往前翻。",
+        list: Some("messages"),
+        fields: "at from text link group chat_with profile_id",
+    },
+    CommandSpec {
+        name: "get_posts",
+        parameters: "profile_id, cursor?",
+        description: "查人物的朋友圈、Instagram 和 LinkedIn 动态，按 next 翻页。",
+        list: Some("posts"),
+        fields: "at provider text images place likes comments link",
+    },
+    CommandSpec {
+        name: "search_records",
+        parameters: "query",
+        description: "搜索动态、笔记和人物资料。",
+        list: None,
+        fields: "kind at person profile_id title text link",
+    },
+    CommandSpec {
+        name: "search_mail",
+        parameters: "query?, profile_id?, before?",
+        description: "按关键词或人物搜索收录的邮件、短信等来源记录，按 earlier 翻页。",
+        list: Some("records"),
+        fields: "record_id at source account title from text link",
+    },
+    CommandSpec {
+        name: "read_record",
+        parameters: "record_id, offset?",
+        description: "读一条邮件或来源记录的正文，按 next_offset 翻页。",
+        list: None,
+        fields: "title at source account body events link",
+    },
+    CommandSpec {
+        name: "relationship_overview",
+        parameters: "",
+        description: "查看最近联系、许久未联系、生日纪念日和近况回顾。",
+        list: None,
+        fields: "totals recent_contacts dormant_contacts upcoming_dates recent_posters latest_weekly_review",
+    },
 ];
+
+fn command_spec(name: &str) -> Option<&'static CommandSpec> {
+    COMMANDS.iter().find(|command| command.name == name)
+}
 
 pub(super) fn tool() -> Value {
     let descriptions = COMMANDS
         .iter()
-        .map(|(name, args, description)| format!("{name}({args}) {description}"))
+        .map(|command| {
+            format!(
+                "{}({}) {} 可选字段：{}。",
+                command.name,
+                command.parameters(),
+                command.description,
+                command.fields
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
     json!({"type":"function","function":{
         "name":"monica_cli",
-        "description":format!("运行 JavaScript 查询 Monica。用同步函数 cli(command, args) 读取，再 return 需要的信息。可用 cli(\"batch\", [{{command,args}}], (result, index) => ...) 分批并行查阅并提取数据，结果顺序与输入一致。程序最多执行 240 项只读查询。cli(\"help\", {{command}}) 查看说明。\n{descriptions}"),
+        "description":format!("运行 JavaScript 查询 Monica。用同步函数 cli(command, args) 读取，再 return 需要的信息。可用 cli(\"batch\", [{{command,args}}], (result, index) => ...) 分批并行查阅并提取数据，结果顺序与输入一致。程序最多执行 240 项只读查询。cli(\"help\", {{command}}) 查看说明。{FIELDS_HELP}\n{descriptions}"),
         "parameters":{"type":"object","properties":{
             "title":{"type":"string","description":"用简短中文概括这段脚本要查什么，如「筛选 QD 标签并读取近况」"},
             "script":{"type":"string","description":"JavaScript 函数体，最后 return 查询结果"}},
@@ -119,19 +176,13 @@ struct Lookup {
     good: AtomicUsize,
     failed: AtomicUsize,
 }
-struct ScriptRequest {
-    input: String,
-    reply: oneshot::Sender<String>,
-}
-
 pub(super) async fn run(
     state: &AppState,
     owner: Actor,
     zone: Tz,
     source: String,
 ) -> (String, bool, Value) {
-    // Reserve space for the guest and one directory snapshot. The blocking
-    // task keeps its permit until the guest exits, including after cancellation.
+    // Reserve CPU and space for the guest and one directory snapshot.
     let permit = match state
         .resources
         .acquire_background(monica_core::resources::TaskResources {
@@ -158,60 +209,119 @@ pub(super) async fn run(
         good: AtomicUsize::new(0),
         failed: AtomicUsize::new(0),
     };
-    let (sender, mut requests) = mpsc::channel::<ScriptRequest>(1);
-    let mut task = tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        sandbox::execute(&source, &mut |input| {
-            let (reply, answer) = oneshot::channel();
-            sender
-                .blocking_send(ScriptRequest {
-                    input: input.to_owned(),
-                    reply,
-                })
-                .map_err(|_| anyhow!("查询已中止。"))?;
-            answer.blocking_recv().context("查询已中止。")
-        })
-    });
-    let mut queries = Vec::new();
-    let mut trace_bytes = 0;
-    let mut omitted = 0;
-    let result = match tokio::time::timeout(Duration::from_secs(120), async {
-        while let Some(request) = requests.recv().await {
-            let mut record = |name: &str, args: &Value| {
-                let line = format!("cli({}, {})", json!(name), args);
-                if trace_bytes + line.len() <= TRACE_BYTES {
-                    trace_bytes += line.len();
-                    queries.push(line);
-                } else {
-                    omitted += 1;
-                }
-            };
-            let result = lookup
-                .dispatch(&request.input, &mut record)
-                .await
-                .unwrap_or_else(error_value);
-            let _ = request.reply.send(result.to_string());
-        }
-        (&mut task).await?
-    })
-    .await
-    {
-        Ok(result) => result,
-        Err(_) => Err(anyhow!("JavaScript 查询超时。请缩小范围或分批查询。")),
+    let mut bridge = QueryBridge {
+        lookup,
+        queries: Vec::new(),
+        trace_bytes: 0,
+        omitted: 0,
     };
-    let details = json!({"queries":queries,"omittedQueries":omitted});
+    let result = script_worker::run(&source, Duration::from_secs(120), permit, &mut bridge).await;
+    let details = json!({"queries":bridge.queries,"omittedQueries":bridge.omitted});
     match result {
         Ok(text) => (
             text,
-            lookup.good.load(Ordering::Relaxed) == 0 && lookup.failed.load(Ordering::Relaxed) > 0,
+            bridge.lookup.good.load(Ordering::Relaxed) == 0
+                && bridge.lookup.failed.load(Ordering::Relaxed) > 0,
             details,
         ),
         Err(error) => (error_value(error).to_string(), true, details),
     }
 }
 
+struct QueryBridge {
+    lookup: Lookup,
+    queries: Vec<String>,
+    trace_bytes: usize,
+    omitted: usize,
+}
+
+impl script_worker::Bridge for QueryBridge {
+    async fn reply(&mut self, input: String) -> String {
+        let mut record = |name: &str, args: &Value| {
+            let line = format!("cli({}, {})", json!(name), args);
+            if self.trace_bytes + line.len() <= TRACE_BYTES {
+                self.trace_bytes += line.len();
+                self.queries.push(line);
+            } else {
+                self.omitted += 1;
+            }
+        };
+        self.lookup
+            .dispatch(&input, &mut record)
+            .await
+            .unwrap_or_else(error_value)
+            .to_string()
+    }
+}
+
 fn error_value(error: anyhow::Error) -> Value {
     json!({"error":error.to_string().chars().take(400).collect::<String>()})
+}
+
+fn requested_fields(args: &Value) -> Result<Option<Vec<&str>>> {
+    let Some(fields) = args.get("fields") else {
+        return Ok(None);
+    };
+    let fields = fields
+        .as_array()
+        .filter(|fields| !fields.is_empty() && fields.len() <= 32)
+        .context("fields 必须是包含 1 到 32 条字段路径的数组。")?;
+    let fields = fields
+        .iter()
+        .map(|field| {
+            field
+                .as_str()
+                .filter(|field| {
+                    field.len() <= 96
+                        && field.split('.').all(|part| {
+                            !part.is_empty()
+                                && part.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_')
+                        })
+                })
+                .context("fields 必须使用字段名或点分路径。")
+        })
+        .collect::<Result<_>>()?;
+    Ok(Some(fields))
+}
+
+fn dehydrate(command: &str, value: &mut Value, fields: &[&str]) {
+    let list = command_spec(command).and_then(|spec| spec.list);
+    if let Some(rows) = list.and_then(|key| value.get_mut(key)) {
+        project(rows, fields, false);
+    } else {
+        project(value, fields, true);
+    }
+}
+
+fn project(value: &mut Value, fields: &[&str], keep_metadata: bool) {
+    match value {
+        Value::Object(object) => object.retain(|key, value| {
+            if fields.contains(&key.as_str())
+                || (keep_metadata
+                    && matches!(
+                        key.as_str(),
+                        "total" | "next" | "next_offset" | "earlier" | "error" | "not_searched"
+                    ))
+            {
+                return true;
+            }
+            let nested = fields
+                .iter()
+                .filter_map(|path| path.strip_prefix(key.as_str())?.strip_prefix('.'))
+                .collect::<Vec<_>>();
+            if nested.is_empty() || !(value.is_object() || value.is_array()) {
+                return false;
+            }
+            project(value, &nested, false);
+            true
+        }),
+        Value::Array(rows) => {
+            for row in rows {
+                project(row, fields, false);
+            }
+        }
+        _ => {}
+    }
 }
 
 impl Lookup {
@@ -256,7 +366,11 @@ impl Lookup {
                 "本脚本的查询次数已用完。请分批查询。"
             );
             ensure!(args.is_object(), "查询参数必须是对象。");
-            let value = self.command(name, args).await?;
+            let fields = requested_fields(args)?;
+            let mut value = self.command(name, args).await?;
+            if let Some(fields) = fields {
+                dehydrate(name, &mut value, &fields);
+            }
             ensure!(
                 serde_json::to_vec(&value)?.len() <= LOOKUP_BYTES,
                 "单次查询结果过长。请缩小范围。"
@@ -355,16 +469,17 @@ impl Lookup {
                     return Ok(json!(
                         COMMANDS
                             .iter()
-                            .map(|(name, _, _)| *name)
+                            .map(|command| command.name)
                             .chain(["batch"])
                             .collect::<Vec<_>>()
                     ));
                 }
-                let (_, parameters, description) = COMMANDS
-                    .iter()
-                    .find(|(name, _, _)| *name == command)
-                    .context("未知命令。")?;
-                Ok(json!({"description":description,"parameters":parameters}))
+                let spec = command_spec(command).context("未知命令。")?;
+                Ok(json!({
+                    "description":spec.description,"parameters":spec.parameters(),
+                    "fields":FIELDS_HELP,"result_fields":spec.fields.split_whitespace().collect::<Vec<_>>(),
+                    "list_key":spec.list
+                }))
             }
             "directory" | "directory_facets" => {
                 let directory = self
@@ -1013,4 +1128,30 @@ fn directory_command(root: &Value, name: &str, args: &Value, today: &str) -> Res
 fn next(offset: usize, limit: usize, total: usize) -> Option<usize> {
     let end = offset.saturating_add(limit);
     (end < total).then_some(end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fields_preserve_page_and_partial_failure_metadata() {
+        let mut value = json!({
+            "messages":[{"text":"sample","link":"https://example.invalid","details":{"when":"today","other":"omit"}}],
+            "earlier":"cursor",
+            "not_searched":[{"term":"second","error":"offline"}]
+        });
+        dehydrate("search_messages", &mut value, &["text", "details.when"]);
+        assert_eq!(
+            value,
+            json!({
+                "messages":[{"text":"sample","details":{"when":"today"}}],
+                "earlier":"cursor",
+                "not_searched":[{"term":"second","error":"offline"}]
+            })
+        );
+        let mut record = json!({"body":"sample","next_offset":3,"events":[]});
+        dehydrate("read_record", &mut record, &["body"]);
+        assert_eq!(record, json!({"body":"sample","next_offset":3}));
+    }
 }

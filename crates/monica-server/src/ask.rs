@@ -1,6 +1,9 @@
 mod agent;
 mod lookup;
 mod sandbox;
+mod script_worker;
+
+pub(crate) use script_worker::entry as script_worker_entry;
 
 use crate::{
     ai::browser::model_settings,
@@ -25,6 +28,7 @@ type Actor = (Uuid, String);
 const IMPORT_BYTES: usize = 24 * 1024 * 1024;
 const MESSAGE_PAGE: i64 = 100;
 const MESSAGE_PAGE_BYTES: i64 = 2 * 1024 * 1024;
+const SCRIPT_RESULT_BYTES: usize = 96_000;
 const MAX_MESSAGE_BYTES: usize = 1536 * 1024;
 
 fn message_bytes(message: &Value) -> usize {
