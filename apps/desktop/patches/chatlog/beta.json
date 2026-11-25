@@ -1,5 +1,7 @@
 {
   "repository": "https://github.com/hmumixaM/chatlog-beta.git",
   "commit": "1548b8d21e38faabb1ced78946e7a00442c807e5",
-  "target": "aarch64-apple-darwin"
+  "target": "aarch64-apple-darwin",
+  "patch": "beta-media-snapshots.patch",
+  "patch_sha256": "bb559b65778824d8bdf636cd23518d6fee17d5b8b1a405c600aef657bac1ea19"
 }

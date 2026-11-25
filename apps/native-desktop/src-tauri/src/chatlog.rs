@@ -29,6 +29,21 @@ struct Preferences {
     enabled: bool,
     port: u16,
 }
+#[derive(Default, Deserialize, Serialize)]
+pub struct ImageCredentials {
+    pub image_key: Option<String>,
+    pub image_xor: Option<u8>,
+}
+impl ImageCredentials {
+    pub fn validate(&self) -> Result<()> {
+        if self.image_key.as_ref().is_some_and(|key| {
+            key.len() != 16 && !(key.len() == 32 && key.bytes().all(|b| b.is_ascii_hexdigit()))
+        }) {
+            return Err("图片密钥须为16字节或32位十六进制".into());
+        }
+        Ok(())
+    }
+}
 pub struct Chatlog {
     root: PathBuf,
     binary: PathBuf,
@@ -102,7 +117,7 @@ impl Chatlog {
     }
     /// Export only this app's published snapshot directory and an opaque source anchor.
     /// Never discover a WeChat account or expose the original path/key to collectors.
-    pub fn snapshot_source(&self) -> Result<Option<(PathBuf, String)>> {
+    fn source_paths(&self) -> Result<Option<(PathBuf, PathBuf)>> {
         let path = self.root.join("chatlog-server.json");
         let bytes = match fs::read(path) {
             Ok(bytes) => bytes,
@@ -124,7 +139,24 @@ impl Chatlog {
         if !source.is_absolute() || work != self.root.join("work") {
             return Err("微信快照必须位于应用独立工作目录".into());
         }
-        Ok(Some((work.join("db_storage"), source_anchor(source))))
+        Ok(Some((work.join("db_storage"), source.to_path_buf())))
+    }
+    pub fn snapshot_source(&self) -> Result<Option<(PathBuf, String)>> {
+        Ok(self
+            .source_paths()?
+            .map(|(snapshots, source)| (snapshots, source_anchor(&source))))
+    }
+    pub fn media_cache(&self) -> Result<Option<PathBuf>> {
+        self.source_paths()?
+            .map(|(_, source)| {
+                let account = if source.ends_with("db_storage") {
+                    source.parent().ok_or("微信账户目录缺失")?
+                } else {
+                    &source
+                };
+                Ok(account.join("msg"))
+            })
+            .transpose()
     }
     fn archive_old_snapshots(&self) -> Result<()> {
         let paths = ["work", "wcdb-cache"];
@@ -159,7 +191,15 @@ impl Chatlog {
             error: self.error.clone(),
         }
     }
-    pub fn configure(&mut self, source: &Path, key: &str) -> Result<()> {
+    pub fn configure(
+        &mut self,
+        source: &Path,
+        key: &str,
+        images: Option<&ImageCredentials>,
+    ) -> Result<()> {
+        if let Some(images) = images {
+            images.validate()?;
+        }
         if !source.is_absolute() || key.len() != 64 || !key.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err("请输入绝对微信数据目录与64位十六进制数据库密钥".into());
         }
@@ -186,6 +226,16 @@ impl Chatlog {
                 "desktop_mode": true,
             }),
         )?;
+        if let Some(images) = images {
+            save(
+                &self.root.join("chatlog-image-key.json"),
+                &json!({
+                    "account": source_anchor(source),
+                    "image_key": images.image_key,
+                    "image_xor": images.image_xor,
+                }),
+            )?;
+        }
         self.error = None;
         Ok(())
     }
@@ -349,8 +399,8 @@ HTTPServer(('127.0.0.1',int(config['http_addr'].split(':')[-1])),Handler).serve_
             Chatlog::new(root.clone(), binary, temp.path().join("chatlog.log")).unwrap();
         assert!(!service.status().enabled);
         assert!(!service.status().running);
-        assert!(service.configure(&source, "invalid").is_err());
-        service.configure(&source, &"0".repeat(64)).unwrap();
+        assert!(service.configure(&source, "invalid", None).is_err());
+        service.configure(&source, &"0".repeat(64), None).unwrap();
         assert_eq!(
             fs::metadata(root.join("chatlog-server.json"))
                 .unwrap()
@@ -395,7 +445,7 @@ HTTPServer(('127.0.0.1',int(config['http_addr'].split(':')[-1])),Handler).serve_
         .unwrap();
         assert!(service.snapshot_source().unwrap().is_none());
         let source = temp.path().join("explicit source A");
-        service.configure(&source, &"1".repeat(64)).unwrap();
+        service.configure(&source, &"1".repeat(64), None).unwrap();
         let (snapshots, account) = service.snapshot_source().unwrap().unwrap();
         assert_eq!(snapshots, root.join("work/db_storage"));
         assert!(account.starts_with("native-chatlog-"));
@@ -403,7 +453,7 @@ HTTPServer(('127.0.0.1',int(config['http_addr'].split(':')[-1])),Handler).serve_
         assert!(!account.contains("source"));
         fs::create_dir_all(&snapshots).unwrap();
         fs::write(snapshots.join("synthetic.db"), b"only synthetic data").unwrap();
-        service.configure(&source, &"2".repeat(64)).unwrap();
+        service.configure(&source, &"2".repeat(64), None).unwrap();
         assert_eq!(service.snapshot_source().unwrap().unwrap().1, account);
         assert!(snapshots.join("synthetic.db").exists());
         drop(service);
@@ -415,7 +465,11 @@ HTTPServer(('127.0.0.1',int(config['http_addr'].split(':')[-1])),Handler).serve_
         .unwrap();
         assert_eq!(service.snapshot_source().unwrap().unwrap().1, account);
         service
-            .configure(&temp.path().join("explicit source B"), &"3".repeat(64))
+            .configure(
+                &temp.path().join("explicit source B"),
+                &"3".repeat(64),
+                None,
+            )
             .unwrap();
         assert_ne!(service.snapshot_source().unwrap().unwrap().1, account);
         assert!(!snapshots.exists());

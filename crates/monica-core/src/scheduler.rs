@@ -474,6 +474,22 @@ async fn supervise(shared: Arc<Shared>, mut leader: PoolConnection<Postgres>) ->
         "adapter-messages",
         adapter_lane::run_messages,
     );
+    if std::env::var_os("MONICA_NATIVE_MOMENTS_WORKER").is_some() {
+        spawn_lane(
+            &mut workers,
+            &shared,
+            "native-moments",
+            adapter_lane::run_native_moments,
+        );
+    }
+    if std::env::var_os("MONICA_NATIVE_WECHAT_CACHE").is_some() {
+        spawn_lane(
+            &mut workers,
+            &shared,
+            "native-wechat-images",
+            adapter_lane::run_native_images,
+        );
+    }
     spawn_lane(&mut workers, &shared, "cdc", cdc_lane::run);
     if shared.credentials.is_some() {
         spawn_lane(&mut workers, &shared, "mail-idle", idle_lane::run);

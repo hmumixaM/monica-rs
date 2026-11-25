@@ -4,8 +4,20 @@ from pathlib import Path
 
 
 def executable(runtime,name):
+    native = Path(runtime)/name
+    if native.is_file():
+        return [str(native)]
     root=Path(runtime)/'ffmpeg-runtime'
     return [str(root/'lib/ld-linux-x86-64.so.2'),'--library-path',str(root/'lib'),str(root/(name+'-real'))]
+
+
+def decode_native(runtime, kind, source, destination, seed, timeout):
+    keys = {'seed': str(seed)} if seed not in (None, '') else {}
+    subprocess.run([str(runtime/'chatlog-beta-media'), kind, str(source), str(destination),
+                    '--credentials-stdin'], input=json.dumps(keys).encode(),
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout, check=True)
+    with destination.open('rb') as output:
+        os.fsync(output.fileno())
 
 
 def validate(path,runtime,source_md5=None):
@@ -48,6 +60,8 @@ def obtain(fetch,source,external,slot,cache,source_tid,stage,runtime,source_medi
             with cipher.open('rb') as original:
                 os.fsync(original.fileno())
             os.replace(cipher, decoded)
+        elif (runtime/'chatlog-beta-media').is_file():
+            decode_native(runtime, 'sns-video', cipher, decoded, header.get('seed'), 120)
         else:
             encoded=json.dumps(header).encode()
             with cipher.open('rb')as inp,decoded.open('wb')as out:

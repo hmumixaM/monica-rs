@@ -238,11 +238,11 @@ def decode(source, media, decoder, relative, env):
     return asset
 
 
-def verify_pixels(media, asset, env):
+def verify_pixels(media, asset, env, path=None):
     input_format = ['-f', 'jpeg_pipe'] if asset['media_type'] == 'image/jpeg' else []
     subprocess.run(
         ['ffmpeg', '-v', 'error', '-nostdin', '-threads', '1', '-err_detect', 'explode',
-         '-xerror', *input_format, '-i', str(media / asset['object_path']), '-frames:v', '1', '-f', 'null', '-'],
+         '-xerror', *input_format, '-i', str(path if path is not None else media / asset['object_path']), '-frames:v', '1', '-f', 'null', '-'],
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         env={key: env[key] for key in ('PATH', 'TMPDIR', 'LD_LIBRARY_PATH') if key in env},
         check=True, timeout=20,
@@ -267,12 +267,15 @@ class Worker:
             self.current_sql += ' AND m.occurred_at>=%s'
             self.query_args += (args.since,)
 
+    def control_allowed(self, locked=False):
+        query = 'SELECT enabled AND NOT paused FROM crm.wechat_image_control'
+        return self.db.execute(query + (' FOR SHARE' if locked else '')).fetchone() == (True,)
+
     def guard(self, force=False):
         if not force and time.monotonic() - self.last_guard < 1:
             return
         self.last_guard = time.monotonic()
-        control = self.db.execute('SELECT enabled AND NOT paused FROM crm.wechat_image_control').fetchone()
-        if not control or not control[0]:
+        if not self.control_allowed():
             raise Paused()
         if sys.platform.startswith('linux'):
             available = next(int(line.split()[1]) for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemAvailable:'))
@@ -289,7 +292,7 @@ class Worker:
             raise ValueError('Rust group-image migration required')
         if not self.db.execute("SELECT pg_try_advisory_lock(hashtextextended('monica-wechat-group-images',0))").fetchone()[0]:
             raise ValueError('another group-image worker is active')
-        connections = self.db.execute("SELECT DISTINCT c.connection_id,s.external_account FROM crm.conversations c JOIN crm.source_connections s ON s.id=c.connection_id WHERE c.provider='wechat' AND c.account=%s AND c.conversation_type='group'", (self.args.account,)).fetchall()
+        connections = self.db.execute("SELECT DISTINCT c.connection_id,s.external_account FROM crm.conversations c JOIN crm.source_connections s ON s.id=c.connection_id WHERE c.provider='wechat' AND c.account=%s AND (c.conversation_type='group' OR (%s AND c.conversation_type='direct'))", (self.args.account, getattr(self.args, 'include_direct', False))).fetchall()
         self.source_owner = self.args.source_owner or self.args.account
         if connections:
             if len(connections) != 1 or str(connections[0][0]) != self.args.account or not self.args.source_owner or connections[0][1] != self.source_owner:
@@ -331,6 +334,9 @@ class Worker:
 
     def candidate_files(self, row, references):
         return candidates(self.ledger, references)
+
+    def decode_image(self, relative):
+        return decode(self.source, self.media, self.args.decoder, relative, self.env)
 
     def item(self, mid):
         self.guard()
@@ -387,7 +393,7 @@ class Worker:
                         self.db.execute('UPDATE crm.wechat_image_runs SET reused_files=reused_files+1 WHERE id=%s', (self.run_id,))
                     else:
                         started = time.monotonic()
-                        asset = decode(self.source, self.media, self.args.decoder, relative, self.env)
+                        asset = self.decode_image(relative)
                         if digest(path) != raw_hash:
                             raise ValueError('source changed during decode')
                         self.ledger.execute('INSERT OR REPLACE INTO verified_decodes(path,raw_sha256,asset,decoder_sha256) VALUES(?,?,?,?)', (relative, raw_hash, json.dumps(asset), self.decoder_sha256))
@@ -406,8 +412,7 @@ class Worker:
         with self.db.transaction():
             self.db.execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED')
             # Fence pause and source retractions/edits before attaching a decoded file.
-            allowed = self.db.execute('SELECT enabled AND NOT paused FROM crm.wechat_image_control FOR SHARE').fetchone()
-            if not allowed or not allowed[0]:
+            if not self.control_allowed(locked=True):
                 raise Paused()
             # Acquire row locks in a separate statement. After waiting for a
             # projector, a joined locking SELECT can retain old outer-join

@@ -95,7 +95,7 @@ class LiveImportContract(unittest.TestCase):
             self.db.execute("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,occurred_at,body,message_type)VALUES(%s,%s,'wechat',%s,%s,'peer',%s,%s,'3')",(mid,cid,account,str(mid),at,f'<msg><img md5="{key}"/></msg>'))
             selected.append(mid)
         state=Path(self.temp.name).resolve()/'recent-state';state.mkdir()
-        args=types.SimpleNamespace(account=account,source_owner=None,include_direct=True,since='2026-11-13T00:00:00Z',expected_database=self.db.info.dbname,expected_system_id=self.db.execute('SELECT system_identifier::text FROM pg_control_system()').fetchone()[0])
+        args=types.SimpleNamespace(account=account,source_owner=None,include_direct=True,decoder=Path(__file__).resolve(),since='2026-11-13T00:00:00Z',expected_database=self.db.info.dbname,expected_system_id=self.db.execute('SELECT system_identifier::text FROM pg_control_system()').fetchone()[0])
         with closing(sqlite3.connect(':memory:'))as ledger:
             item=recent.RecentImages(self.db,ledger,args,(self.args.source,self.args.media,state),{})
             item.open();item.discover()

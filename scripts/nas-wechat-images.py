@@ -180,14 +180,25 @@ class RecentImages(images.Worker):
         finally:
             self.db.execute("SELECT pg_advisory_unlock(hashtextextended('monica-wechat-group-images',0))")
 
-    def run_with_resources(self):
+    def resource_database(self):
         path = self.args.hardlink_db.parent.parent / 'message/message_resource.db'
-        connection = nullcontext(None)
         if path.is_file():
             target = self.state / 'message-resource.sqlite'
             if self.resource_signature != source_signature(path) or not target.is_file():
                 self.resource_signature = publish_snapshot(path, target, progress=lambda *_: self.guard())
-            connection = closing(sqlite3.connect(target.as_uri() + '?mode=ro&immutable=1', uri=True))
+            return target
+        return None
+
+    def hardlink_database(self):
+        target = self.state/'hardlink.sqlite'
+        snapshot(self.args.hardlink_db, target, self.guard)
+        return target
+
+    def run_with_resources(self):
+        path = self.resource_database()
+        connection = nullcontext(None)
+        if path is not None:
+            connection = closing(sqlite3.connect(path.as_uri() + '?mode=ro&immutable=1', uri=True))
         with connection as resource:
             self.resources = resource if supports_resources(resource) else None
             try:
@@ -200,12 +211,18 @@ class RecentImages(images.Worker):
         # Ready publications are reused. Previously unavailable files can arrive
         # later even when the message and its source JSON have not changed.
         self.db.execute("UPDATE crm.wechat_group_images SET state='pending' WHERE run_id=%s AND state<>'available' AND state<>'pending'", (self.run_id,))
+        batch_size = getattr(self.args, 'batch_size', None)
+        batch = [mid for (mid,) in self.db.execute("""SELECT message_id FROM crm.wechat_group_images
+            WHERE run_id=%s AND state='pending' ORDER BY attempts,updated_at,message_id LIMIT %s""",
+            (self.run_id, batch_size))] if batch_size else None
+        scoped = ' AND m.message_id=ANY(%s)' if batch is not None else ''
+        scope_args = (*self.query_args, batch) if batch is not None else self.query_args
         requested = set()
         folders = defaultdict(set)
         after = images.NIL
         while True:
             self.guard()
-            rows = self.db.execute(self.current_sql + " AND m.message_id>%s AND EXISTS(SELECT 1 FROM crm.wechat_group_images i WHERE i.run_id=%s AND i.message_id=m.message_id AND i.state='pending') ORDER BY m.message_id LIMIT 100", (*self.query_args, after, self.run_id)).fetchall()
+            rows = self.db.execute(self.current_sql + scoped + " AND m.message_id>%s AND EXISTS(SELECT 1 FROM crm.wechat_group_images i WHERE i.run_id=%s AND i.message_id=m.message_id AND i.state='pending') ORDER BY m.message_id LIMIT 100", (*scope_args, after, self.run_id)).fetchall()
             if not rows:
                 break
             for row in rows:
@@ -214,24 +231,31 @@ class RecentImages(images.Worker):
                 for folder in cache_folders(row[6], row[2]):
                     folders[folder].update(references)
             after = rows[-1][0]
-        target = self.state/'hardlink.sqlite'
         if requested:
-            snapshot(self.args.hardlink_db, target, self.guard)
-            with closing(sqlite3.connect(target.as_uri()+'?mode=ro&immutable=1', uri=True)) as metadata:
-                requested_catalog(self.source, metadata, self.ledger, requested, self.guard)
+            target = self.hardlink_database()
+            if target is not None:
+                with closing(sqlite3.connect(target.as_uri()+'?mode=ro&immutable=1', uri=True)) as metadata:
+                    requested_catalog(self.source, metadata, self.ledger, requested, self.guard)
+            else:
+                self.ledger.execute('DELETE FROM files')
+                self.ledger.commit()
             resource_catalog(self.source, self.ledger, folders, self.guard)
             count = self.ledger.execute('SELECT count(*) FROM files').fetchone()[0]
         else:
             count = 0
         self.db.execute('UPDATE crm.wechat_image_runs SET indexed_files=%s WHERE id=%s', (count, self.run_id))
-        while True:
-            self.guard()
-            rows = self.db.execute("SELECT message_id FROM crm.wechat_group_images WHERE run_id=%s AND state='pending' ORDER BY message_id LIMIT 100", (self.run_id,)).fetchall()
-            if not rows:
-                break
-            for (mid,) in rows:
+        if batch is not None:
+            for mid in batch:
                 self.item(mid)
-            self.report()
+        else:
+            while True:
+                self.guard()
+                rows = self.db.execute("SELECT message_id FROM crm.wechat_group_images WHERE run_id=%s AND state='pending' ORDER BY message_id LIMIT 100", (self.run_id,)).fetchall()
+                if not rows:
+                    break
+                for (mid,) in rows:
+                    self.item(mid)
+                self.report()
         self.db.execute("UPDATE crm.wechat_image_runs SET status='complete',heartbeat_at=now(),completed_at=now() WHERE id=%s", (self.run_id,))
         self.report()
 

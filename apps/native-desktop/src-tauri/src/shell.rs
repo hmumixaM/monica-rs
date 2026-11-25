@@ -99,6 +99,7 @@ async fn chatlog_action(
     action: String,
     source: Option<String>,
     key: Option<String>,
+    images: Option<crate::chatlog::ImageCredentials>,
 ) -> Result<RuntimeStatus, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
@@ -107,6 +108,7 @@ async fn chatlog_action(
             &action,
             source.as_deref().map(std::path::Path::new),
             key.as_deref(),
+            images.as_ref(),
         );
         publish(&app, runtime.status());
         result

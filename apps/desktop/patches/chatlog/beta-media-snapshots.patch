@@ -1,0 +1,55 @@
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -199,7 +199,10 @@
+     });
+     let mut retry = BTreeMap::new();
+     while !stop.load(Ordering::Relaxed) {
+-        let mut names = vec![CONTACT.to_owned(), store::SNS.to_owned()];
++        let mut names = [CONTACT, store::SNS, store::HARDLINK, store::MESSAGE_RESOURCE]
++            .into_iter()
++            .map(str::to_owned)
++            .collect::<Vec<_>>();
+         match store.discover() {
+             Ok(shards) => names.extend(shards),
+             Err(e) => eprintln!("message shard discovery failed: {e}"),
+--- a/src/store.rs
++++ b/src/store.rs
+@@ -19,6 +19,8 @@
+ 
+ pub const CONTACT: &str = "contact/contact.db";
+ pub const SNS: &str = "sns/sns.db";
++pub const HARDLINK: &str = "hardlink/hardlink.db";
++pub const MESSAGE_RESOURCE: &str = "message/message_resource.db";
+ 
+ pub fn private_dir(path: &Path) -> Result<()> {
+     match fs::DirBuilder::new().mode(0o700).create(path) {
+@@ -189,11 +191,12 @@
+ 
+     pub fn refresh(&mut self, name: &str, stop: &AtomicBool, startup: bool) -> Result<()> {
+         let path = self.source.join(name);
++        let optional = matches!(name, SNS | HARDLINK | MESSAGE_RESOURCE);
+         match fs::symlink_metadata(path.parent().unwrap()) {
+-            Err(e) if e.kind() == io::ErrorKind::NotFound && name == SNS => return Ok(()),
++            Err(e) if e.kind() == io::ErrorKind::NotFound && optional => return Ok(()),
+             m => ensure!(m?.is_dir(), "invalid source directory"),
+         }
+-        if name == SNS && stamp(&path)?.is_none() {
++        if optional && stamp(&path)?.is_none() {
+             return Ok(());
+         }
+         let input = Input::inspect(&path)?;
+@@ -383,6 +386,14 @@
+     match name {
+         CONTACT => check("contact", "username")?,
+         SNS => check("SnsTimeLine", "tid,content")?,
++        HARDLINK => {
++            check("dir2id", "username")?;
++            check("image_hardlink_info_v4", "md5,file_name,dir1,dir2,extra_buffer")?;
++        }
++        MESSAGE_RESOURCE => {
++            check("ChatName2Id", "user_name")?;
++            check("MessageResourceInfo", "chat_id,message_svr_id,message_create_time,message_local_type,packed_info")?;
++        }
+         _ if !tables.is_empty() => {
+             check("Name2Id", "user_name")?;
+             for table in &tables {

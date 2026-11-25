@@ -34,9 +34,12 @@ chatlog_pin=json.loads((ROOT/'apps/desktop/patches/chatlog/beta.json').read_text
 chatlog_source=json.loads((runtime/'licenses/Chatlog-source.json').read_text())
 if manifest.get('chatlog_source_commit')!=chatlog_pin['commit'] or any(chatlog_source.get(key)!=value for key,value in chatlog_pin.items()):
     p.error('Bundled Chatlog Beta source differs from the pin')
+chatlog_media=runtime/'tools/bin/chatlog-beta-media'
+if hashlib.sha256(chatlog_media.read_bytes()).hexdigest()!=manifest['chatlog_media_sha256']:p.error('Bundled Chatlog media hash differs from runtime manifest')
+subprocess.run([str(chatlog_media),'--help'],check=True,stdout=subprocess.DEVNULL)
 bridge=runtime/'tools/bin/monica-whatsapp'
 if hashlib.sha256(bridge.read_bytes()).hexdigest()!=manifest['whatsapp_sha256']:p.error('Bundled WhatsApp bridge hash differs from runtime manifest')
-for path in [runtime/'web/index.html',runtime/'tools/bin/ffprobe',bridge,chatlog,runtime/'collectors/run-bridge',runtime/'collectors/python/bin/python3.12',runtime/'licenses/Chatlog-Cargo.lock',runtime/'licenses/WhatsApp-PROVENANCE.md',runtime/'licenses/GeoNames.md',runtime/'licenses/GeoNames-PROVENANCE.json']:
+for path in [runtime/'web/index.html',runtime/'tools/bin/ffprobe',runtime/'tools/bin/ffmpeg',runtime/'tools/bin/validate',runtime/'moments/run-worker',bridge,chatlog,runtime/'collectors/run-bridge',runtime/'collectors/python/bin/python3.12',runtime/'licenses/Chatlog-Cargo.lock',runtime/'licenses/WhatsApp-PROVENANCE.md',runtime/'licenses/GeoNames.md',runtime/'licenses/GeoNames-PROVENANCE.json']:
     if not path.is_file():p.error(f'Missing required runtime asset: {path.relative_to(runtime)}')
 subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)
 for name in manifest['native_files']:

@@ -14,10 +14,10 @@ PIN = ROOT / "apps/desktop/patches/chatlog/beta.json"
 NOTICE_PREFIXES = ("LICENSE", "COPYING", "COPYRIGHT", "NOTICE", "UNLICENSE")
 
 
-def copy_notices(metadata, notices):
+def copy_notices(metadata, notices, checkout):
     packages = {package["id"]: package for package in metadata["packages"]}
     nodes = {node["id"]: node["deps"] for node in metadata["resolve"]["nodes"]}
-    pending = [metadata["resolve"]["root"]]
+    pending = list(metadata["workspace_members"])
     visited = set()
     inventory = []
     while pending:
@@ -34,6 +34,10 @@ def copy_notices(metadata, notices):
         files = {path for path in root.iterdir() if path.is_file() and path.name.upper().startswith(NOTICE_PREFIXES)}
         if license_file := package["license_file"]:
             files.add(root / license_file)
+        if package["name"] == "silk-sys":
+            files.add(checkout / "media/licenses/SILK-Skype.txt")
+        if package["name"] == "chatlog-beta-media":
+            files.add(checkout / "LICENSE")
         if not files:
             raise RuntimeError(f"Missing dependency notice: {package['name']} {package['version']}")
         destination = notices / f"{package['name']}-{package['version']}"
@@ -57,9 +61,13 @@ def main():
         checkout = Path(directory) / "source"
         subprocess.run(["git", "clone", "--quiet", "--no-checkout", pin["repository"], checkout], check=True)
         subprocess.run(["git", "-C", checkout, "checkout", "--quiet", "--detach", pin["commit"]], check=True)
+        patch = PIN.with_name(pin["patch"])
+        if hashlib.sha256(patch.read_bytes()).hexdigest() != pin["patch_sha256"]:
+            raise ValueError("Pinned Chatlog snapshot patch digest differs")
+        subprocess.run(["git", "apply", str(patch)], cwd=checkout, check=True)
         target = Path(directory) / "target"
         subprocess.run(
-            ["cargo", "build", "--release", "--locked", "--package", "chatlog-beta",
+            ["cargo", "build", "--release", "--locked", "--workspace",
              "--target", pin["target"], "--target-dir", target],
             cwd=checkout, env={**os.environ, "MACOSX_DEPLOYMENT_TARGET": "26.0"}, check=True,
         )
@@ -67,17 +75,22 @@ def main():
             ["cargo", "metadata", "--locked", "--format-version", "1", "--filter-platform", pin["target"]],
             cwd=checkout,
         ))
-        dependencies = copy_notices(metadata, output / "licenses")
+        dependencies = copy_notices(metadata, output / "licenses", checkout)
         binary = output / "chatlog-beta"
-        shutil.copy2(target / pin["target"] / "release" / binary.name, binary)
+        media = output / "chatlog-beta-media"
+        for executable in (binary, media):
+            shutil.copy2(target / pin["target"] / "release" / executable.name, executable)
         shutil.copy2(checkout / "Cargo.lock", output / "Cargo.lock")
+        shutil.copy2(patch, output / patch.name)
         manifest = {
             **pin, "binary": binary.name, "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+            "media_sha256": hashlib.sha256(media.read_bytes()).hexdigest(),
             "cargo": subprocess.check_output(["cargo", "--version"], cwd=checkout, text=True).strip(),
             "dependencies": dependencies,
         }
         (output / "source.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    subprocess.run([binary, "--help"], check=True, stdout=subprocess.DEVNULL)
+    for executable in (binary, media):
+        subprocess.run([executable, "--help"], check=True, stdout=subprocess.DEVNULL)
     print(json.dumps({"output": str(output), "commit": pin["commit"], "packages": len(dependencies)}))
 
 

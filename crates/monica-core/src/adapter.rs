@@ -152,6 +152,15 @@ fn runtime_config(provider: &str) -> Result<Option<Config>> {
             std::path::Path::new(&snapshots).is_absolute() && !account.trim().is_empty(),
             "invalid explicit Chatlog source anchor"
         );
+        // Tauri starts the backend before starting its owned Chatlog child.
+        // An empty export folder is normal during initialization.
+        if std::env::var_os("MONICA_NATIVE_MOMENTS_WORKER").is_some()
+            && !std::path::Path::new(&snapshots)
+                .join("contact/contact.db")
+                .is_file()
+        {
+            return Ok(None);
+        }
         args.extend([
             "--snapshot-root".into(),
             snapshots,
@@ -515,6 +524,93 @@ async fn run_process(pool: &PgPool, lease: &Lease, config: &Config) -> Result<bo
     ensure!(exit.success(), "collector exited unsuccessfully");
     heartbeat(pool, lease).await
 }
+/// The desktop shell supplies this trusted, bundled Moments worker separately
+/// from the collector protocol. It needs its own local database connection for
+/// verified publication, and runs independently of Chatlog source scans.
+pub(crate) async fn run_native_wechat_media(
+    pool: &PgPool,
+    resources: &crate::resources::ResourceBudget,
+    images: bool,
+) -> Result<()> {
+    let (Ok(executable), Ok(work), Ok(account), Ok(snapshot), Ok(media), Ok(database)) = (
+        std::env::var("MONICA_NATIVE_MOMENTS_WORKER"),
+        std::env::var("MONICA_COLLECTOR_DATA_ROOT"),
+        std::env::var("MONICA_CHATLOG_ACCOUNT"),
+        std::env::var("MONICA_CHATLOG_SNAPSHOT_ROOT"),
+        std::env::var("MONICA_MEDIA_ROOT"),
+        std::env::var("MONICA_DATABASE_URL"),
+    ) else {
+        return Ok(());
+    };
+    let cache = std::env::var("MONICA_NATIVE_WECHAT_CACHE")
+        .ok()
+        .filter(|_| images);
+    let due: bool = if images {
+        if cache.is_none() {
+            return Ok(());
+        }
+        sqlx::query_scalar("SELECT EXISTS(SELECT FROM crm.wechat_image_control WHERE enabled AND NOT paused) AND EXISTS(SELECT FROM crm.source_connections s JOIN crm.conversations c ON c.connection_id=s.id WHERE s.provider='wechat' AND s.external_account=$1 AND s.enabled AND NOT EXISTS(SELECT FROM crm.wechat_image_runs r WHERE r.account=s.id::text AND r.heartbeat_at>now()-interval '5 minutes'))")
+            .bind(&account).fetch_one(pool).await?
+    } else {
+        sqlx::query_scalar("SELECT EXISTS(SELECT FROM crm.native_moments_media q JOIN crm.source_connections s ON s.id=q.connection_id WHERE s.provider='wechat' AND s.external_account=$1 AND s.enabled AND q.retry_at<=now())")
+            .bind(&account).fetch_one(pool).await?
+    };
+    let enabled: bool = sqlx::query_scalar(
+        "SELECT enabled AND NOT paused FROM crm.adapter_controls WHERE provider='wechat'",
+    )
+    .fetch_one(pool)
+    .await?;
+    if !due || !enabled {
+        return Ok(());
+    }
+    let _permit = resources
+        .acquire_background(crate::resources::TaskResources {
+            cpu: 1,
+            network: 1,
+            disk: 1,
+            memory_bytes: 128 * 1024 * 1024,
+        })
+        .await?;
+    let mut command = Command::new(executable);
+    command
+        .arg(if images { "images" } else { "moments" })
+        .current_dir(work)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("MONICA_CHATLOG_ACCOUNT", account)
+        .env("MONICA_CHATLOG_SNAPSHOT_ROOT", snapshot)
+        .env("MONICA_MEDIA_ROOT", media)
+        .env("MONICA_DATABASE_URL", database)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    if let Some(cache) = cache {
+        command.env("MONICA_NATIVE_WECHAT_CACHE", cache);
+    }
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = command.spawn()?;
+    let _group = ProcessGroup(
+        child
+            .id()
+            .context("missing desktop WeChat media worker pid")?,
+    );
+    loop {
+        tokio::select! {
+            result=child.wait()=>{
+                ensure!(result?.success(), "desktop WeChat media worker failed");
+                return Ok(());
+            },
+            _=tokio::time::sleep(Duration::from_secs(1))=>{
+                let enabled: bool = sqlx::query_scalar("SELECT enabled AND NOT paused FROM crm.adapter_controls WHERE provider='wechat'")
+                    .fetch_one(pool).await?;
+                if !enabled { return Ok(()); }
+            }
+        }
+    }
+}
+
 /// Only explicit runtime paths can start external adapters. Nothing discovers
 /// sessions or credentials from existing installations or collector checkouts.
 pub async fn run_configured(

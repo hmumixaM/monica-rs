@@ -10,7 +10,7 @@ app=a.app.resolve();runtime=app/'Contents/Resources/runtime';path=runtime/'manif
 manifest=json.loads(path.read_text())
 # Signing changes Mach-O bytes. Record the delivered binary, preserving its
 # pre-bundle digest as build provenance; then seal the outer resource envelope.
-for key,relative in [('server_sha256','monica-server'),('whatsapp_sha256','tools/bin/monica-whatsapp'),('chatlog_sha256','tools/bin/chatlog-beta')]:
+for key,relative in [('server_sha256','monica-server'),('whatsapp_sha256','tools/bin/monica-whatsapp'),('chatlog_sha256','tools/bin/chatlog-beta'),('chatlog_media_sha256','tools/bin/chatlog-beta-media')]:
     manifest.setdefault('build_'+key,manifest[key])
     with (runtime/relative).open('rb') as binary:
         digest=hashlib.sha256()

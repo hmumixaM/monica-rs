@@ -13,6 +13,7 @@ from pathlib import Path
 import sqlite3
 import struct
 import subprocess
+import tempfile
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener
@@ -198,7 +199,7 @@ def public_image(fetch, photo, external, slot):
     raise ValueError('sns_public_image_unavailable')
 
 
-def import_event(db, source, media, state, runtime, cache, event_id):
+def import_event(db, source, media, state, runtime, cache, event_id, native_event=None):
     scripts=Path(__file__).resolve().parent
     fetch=module('sns_source_frame',scripts.parent/'tools/sns-decrypt/fetch_frame.py')
     state=Path(state);state.mkdir(parents=True,exist_ok=True)
@@ -206,6 +207,13 @@ def import_event(db, source, media, state, runtime, cache, event_id):
     row=db.execute("SELECT external_id,content FROM crm.timeline_events WHERE id=%s AND provider='wechat' AND status='active'",(event_id,)).fetchone()
     if not row:return dict(ready=0,failed=0)
     external,content=row
+    if native_event:
+        _, obj = fetch.post_xml(content['raw_content'])
+        external = obj.findtext('id') if obj is not None else None
+        if not external or not external.isdigit():
+            return dict(ready=0,failed=0)
+    def raw_archive():
+        return content.get('raw_content') if native_event else archived_xml(db, event_id)
     identities=[]
     comments = db.execute("""
         SELECT id::text,external_id,author_external_id,metadata->'media' FROM crm.social_interactions
@@ -222,7 +230,7 @@ def import_event(db, source, media, state, runtime, cache, event_id):
             poster={**photo,'role':photo['role']+'-poster','media_type':'image','source_url':photo['thumbnail_url'],'thumbnail_url':None,'_slot':int(photo['role'].removeprefix('media-')),'_thumbnail':True}
             value=[str(event_id),poster['role'],poster.get('source_media_id'),poster.get('source_md5'),poster['source_url'],None]
             identities.append((hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest(),poster))
-    for motion in source_motion(fetch, source, external, content, lambda: archived_xml(db, event_id)):
+    for motion in source_motion(fetch, source, external, content, raw_archive):
         value = [str(event_id), motion['role'], motion['source_media_id'], motion['source_md5'],
                  motion['source_url'], content['raw_xml_sha256']]
         identities.append((hashlib.sha256(json.dumps(value).encode()).hexdigest(), motion))
@@ -270,7 +278,7 @@ def import_event(db, source, media, state, runtime, cache, event_id):
                 digest, length = archived[0]
                 if archived_file(media, digest, length):
                     saved[key]=dict(status='ready');ready+=1;atomic(ledger,saved);continue
-        if not live and link_existing(db, media, event_id, photo['role'], photo.get('source_url'),
+        if not native_event and not live and link_existing(db, media, event_id, photo['role'], photo.get('source_url'),
                                       photo['media_type'], interaction_id=photo.get('_interaction')):
             saved[key]=dict(status='ready');ready+=1;atomic(ledger,saved);continue
         role=photo['role'];slot=photo.get('_slot')or int(role.removeprefix('media-'))
@@ -282,7 +290,7 @@ def import_event(db, source, media, state, runtime, cache, event_id):
                     header = video.obtain(*video_args, source_media_id=photo.get('source_media_id'),
                                           live_motion=live, raw_xml=photo.get('_raw_xml'))
                 except (FileNotFoundError, ValueError, sqlite3.Error):
-                    archive = archived_xml(db, event_id) if not live else None
+                    archive = raw_archive() if not live else None
                     if not archive or fetch.xml_hash(archive) != content.get('raw_xml_sha256'):
                         raise
                     header = video.obtain(*video_args, source_media_id=photo.get('source_media_id'), raw_xml=archive)
@@ -299,7 +307,7 @@ def import_event(db, source, media, state, runtime, cache, event_id):
                             live_xml = xml
                     except (FileNotFoundError, ValueError, sqlite3.Error):
                         live_xml = None
-                    raw_sources = tuple(dict.fromkeys(filter(None, (live_xml, archived_xml(db, event_id)))))
+                    raw_sources = tuple(dict.fromkeys(filter(None, (live_xml, raw_archive()))))
                 header, data = None, None
                 for raw in raw_sources:
                     try:
@@ -321,11 +329,20 @@ def import_event(db, source, media, state, runtime, cache, event_id):
                 if header is None:
                     header, data = public_image(fetch, photo, external, slot)
                 if not data.startswith((b'\xff\xd8\xff', b'\x89PNG\r\n\x1a\n')):
-                    encoded=json.dumps(header).encode()
-                    private_frame=struct.pack('>I',len(encoded))+encoded+data
-                    decoded=subprocess.run([str(runtime/'node-run'),str(scripts.parent/'tools/sns-decrypt/decrypt.cjs'),str(runtime/'wasm')],input=private_frame,capture_output=True,timeout=45)
-                    if decoded.returncode:raise ValueError('sns_decode_failed')
-                    data=decoded.stdout
+                    if native_event:
+                        with tempfile.TemporaryDirectory(prefix='.image-', dir=stage) as temporary:
+                            raw = Path(temporary) / 'source'
+                            output = raw.with_name('decoded')
+                            raw.write_bytes(data)
+                            decoder = module('sns_native_decode', scripts/'sns-video.py')
+                            decoder.decode_native(runtime, 'sns-image', raw, output, header.get('seed'), 45)
+                            data = output.read_bytes()
+                    else:
+                        encoded=json.dumps(header).encode()
+                        private_frame=struct.pack('>I',len(encoded))+encoded+data
+                        decoded=subprocess.run([str(runtime/'node-run'),str(scripts.parent/'tools/sns-decrypt/decrypt.cjs'),str(runtime/'wasm')],input=private_frame,capture_output=True,timeout=45)
+                        if decoded.returncode:raise ValueError('sns_decode_failed')
+                        data=decoded.stdout
                 checked=subprocess.run([str(runtime/'validate')],input=data,capture_output=True,timeout=20)
                 if checked.returncode:raise ValueError('sns_pixels_failed')
                 asset=json.loads(checked.stdout)
@@ -351,7 +368,7 @@ def import_event(db, source, media, state, runtime, cache, event_id):
         request = Publication(
             stage=stage, media=media, state=receipt, validator=runtime/'validate',
             manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest(),
-            expected_records=len(staged), target=DatabaseTarget.read(db), runtime=runtime,
+            expected_records=len(staged), target=DatabaseTarget.read(db), runtime=runtime, native_event=native_event,
         )
         # Lock contention or uncertain publication leaves decoded rows pending.
         # The durable queue retains the event until publication succeeds.

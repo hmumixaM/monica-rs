@@ -337,16 +337,25 @@ impl Supervisor {
             )
             .env("AI_ENABLED", "false")
             .env("RUST_LOG", "info");
+        let runtime = self.paths.server.parent().ok_or("运行目录无效")?;
         // Do not inherit another installation's account or snapshot directory.
         command
             .env_remove("MONICA_CHATLOG_SNAPSHOT_ROOT")
-            .env_remove("MONICA_CHATLOG_ACCOUNT");
+            .env_remove("MONICA_CHATLOG_ACCOUNT")
+            .env_remove("MONICA_NATIVE_MOMENTS_WORKER")
+            .env_remove("MONICA_NATIVE_WECHAT_CACHE");
         if let Some((snapshots, account)) = self.chatlog.snapshot_source()? {
             command
                 .env("MONICA_CHATLOG_SNAPSHOT_ROOT", snapshots)
                 .env("MONICA_CHATLOG_ACCOUNT", account);
+            let worker = runtime.join("moments/run-worker");
+            if worker.is_file() {
+                command.env("MONICA_NATIVE_MOMENTS_WORKER", worker);
+                if let Some(cache) = self.chatlog.media_cache()? {
+                    command.env("MONICA_NATIVE_WECHAT_CACHE", cache);
+                }
+            }
         }
-        let runtime = self.paths.server.parent().ok_or("运行目录无效")?;
         for (name, relative) in [
             (
                 "MONICA_COLLECTOR_PYTHON",
@@ -662,6 +671,7 @@ impl Supervisor {
         action: &str,
         source: Option<&Path>,
         key: Option<&str>,
+        images: Option<&crate::chatlog::ImageCredentials>,
     ) -> Result<RuntimeStatus> {
         match action {
             "configure" => {
@@ -673,13 +683,16 @@ impl Supervisor {
                 {
                     return Err("请输入绝对微信数据目录与64位十六进制数据库密钥".into());
                 }
+                if let Some(images) = images {
+                    images.validate()?;
+                }
                 self.adapter_enabled("wechat", false)?;
                 // Environment is immutable after spawn. Drain only our Rust child,
                 // retain PostgreSQL and the browser origin, then install fresh env.
                 self.desired_paused = self.status.paused;
                 stop_child(&mut self.server, libc::SIGTERM, Duration::from_secs(120))?;
                 self.status.server_pid = None;
-                let configured = self.chatlog.configure(source, key);
+                let configured = self.chatlog.configure(source, key, images);
                 if let Err(error) = self.start_server() {
                     let cleanup = self.stop();
                     self.status.phase = "failed".into();
@@ -927,7 +940,7 @@ mod tests {
         let source = temp.path().join("explicit source");
         supervisor
             .chatlog
-            .configure(&source, &"1".repeat(64))
+            .configure(&source, &"1".repeat(64), None)
             .unwrap();
         let command = supervisor.server_command("fixture.log").unwrap();
         let (root, account) = supervisor.chatlog.snapshot_source().unwrap().unwrap();

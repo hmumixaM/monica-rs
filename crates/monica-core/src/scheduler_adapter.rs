@@ -7,12 +7,26 @@ use std::{
 };
 
 pub(super) async fn run(shared: Arc<Shared>) -> Result<()> {
-    run_lane(shared, false).await
+    run_lane(shared, Lane::Sources).await
 }
 pub(super) async fn run_messages(shared: Arc<Shared>) -> Result<()> {
-    run_lane(shared, true).await
+    run_lane(shared, Lane::Messages).await
 }
-async fn run_lane(shared: Arc<Shared>, messages: bool) -> Result<()> {
+pub(super) async fn run_native_moments(shared: Arc<Shared>) -> Result<()> {
+    run_lane(shared, Lane::NativeMoments).await
+}
+pub(super) async fn run_native_images(shared: Arc<Shared>) -> Result<()> {
+    run_lane(shared, Lane::NativeImages).await
+}
+
+enum Lane {
+    Sources,
+    Messages,
+    NativeMoments,
+    NativeImages,
+}
+
+async fn run_lane(shared: Arc<Shared>, lane: Lane) -> Result<()> {
     let mut mode = shared.mode.subscribe();
     loop {
         let current = *mode.borrow_and_update();
@@ -40,8 +54,12 @@ async fn run_lane(shared: Arc<Shared>, messages: bool) -> Result<()> {
         // the executable has not exited. Durable leases permit later recovery.
         tokio::select! {
             result=tokio::time::timeout(Duration::from_secs(900),async {
-                if messages { crate::adapter::run_messages_configured(&shared.background,&shared.resources).await }
-                else { crate::adapter::run_configured(&shared.background,&shared.resources).await }
+                match lane {
+                    Lane::Sources => crate::adapter::run_configured(&shared.background, &shared.resources).await.map(|_| ()),
+                    Lane::Messages => crate::adapter::run_messages_configured(&shared.background, &shared.resources).await.map(|_| ()),
+                    Lane::NativeMoments => crate::adapter::run_native_wechat_media(&shared.background, &shared.resources, false).await,
+                    Lane::NativeImages => crate::adapter::run_native_wechat_media(&shared.background, &shared.resources, true).await,
+                }
             })=>{
                 if !matches!(result,Ok(Ok(_))) {shared.failed.fetch_add(1,Ordering::Relaxed);}
             },

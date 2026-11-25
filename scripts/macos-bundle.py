@@ -42,23 +42,27 @@ def main():
     p.add_argument('--chatlog-runtime',type=Path,default=ROOT/'.local-validation/chatlog-runtime')
     p.add_argument('--whatsapp-binary',type=Path,default=ROOT/'target/release/monica-whatsapp')
     p.add_argument('--whatsapp-licenses',type=Path,default=ROOT/'services/whatsapp/licenses')
+    p.add_argument('--ffmpeg',type=Path,default=Path('/opt/homebrew/bin/ffmpeg'))
     p.add_argument('--ffprobe',type=Path,default=Path('/opt/homebrew/bin/ffprobe'))
     p.add_argument('--web',type=Path,default=ROOT/'apps/web/dist')
     p.add_argument('--output',type=Path,default=DEFAULT)
     a=p.parse_args()
     if sys.platform!='darwin': p.error('This packaging audit requires macOS otool/codesign')
     if not a.server.is_file() or not (a.web/'index.html').is_file(): p.error('Build Rust server and Web before packaging')
-    if not a.ffprobe.is_file(): p.error('Build/install ffprobe before packaging; video inspection is required')
+    if not a.ffprobe.is_file() or not a.ffmpeg.is_file(): p.error('FFmpeg and ffprobe are required for Moments video validation')
     if not a.whatsapp_binary.is_file(): p.error('Build the explicit WhatsApp Go bridge before packaging')
     if not a.whatsapp_licenses.is_dir(): p.error('Generate the WhatsApp dependency license inventory before packaging')
     if not (a.collectors/'manifest.json').is_file() or not (a.chatlog_runtime/'source.json').is_file(): p.error('Build pinned collector and Chatlog runtimes before packaging')
     chatlog_pin=json.loads((ROOT/'apps/desktop/patches/chatlog/beta.json').read_text())
     chatlog_source=json.loads((a.chatlog_runtime/'source.json').read_text())
     chatlog_binary=a.chatlog_runtime/'chatlog-beta'
+    chatlog_media_binary=a.chatlog_runtime/'chatlog-beta-media'
     if (
         any(chatlog_source.get(key)!=value for key,value in chatlog_pin.items())
         or not chatlog_binary.is_file()
         or chatlog_source.get('binary_sha256')!=digest(chatlog_binary)
+        or not chatlog_media_binary.is_file()
+        or chatlog_source.get('media_sha256')!=digest(chatlog_media_binary)
     ): p.error('Build Chatlog Beta from the pinned source before packaging')
     collector_manifest=json.loads((a.collectors/'manifest.json').read_text())
     if digest(ROOT/'apps/desktop/collectors/uv.lock')!=collector_manifest['collector_lock_sha256']: p.error('Collector dependency lock is stale; rebuild its runtime')
@@ -77,12 +81,16 @@ def main():
     shutil.copytree(a.postgres_prefix/'lib',pg/'lib',symlinks=False,dirs_exist_ok=True)
     pending=[f for f in pg.rglob('*') if macho(f)]
     origins={f:(a.postgres_prefix/f.relative_to(pg)).resolve() for f in pending}
-    probe=a.output/'tools/bin/ffprobe';probe.parent.mkdir(parents=True)
-    shutil.copy2(a.ffprobe,probe);pending.append(probe);origins[probe]=a.ffprobe.resolve()
-    bridge=a.output/'tools/bin/monica-whatsapp'
-    shutil.copy2(a.whatsapp_binary,bridge);pending.append(bridge);origins[bridge]=a.whatsapp_binary.resolve()
-    chatlog=a.output/'tools/bin/chatlog-beta'
-    shutil.copy2(chatlog_binary,chatlog);pending.append(chatlog);origins[chatlog]=chatlog_binary.resolve()
+    tools=a.output/'tools/bin'
+    tools.mkdir(parents=True)
+    for name, source in [('ffprobe', a.ffprobe), ('ffmpeg', a.ffmpeg), ('monica-whatsapp', a.whatsapp_binary),
+                         ('chatlog-beta', chatlog_binary), ('chatlog-beta-media', chatlog_media_binary)]:
+        executable=tools/name
+        shutil.copy2(source,executable)
+        pending.append(executable);origins[executable]=source.resolve()
+    subprocess.run(['go','build','-trimpath','-o',str((tools/'validate').resolve()),'.'],
+                   cwd=ROOT/'tools/sns-decrypt',check=True,env={**os.environ,'CGO_ENABLED':'0','GOOS':'darwin','GOARCH':'arm64'})
+    probe, bridge, chatlog = (tools/name for name in ('ffprobe','monica-whatsapp','chatlog-beta'))
     seen=set()
     while pending:
         f=pending.pop()
@@ -111,12 +119,37 @@ def main():
     shutil.copy2(a.server,a.output/'monica-server')
     shutil.copytree(a.web,a.output/'web')
     shutil.copytree(a.collectors,a.output/'collectors',symlinks=True,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+    moments=a.output/'moments'
+    scripts=moments/'scripts'
+    for name in ['macos-moments-worker.py','sns-media-import.py','sns-video.py','chatlog_moments.py',
+                 'monica_imports/__init__.py','monica_imports/files.py','monica_imports/media_store.py',
+                 'monica_imports/sns_publication.py','monica_imports/source_media.py','monica_imports/sqlite_snapshot.py',
+                 'nas-wechat-images.py','wechat-group-images.py']:
+        destination=scripts/name
+        destination.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(ROOT/'scripts'/name,destination)
+    fetch=moments/'tools/sns-decrypt/fetch_frame.py'
+    fetch.parent.mkdir(parents=True)
+    shutil.copy2(ROOT/'tools/sns-decrypt/fetch_frame.py',fetch)
+    worker=moments/'run-worker'
+    worker.write_text('''#!/bin/sh
+set -eu
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec "$HERE/../collectors/python/bin/python3.12" -I -B -c '
+import runpy, sys
+from pathlib import Path
+script = sys.argv.pop(1)
+sys.path.insert(0, str(Path(script).parent))
+runpy.run_path(script, run_name="__main__")
+' "$HERE/scripts/macos-moments-worker.py" "$@"
+''')
+    worker.chmod(0o755)
     notices=a.output/'licenses';notices.mkdir()
     geo=ROOT/'crates/monica-server/src/pages/geonames'
     shutil.copy2(geo/'README.md',notices/'GeoNames.md')
     shutil.copy2(geo/'PROVENANCE.json',notices/'GeoNames-PROVENANCE.json')
     shutil.copytree(a.chatlog_runtime/'licenses',notices/'Chatlog-dependencies')
-    for name in ['source.json','Cargo.lock']:
+    for name in ['source.json','Cargo.lock',chatlog_pin['patch']]:
         shutil.copy2(a.chatlog_runtime/name,notices/('Chatlog-'+name))
     shutil.copytree(a.whatsapp_licenses,notices/'WhatsApp-dependencies')
     for name in ['PROVENANCE.md','go.mod','go.sum']:
@@ -143,6 +176,7 @@ def main():
         if f.is_file() and not f.is_symlink(): f.chmod(f.stat().st_mode | 0o200)
     manifest={'schema':1,'platform':'darwin/arm64','minimum_macos':'26.0','server_sha256':digest(a.server),'postgres':run(pg/'bin/postgres','--version').strip(),'ffprobe':run(probe,'-version').splitlines()[0],'whatsapp_sha256':digest(bridge),'chatlog_sha256':digest(chatlog),'collectors':json.loads((a.collectors/'manifest.json').read_text()),'native_files':audited,'adapters_enabled':False,'ai_enabled':False,'source_commit':run('git','-C',ROOT,'rev-parse','HEAD').strip(),'source_dirty':bool(run('git','-C',ROOT,'status','--porcelain').strip()),'license_packages':[p.parent.name+'-'+p.name for p in sorted(package_roots)]}
     manifest['chatlog_source_commit']=chatlog_pin['commit']
+    manifest['chatlog_media_sha256']=digest(tools/'chatlog-beta-media')
     (a.output/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     print(json.dumps({'output':str(a.output),'native_files':len(audited),'postgres':manifest['postgres']}))
 

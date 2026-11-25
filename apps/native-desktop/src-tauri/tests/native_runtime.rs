@@ -281,7 +281,12 @@ fn native_postgres_server_lifecycle() {
     let old_server = supervisor.status().server_pid;
     let old_postgres = supervisor.status().postgres_pid;
     supervisor
-        .chatlog_action("configure", Some(&synthetic_wechat), Some(&"1".repeat(64)))
+        .chatlog_action(
+            "configure",
+            Some(&synthetic_wechat),
+            Some(&"1".repeat(64)),
+            None,
+        )
         .unwrap();
     assert_ne!(supervisor.status().server_pid, old_server);
     assert_eq!(supervisor.status().postgres_pid, old_postgres);
@@ -295,7 +300,9 @@ fn native_postgres_server_lifecycle() {
             .status()
             .is_success()
     );
-    let enabled = supervisor.chatlog_action("enable", None, None).unwrap();
+    let enabled = supervisor
+        .chatlog_action("enable", None, None, None)
+        .unwrap();
     assert!(enabled.chatlog.enabled);
     assert!(!enabled.chatlog.running);
     let adapters: serde_json::Value = client
@@ -312,7 +319,9 @@ fn native_postgres_server_lifecycle() {
             .iter()
             .any(|v| v["provider"] == "wechat" && v["enabled"] == true && v["paused"] == false)
     );
-    supervisor.chatlog_action("disable", None, None).unwrap();
+    supervisor
+        .chatlog_action("disable", None, None, None)
+        .unwrap();
     assert!(!supervisor.status().chatlog.enabled);
     assert!(
         std::fs::read_dir(&synthetic_wechat)
