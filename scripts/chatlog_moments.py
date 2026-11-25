@@ -154,11 +154,11 @@ def moments_media(obj: ET.Element) -> list[dict[str, Any]]:
         url_element = media.find('url')
         media_rows.append({'role': f'media-{index + 1}', 'source_media_id': media.findtext('id'), 'source_md5': url_element.attrib.get('md5') if url_element is not None else None, 'media_type': 'video' if media_type in {'6', '15'} else 'image', 'source_url': source_url or None, 'thumbnail_url': thumbnail_url or None, 'width': width, 'height': height, 'byte_length': total_size, 'duration_ms': duration_ms, 'description': media.findtext('description') or None})
     parent_type = obj.findtext('ContentObject/type')
-    if parent_type in ('5', '54'):
+    if parent_type == '5':
         for item in media_rows:
             if item['media_type'] == 'image':
                 item['source_media_type'] = 'video'
-                item['source_kind'] = 'wechat_channels' if parent_type == '54' else 'wechat_video_share'
+                item['source_kind'] = 'wechat_video_share'
     return media_rows
 
 def moments_interactions(root_node: ET.Element, post_id: str) -> list[dict[str, Any]]:

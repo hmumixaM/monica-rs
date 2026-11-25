@@ -57,6 +57,29 @@ class PublicationContract(unittest.TestCase):
         self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),self.asset['sha256'])
         self.assertTrue(json.loads((self.request.state/'result.json').read_text())['complete'])
 
+    def test_live_motion_publication_is_bound_to_the_static_slot_and_xml_revision(self):
+        motion = b'synthetic validated MP4'
+        asset = dict(self.asset, sha256=hashlib.sha256(motion).hexdigest(),
+                     byte_length=len(motion), media_type='video/mp4', duration_ms=1500)
+        (self.request.stage/'objects'/asset['sha256']).write_bytes(motion)
+        manifest = self.request.stage/'manifest.json'
+        row = json.loads(manifest.read_text())['rows'][0]
+        row.update(asset_role='live-media-1', parent_media_id='101', source_media_id='motion-id',
+                   source_url='https://szzjwxsns.video.qq.com/motion', full_video=True, media=asset)
+        manifest.write_text(json.dumps(dict(rows=[row])))
+        request = replace(self.request, manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest())
+        fake_video = SimpleNamespace(validate=lambda *args: asset)
+        with patch('monica_imports.sns_publication.module', return_value=fake_video):
+            with self.assertRaises(ValueError):
+                publish(self.db, request)
+            self.content['raw_xml_sha256'] = row['raw_xml_sha256']
+            self.db.execute('UPDATE crm.timeline_events SET content=%s WHERE id=%s',
+                            (Jsonb(self.content), self.event))
+            publish(self.db, request)
+            publish(self.db, request)
+        self.assertEqual(self.db.execute('SELECT role FROM crm.media_links WHERE entity_id=%s',
+                                         (self.event,)).fetchall(), [('live-media-1',)])
+
     def test_wrong_database_or_changed_source_never_publishes(self):
         with self.assertRaises(ValueError):
             publish(self.db,replace(self.request,target=replace(self.request.target,system_id='another-cluster')))

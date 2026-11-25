@@ -20,12 +20,29 @@ class SourceMedia(unittest.TestCase):
   self.assertEqual((cover['slot'],cover['source_media_id'],cover['source_md5'],body),(1,'456',None,b'cover'))
   photo,body=fetch.frame(self.db,'123',2,cache_root=self.cache,source_media_id='789',source_kind='wechat_channels')
   self.assertEqual((photo['slot'],photo['source_media_id'],photo['source_md5'],body),(2,'789','source-md5',b'photo'))
- def test_channels_image_can_be_in_a_regular_media_list_without_finder_metadata(self):
+ def test_legacy_channels_flag_does_not_change_regular_slot_fetch(self):
   with sqlite3.connect(self.db) as db:
    db.execute('INSERT INTO SnsTimeLine VALUES(?,?)',('125','<TimelineObject><id>125</id><ContentObject><type>54</type><mediaList><media><id>890</id><url>http://szmmsns.qpic.cn/channels/0</url></media></mediaList></ContentObject></TimelineObject>'))
-  self.cached('https://szmmsns.qpic.cn/channels/0',b'channels image')
+  self.cached('https://szmmsns.qpic.cn/channels/0',b'regular image')
   header,body=fetch.frame(self.db,'125',1,cache_root=self.cache,source_media_id='890',source_kind='wechat_channels')
-  self.assertEqual((header['source_media_id'],body),('890',b'channels image'))
+  self.assertEqual((header['source_media_id'],body),('890',b'regular image'))
+ def test_type_54_album_keeps_photos_and_identifies_nested_motion(self):
+  still='http://szmmsns.qpic.cn/photo/0'
+  movie='http://szzjwxsns.video.qq.com/movie'
+  xml=f'<TimelineObject><id>126</id><ContentObject><type>54</type><mediaList><media><id>still</id><type>2</type><url>{still}</url><LivePhoto><liveMedia><id>motion</id><type>6</type><url>{movie}</url></liveMedia></LivePhoto></media></mediaList></ContentObject></TimelineObject>'
+  with sqlite3.connect(self.db) as db:
+   db.execute('INSERT INTO SnsTimeLine VALUES(?,?)',('126',xml))
+  _,obj=fetch.post_xml(xml)
+  [photo]=moments.moments_media(obj)
+  [motion]=fetch.live_assets(obj)
+  self.assertEqual(photo['media_type'],'image')
+  self.assertNotIn('source_kind',photo)
+  self.assertEqual((motion['role'],motion['parent_media_id']),('live-media-1','still'))
+  self.cached(movie,b'original motion')
+  dest=self.root/'movie.mp4'
+  header,_=fetch.frame(self.db,'126',1,cache_root=self.cache,destination=dest,source_media_id='motion',live_motion=True)
+  self.assertEqual((header['parent_media_id'],header['source_media_id'],dest.read_bytes()),('still','motion',b'original motion'))
+
  def test_native_video_poster_uses_its_source_thumbnail_cdn(self):
   with sqlite3.connect(self.db)as db:db.execute('INSERT INTO SnsTimeLine VALUES(?,?)',('124','<TimelineObject><id>124</id><ContentObject><mediaList><media><id>987</id><type>15</type><url>http://snsvideo.c2c.wechat.com/video</url><thumb>http://vweixinthumb.tc.qq.com/poster/0</thumb></media></mediaList></ContentObject></TimelineObject>'))
   self.cached('http://vweixinthumb.tc.qq.com/poster/0',b'video poster')

@@ -467,12 +467,24 @@ fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
                 resolved["source_url"] = item["source_url"].clone();
             }
         }
-        if let Some(kind) = item["source_media_type"]
+        // Older Moments imports marked every regular image in type 54 as
+        // Channels. Genuine finderFeed entries have an original video type.
+        if item["source_kind"] == "wechat_channels" && item["media_type"] == "image" {
+            resolved.as_object_mut().unwrap().remove("source_kind");
+            resolved["source_media_type"] = json!("image");
+        } else if let Some(kind) = item["source_media_type"]
             .as_str()
             .or(item["media_type"].as_str())
             .filter(|s| !s.is_empty())
         {
             resolved["source_media_type"] = json!(kind);
+        }
+        for dimension in ["width", "height"] {
+            if !resolved[dimension].as_u64().is_some_and(|value| value > 0)
+                && item[dimension].as_u64().is_some_and(|value| value > 0)
+            {
+                resolved[dimension] = item[dimension].clone();
+            }
         }
         if let (Some(local), Some(poster)) = (local, poster)
             && local["id"] != poster["id"]
@@ -495,9 +507,36 @@ fn merge_media(remote: &Value, local: &Value) -> Vec<Value> {
             seen.insert(poster["id"].to_string());
         }
     }
+    let mut motion = std::collections::BTreeMap::new();
     for item in local {
-        if seen.insert(item["id"].to_string()) {
+        if let Some(slot) = item["role"]
+            .as_str()
+            .and_then(|role| role.strip_prefix("live-media-"))
+            && item["media_type"] == "video/mp4"
+        {
+            if item["ready"] == true && item["id"].is_string() {
+                // Ambiguous slots can carry different historical revisions.
+                motion
+                    .entry(slot.to_owned())
+                    .and_modify(|id| *id = Value::Null)
+                    .or_insert_with(|| item["id"].clone());
+            }
+        } else if seen.insert(item["id"].to_string()) {
             result.push(item);
+        }
+    }
+    for image in &mut result {
+        if let Some(id) = image["role"]
+            .as_str()
+            .and_then(|role| role.strip_prefix("media-"))
+            .and_then(|slot| motion.get(slot))
+            .filter(|id| id.is_string())
+            && image["media_type"]
+                .as_str()
+                .is_some_and(|kind| kind.starts_with("image"))
+            && image["source_media_type"] != "video"
+        {
+            image["live_media_id"] = id.clone();
         }
     }
     result
@@ -631,6 +670,28 @@ mod tests {
         assert_eq!(partial["items"][2]["description"], "茶壶");
         assert_eq!(partial["items"][2]["index"], 3);
     }
+    #[test]
+    fn moments_album_pairs_motion_without_counting_it_and_preserves_finder_cover() {
+        let remote = json!([
+            {"role":"media-1","media_type":"image","source_url":"still","width":1320,
+             "source_kind":"wechat_channels","source_media_type":"video"},
+            {"role":"media-2","media_type":"video","thumbnail_url":"cover","source_kind":"wechat_channels"}
+        ]);
+        let local = json!([
+            {"role":"media-1","id":"photo","media_type":"image/jpeg","source_url":"still","width":null,"ready":true},
+            {"role":"thumbnail-2","id":"cover","media_type":"image/jpeg","source_url":"cover","ready":true},
+            {"role":"live-media-1","id":"motion","media_type":"video/mp4","ready":true}
+        ]);
+        let media = merge_media(&remote, &local);
+        assert_eq!(media.len(), 2);
+        assert_eq!(media[0]["source_media_type"], "image");
+        assert!(media[0].get("source_kind").is_none());
+        assert_eq!(media[0]["width"], 1320);
+        assert_eq!(media[0]["live_media_id"], "motion");
+        assert_eq!(media[1]["source_kind"], "wechat_channels");
+        assert_eq!(media[1]["source_media_type"], "video");
+    }
+
     #[tokio::test]
     async fn availability_checks_real_cas_bytes_and_rechecks_after_removal() {
         let folder = tempfile::tempdir().unwrap();

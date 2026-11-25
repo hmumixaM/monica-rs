@@ -107,19 +107,27 @@ def publish(db, request: Publication):
         for row in rows:
             provider, external, content, source_account = events[row['event_id']]
             require(external == row['external_id'])
-            original = content['media'][row['slot'] - 1]
-            role = row.get('asset_role', 'media-' + str(row['slot']))
-            require(role in ('media-'+str(row['slot']), 'media-'+str(row['slot'])+'-poster'))
-            source_url = original.get('thumbnail_url') if role.endswith('-poster') else original.get('source_url') or original.get('thumbnail_url') or ''
-            require(original.get('role') == 'media-' + str(row['slot']) and
-                    source_url and source_url.replace('http://', 'https://', 1) == row['source_url'] and
-                    original.get('source_media_id') == row['source_media_id'] and
-                    original.get('source_md5') == row['source_md5'])
+            slot = row['slot']
+            original = next((item for item in content['media'] if item.get('role') == f'media-{slot}'), None)
+            require(original is not None)
+            role = row.get('asset_role', f'media-{slot}')
+            if role == f'live-media-{slot}':
+                require(row['media']['media_type'] == 'video/mp4' and original.get('media_type') == 'image'
+                        and original.get('source_media_id') == row['parent_media_id']
+                        and content.get('raw_xml_sha256') == row['raw_xml_sha256'])
+                source_url = row['source_url']
+            else:
+                require(role in (f'media-{slot}', f'media-{slot}-poster'))
+                source_url = original.get('thumbnail_url') if role.endswith('-poster') else original.get('source_url') or original.get('thumbnail_url') or ''
+                require(source_url and source_url.replace('http://', 'https://', 1) == row['source_url'] and
+                        original.get('source_media_id') == row['source_media_id'] and
+                        original.get('source_md5') == row['source_md5'])
             asset = row['media']
             digest = asset['sha256']
             path = store.publish(request.stage / 'objects' / digest, digest, asset['byte_length'])
             media_id = uuid.uuid5(uuid.NAMESPACE_URL, 'monica:sns:' + digest)
-            provenance = 'sns-import:' + external + ':' + str(row['slot']) + ':' + row['raw_xml_sha256']
+            provenance_role = role if role.startswith('live-media-') else str(slot)
+            provenance = 'sns-import:' + external + ':' + provenance_role + ':' + row['raw_xml_sha256']
             db.execute("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,width,height,source_type,source_record_id,duration_ms,verified_at) VALUES(%s,%s,%s,%s,%s,%s,%s,'wechat',%s,%s,now()) ON CONFLICT(sha256) DO UPDATE SET media_type=excluded.media_type,byte_length=excluded.byte_length,object_path=excluded.object_path,width=excluded.width,height=excluded.height,duration_ms=coalesce(excluded.duration_ms,crm.media_assets.duration_ms),verified_at=excluded.verified_at", (media_id, digest, asset['media_type'], asset['byte_length'], path, asset['width'], asset['height'], provenance,asset.get('duration_ms')))
             media_id, length = db.execute('SELECT id,byte_length FROM crm.media_assets WHERE sha256=%s', (digest,)).fetchone()
             require(length == asset['byte_length'])

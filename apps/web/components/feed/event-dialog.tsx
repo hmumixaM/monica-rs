@@ -13,7 +13,7 @@ import { PhotoPeople } from "../faces/photo-people";
 import { Button, IconButton } from "../ui/button";
 import { PersonLink } from "../ui/person-link";
 import { Avatar, SourceMark } from "../ui/primitives";
-import { ChannelsInfo, EventAnnotations, FeedImage, SharedLinkCard, Unavailable, VideoCover } from "./feed-parts";
+import { ChannelsInfo, EventAnnotations, FeedImage, SharedLinkCard, Unavailable } from "./feed-parts";
 import styles from "./feed.module.css";
 import { InstagramPostDetails } from "./instagram-post";
 import { type EventDetail, availableMedia, eventDate, eventKind, type FeedEvent, isVideo, type MediaReading, type SharedLink } from "./types";
@@ -23,6 +23,7 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
   const dialog = useRef<HTMLDialogElement>(null);
   const [detail, setDetail] = useState<EventDetail | null>(null);
   const [error, setError] = useState("");
+  const [playingMotion, setPlayingMotion] = useState<string>();
   const close = useZoomFrom(dialog, origin);
 
   useEffect(() => { dialog.current?.showModal(); }, []);
@@ -38,8 +39,7 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
   }, [event.id]);
 
   const metadata = detail?.event_metadata || event.event_metadata;
-  const allMedia = detail?.media || event.media || [];
-  const media = allMedia;
+  const media = detail?.media || event.media || [];
   const link = (detail?.content as { shared_link?: SharedLink } | undefined)?.shared_link || event.shared_link;
   const photoMedia = link ? media.slice(1) : media;
   const body = recordText(detail?.content) || recordText(detail?.summary || event.summary);
@@ -55,21 +55,32 @@ export function EventDialog({ event, origin, onClose }: { event: FeedEvent; orig
     <header className={styles.detailHeader}>
       {event.profile_id ? <PersonLink className={styles.person} href={`/profiles/${event.profile_id}`}>
         <Avatar name={event.profile_name || event.title} mediaId={event.avatar_media_id} size={36} round />
-        <span><strong>{event.profile_name || event.title}</strong><small><SourceMark provider={event.provider} size={11} /> {eventKind({ ...event, event_metadata: metadata })} · <time dateTime={event.occurred_at}>{eventDate(event.occurred_at, event.provider)}</time></small></span>
+        <span><strong>{event.profile_name || event.title}</strong><small><SourceMark provider={event.provider} size={11} /> {eventKind({ ...event, media, event_metadata: metadata })} · <time dateTime={event.occurred_at}>{eventDate(event.occurred_at, event.provider)}</time></small></span>
       </PersonLink> : <span className={styles.person}><span><strong>{event.title}</strong><small>{eventKind(event)} · {eventDate(event.occurred_at, event.provider)}</small></span></span>}
       <IconButton label="关闭动态详情" onClick={close}><X size={18} /></IconButton>
     </header>
     {hasPhotos && <div className={styles.detailPhotos}>
-      {photoMedia.map((item, index) => <figure key={item.id || index} className={styles.detailPhoto}>
-        {item.ready !== false && localMediaUrl(item.id)
-        ? <a href={localMediaUrl(item.id)} target="_blank" rel="noreferrer" aria-label={`查看原图 ${index + 1}`}>
-          {item.media_type?.includes("video")
-            ? <video controls preload="metadata" src={localMediaUrl(item.id)} poster={localMediaUrl(item.thumbnail_id)} data-zoom-target={index === 0 ? "" : undefined} />
-            : <FeedImage media={item} original alt={`动态照片 ${index + 1}`} zoomTarget={index === 0} />}
-        </a>
-        : <span><Unavailable>{`${isVideo(item) ? "视频" : "动态照片"} ${index + 1} · 暂时无法读取`}</Unavailable></span>}
-        <figcaption>图片 {index + 1}</figcaption>
-      </figure>)}
+      {photoMedia.map((item, index) => {
+        const original = item.ready !== false ? localMediaUrl(item.id) : undefined;
+        const motion = localMediaUrl(item.live_media_id);
+        const playing = !!motion && playingMotion === motion;
+        return <figure key={item.id || index} className={styles.detailPhoto}>
+          {playing
+            ? <div className={styles.detailMotion}>
+              <video aria-label={`实况照片 ${index + 1}`} src={motion} poster={original} controls autoPlay playsInline
+                onEnded={() => setPlayingMotion(undefined)} />
+            </div>
+            : original ? <a href={original} target="_blank" rel="noreferrer" aria-label={`查看原图 ${index + 1}`}>
+              {item.media_type?.includes("video")
+                ? <video controls preload="metadata" src={original} poster={localMediaUrl(item.thumbnail_id)} data-zoom-target={index === 0 ? "" : undefined} />
+                : <FeedImage media={item} original alt={`动态照片 ${index + 1}`} zoomTarget={index === 0} />}
+            </a>
+            : <span><Unavailable>{`${isVideo(item) ? "视频" : "动态照片"} ${index + 1} · 暂时无法读取`}</Unavailable></span>}
+          {motion && <button type="button" className={styles.liveButton}
+            onClick={() => setPlayingMotion(playing ? undefined : motion)}>{playing ? "查看静态图" : "播放实况"}</button>}
+          <figcaption>图片 {index + 1}</figcaption>
+        </figure>;
+      })}
     </div>}
     <div className={styles.detailText}>
       {link && <SharedLinkCard link={link} media={media[0]} />}

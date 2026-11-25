@@ -10,11 +10,11 @@ const event = {
   event_metadata: {event_type: 'story', locations: [], mentions: []},
 };
 
-async function feed(page: Page, media: FeedMedia[] = event.media) {
+async function feed(page: Page, media: FeedMedia[] = event.media, item = event) {
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname;
-    if (path === '/api/v1/timeline') return route.fulfill({json: [{...event, media}]});
-    if (path === `/api/v1/timeline/${event.id}`) return route.fulfill({json: {...event, media, content: {caption: event.summary}}});
+    if (path === '/api/v1/timeline') return route.fulfill({json: [{...item, media}]});
+    if (path === `/api/v1/timeline/${event.id}`) return route.fulfill({json: {...item, media, content: {caption: item.summary}}});
     if (path.startsWith('/api/v1/media/')) {
       const i = ids.indexOf(path.split('/').at(-1)!);
       if (i < 0) return route.fulfill({status: 404});
@@ -180,4 +180,23 @@ test('Next-style reading lists one paragraph for each actual image, including pe
   await expect(third).toContainText('菜单\n茶 25');
   await expect(first).not.toContainText('旧的整条摘要');
   await expect(dialog.getByText('旧的整条摘要不应冒充第一张图片识别')).toBeVisible();
+});
+
+test('Moments details fill the media pane for photos and genuine Channels covers', async ({page}) => {
+  const item = {...event, provider: 'wechat', event_metadata: {...event.event_metadata, event_type: 'post'}};
+  await page.setViewportSize({width: 1440, height: 1000});
+  await feed(page, [{...event.media[0], live_media_id: ids[1]},
+    {...event.media[2], source_kind: 'wechat_channels', source_media_type: 'video'}], item);
+  await page.locator('article [data-thumb]').click();
+  const dialog = page.getByRole('dialog', {name: '动态详情'});
+  await expect(dialog.locator('figure')).toHaveCount(2);
+  for (const alt of ['动态照片 1', '视频缩略图']) {
+    const image = dialog.getByAltText(alt);
+    expect((await image.boundingBox())!.width).toBeGreaterThan(500);
+    expect((await image.boundingBox())!.height).toBeGreaterThan(600);
+  }
+  await dialog.getByRole('button', {name: '播放实况'}).click();
+  await expect(dialog.getByLabel('实况照片 1')).toHaveAttribute('src', `/api/v1/media/${ids[1]}`);
+  await dialog.getByRole('button', {name: '查看静态图'}).click();
+  await expect(dialog.getByAltText('动态照片 1')).toBeVisible();
 });

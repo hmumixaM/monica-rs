@@ -2,7 +2,7 @@ import type { InstagramPost } from "./instagram-post";
 
 export type FeedMedia = {
   source_kind?: string; author_name?: string; description?: string; duration_ms?: number; width?: number; height?: number; id?: string;
-  thumbnail_id?: string; source_url?: string; thumbnail_url?: string; media_type?: string; source_media_type?: string; ready?: boolean;
+  thumbnail_id?: string; live_media_id?: string; source_url?: string; thumbnail_url?: string; media_type?: string; source_media_type?: string; ready?: boolean;
 };
 export type SharedLink = { url: string; title?: string; description?: string; source_name?: string; kind?: "link" | "video" | "music" };
 export type EventPlace = { label: string; location_id?: string; address?: string; latitude?: number; longitude?: number; map_url?: string; coordinate_source?: string };

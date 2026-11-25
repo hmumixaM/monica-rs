@@ -147,18 +147,24 @@ a.person:hover strong { text-decoration: underline; text-underline-offset: 3px; 
   container-type: size; scroll-snap-type: y mandatory; scroll-padding: 8px;
   background: rgb(10 12 16 / .94);
   /* Each photo is one panel tall, so it is always seen whole; more photos scroll one at a time. */
-  & a, & > span { display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center;
+  & a, & .detailMotion { display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center;
     block-size: calc(100cqb - 16px); min-block-size: 0; scroll-snap-align: start; }
-  & a { inline-size: 100%; }
+  & a, & .detailMotion { inline-size: 100%; }
+  & .video { inline-size: 100%; block-size: 100%; min-block-size: 0; background: transparent; }
   & img, & video { inline-size: 100%; block-size: 100%; object-fit: contain; }
 }
 .detailText { grid-area: text; display: flex; flex-direction: column; gap: var(--space-3); min-inline-size: 0; min-block-size: 0; overflow: auto; overscroll-behavior: contain;
   padding: 0 var(--space-5) var(--space-5);
   & .annotations, & .sharedLink, & .igBadge { padding: 0; margin: 0; font-size: var(--text-sm); } }
-.detailPhoto { margin: 0; min-inline-size: 0; scroll-snap-align: start;
+.detailPhoto { position: relative; margin: 0; min-inline-size: 0; scroll-snap-align: start;
   & > a { scroll-snap-align: none; }
   & > span { display: grid; min-block-size: 180px; place-items: center; }
   & figcaption { padding: var(--space-3); color: #e5e7eb; }
+}
+.liveButton {
+  position: absolute; inset-block-start: 8px; inset-inline-start: 8px;
+  padding: 6px 12px; border: 0; border-radius: var(--radius-chip);
+  background: rgb(10 12 16 / .72); color: white; font-size: var(--text-xs);
 }
 .photoReading { font-size: var(--text-xs); line-height: 1.6; overflow-wrap: anywhere;
   & p { margin-block: var(--space-1); }
@@ -200,7 +206,9 @@ a.person:hover strong { text-decoration: underline; text-underline-offset: 3px; 
   .detail:not([data-photos]) { inline-size: 100vw; block-size: 100dvh; max-block-size: none; }
   .detailPhotos, .detailText { overflow: visible; }
   .detailPhotos { padding: 0; background: var(--color-sunken); container-type: normal; scroll-snap-type: none; }
-  .detailPhotos a, .detailPhotos > span { block-size: auto; }
+  .detailPhotos a, .detailPhotos .detailMotion { block-size: auto; }
+  .detailPhotos .video { block-size: auto; min-block-size: 160px; max-block-size: 70dvh; }
+  .detailPhotos .video img { block-size: 100%; }
   .detailPhotos img, .detailPhotos video { block-size: auto; max-block-size: 70dvh; }
   .detailText { padding: var(--space-4); padding-block-end: calc(var(--space-6) + env(safe-area-inset-bottom)); }
   .detailHeader { position: sticky; inset-block-start: 0; z-index: 1; padding: var(--space-3) var(--space-4);

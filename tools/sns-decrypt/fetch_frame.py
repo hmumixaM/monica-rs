@@ -4,14 +4,14 @@ No credentials, frame, or request URL is written to disk or diagnostic output.
 This is a one-shot fetch, not a watcher or recurring audit.
 """
 import argparse
-from contextlib import closing
+from contextlib import closing, contextmanager
 import hashlib
 import json
 from pathlib import Path
 import sqlite3
 import struct
 import sys
-from urllib.parse import quote, quote_plus, urlsplit
+from urllib.parse import quote_plus, urlsplit
 from urllib.request import Request, HTTPRedirectHandler, build_opener
 import xml.etree.ElementTree as ET
 
@@ -21,27 +21,71 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def frame(source, external, slot, cache_root=None, source_tid=None, destination=None, thumbnail=False, source_media_id=None, source_kind=None):
+@contextmanager
+def read_post(source, external, source_tid=None):
     source = Path(source)
-    if source.resolve(strict=True) != source or not external.isdigit() or not 1 <= slot <= 100:
+    if source.resolve(strict=True) != source or not external.isdigit():
         raise ValueError('invalid source selection')
-    with closing(sqlite3.connect('file:' + quote(str(source)) + '?mode=ro', uri=True)) as db:
-        db.execute('PRAGMA query_only=ON')
-        db.execute('BEGIN')
+    with closing(sqlite3.connect(source.as_uri() + '?mode=ro', uri=True)) as db:
         number = int(source_tid if source_tid is not None else external)
         signed = number - 2 ** 64 if number >= 2 ** 63 else number
         row = db.execute('SELECT content FROM SnsTimeLine WHERE tid IN(?,?)', (external, signed)).fetchone()
         if not row:
             raise ValueError('source record absent')
-        root = ET.fromstring(row[0])
-        obj = root if root.tag == 'TimelineObject' else root.find('TimelineObject')
+        yield row[0]
+
+
+def post_xml(xml):
+    root = ET.fromstring(xml)
+    obj = root if root.tag == 'TimelineObject' else root.find('TimelineObject')
+    return root, obj
+
+
+def xml_hash(xml):
+    return hashlib.sha256(xml.encode() if isinstance(xml, str) else xml).hexdigest()
+
+
+def live_node(media):
+    live = media.find('LivePhoto')
+    if live is None:
+        return None
+    nested = live.find('liveMedia')
+    return nested if nested is not None else live
+
+
+def live_assets(obj):
+    finder_count = len(obj.findall('ContentObject/finderFeed/mediaList/media'))
+    for slot, media in enumerate(obj.findall('ContentObject/mediaList/media'), 1 + finder_count):
+        motion = live_node(media)
+        url = motion.find('url') if motion is not None else None
+        if url is not None and url.text:
+            yield dict(role=f'live-media-{slot}', _slot=slot, media_type='video',
+                       source_url=url.text, source_media_id=motion.findtext('id'),
+                       source_md5=url.get('md5'), parent_media_id=media.findtext('id'))
+
+
+def frame(source, external, slot, cache_root=None, source_tid=None, destination=None, thumbnail=False,
+          source_media_id=None, source_kind=None, live_motion=False):
+    if not 1 <= slot <= 100:
+        raise ValueError('invalid source selection')
+    with read_post(source, external, source_tid) as xml:
+        root, obj = post_xml(xml)
         if obj is None or obj.findtext('id') != external:
             raise ValueError('source identity mismatch')
         regular = obj.findall('ContentObject/mediaList/media')
         finder = obj.find('ContentObject/finderFeed')
         finder_rows = finder.findall('mediaList/media') if finder is not None else []
         finder_cover = source_kind == 'wechat_channels' and slot <= len(finder_rows)
-        if finder_cover:
+        parent_media_id = None
+        if live_motion:
+            index = slot - len(finder_rows) - 1
+            if not 0 <= index < len(regular):
+                raise ValueError('live photo slot absent')
+            parent_media_id = regular[index].findtext('id')
+            media = live_node(regular[index])
+            if media is None or media.findtext('id') != source_media_id:
+                raise ValueError('live photo motion identity mismatch')
+        elif finder_cover:
             if finder.findtext('objectId') != source_media_id:
                 raise ValueError('source Channels identity mismatch')
             original_cover = finder_rows[slot - 1]
@@ -82,7 +126,7 @@ def frame(source, external, slot, cache_root=None, source_tid=None, destination=
             enc = root.find('.//enc')
         if (not seed or seed == '0') and enc is not None:
             seed = enc.get('key', '')
-        native_video = media.findtext('type') in ('6', '15')
+        native_video = live_motion or media.findtext('type') in ('6', '15')
         video = native_video and not thumbnail
         if video and destination is None:
             raise ValueError('video requires a streaming destination')
@@ -141,7 +185,7 @@ def frame(source, external, slot, cache_root=None, source_tid=None, destination=
                     source_url=(media.findtext('thumb') if thumbnail else original).replace('http://', 'https://', 1),
                     source_md5=url.attrib.get('md5') if url is not None else None,
                     source_media_id=media.findtext('id'),
-                    raw_xml_sha256=hashlib.sha256(row[0].encode() if isinstance(row[0], str) else row[0]).hexdigest(),
+                    raw_xml_sha256=xml_hash(xml), parent_media_id=parent_media_id,
                     downloaded_sha256=digest.hexdigest(), cached=cached), bytes(data) if data is not None else None
 
 
