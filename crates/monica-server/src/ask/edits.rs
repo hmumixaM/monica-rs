@@ -3,7 +3,7 @@
 use super::{Result, invalid, missing};
 use crate::{
     auth::{ApiError, AppState, session_user},
-    profiles::{self, activities, dates, relationships},
+    profiles::{self, activities, dates, details, relationships},
 };
 use axum::{
     Json,
@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 const MAX_PEOPLE: usize = 50;
 const MAX_PENDING: i64 = 20;
-const MAX_ACTION_BYTES: usize = 12_000;
+pub(super) const MAX_ACTION_BYTES: usize = 12_000;
 pub(super) const NAME: &str = "propose_monica_edit";
 
 #[derive(Deserialize, Serialize)]
@@ -101,6 +101,24 @@ impl ProfileField {
             Self::Hometown => ("monica.hometown", "家乡"),
             Self::Interests => ("monica.interests", "兴趣"),
         }
+    }
+    // Same presets as the profile's manual details editor.
+    fn names(&self) -> Vec<&'static str> {
+        let aliases: &[&str] = match self {
+            Self::Summary => &[],
+            Self::Nickname => &["备注", "nickname"],
+            Self::City => &["residence", "居住地", "所在地", "现居"],
+            Self::Company => &["company", "单位"],
+            Self::Job => &["job", "title", "职务", "position"],
+            Self::School => &["school", "university", "大学"],
+            Self::Hometown => &["hometown", "老家"],
+            Self::Interests => &["interests", "爱好", "兴趣爱好", "hobbies"],
+        };
+        let (key, label) = self.display();
+        [key, label]
+            .into_iter()
+            .chain(aliases.iter().copied())
+            .collect()
     }
 }
 
@@ -233,21 +251,44 @@ impl Action {
 
 #[derive(Serialize, sqlx::FromRow)]
 pub(super) struct EditView {
+    pub(super) seq: i64,
     id: Uuid,
     status: String,
     preview: Value,
     result: Option<Value>,
 }
 
-pub(super) async fn list(
+const PAGE: usize = 30;
+
+pub(super) async fn changes(
     tx: &mut Transaction<'_, Postgres>,
     chat: Uuid,
-) -> sqlx::Result<Vec<EditView>> {
-    sqlx::query_as(
-        "SELECT e.id,CASE WHEN r.status='cancelled' AND e.status='pending' THEN 'dismissed' ELSE e.status END status,e.preview,e.result
-         FROM crm.ask_runs r JOIN crm.ask_edits e ON e.run_id=r.id WHERE r.chat_id=$1
-         ORDER BY (e.status='pending' AND r.status<>'cancelled') DESC,e.created_at DESC,e.id LIMIT 30",
-    ).bind(chat).fetch_all(&mut **tx).await
+    after: i64,
+) -> sqlx::Result<(Vec<EditView>, bool)> {
+    let mut rows: Vec<EditView> = sqlx::query_as(
+        "SELECT e.change_seq AS seq,e.id,e.status,e.preview-'state' AS preview,e.result
+         FROM crm.ask_runs r JOIN crm.ask_edits e ON e.run_id=r.id
+         WHERE r.chat_id=$1 AND e.change_seq>$2 ORDER BY e.change_seq LIMIT $3",
+    )
+    .bind(chat)
+    .bind(after.max(0))
+    .bind((PAGE + 1) as i64)
+    .fetch_all(&mut **tx)
+    .await?;
+    let more = rows.len() > PAGE;
+    rows.truncate(PAGE);
+    Ok((rows, more))
+}
+
+pub(super) async fn dismiss_run(tx: &mut Transaction<'_, Postgres>, run: Uuid) -> sqlx::Result<()> {
+    sqlx::query(
+        "UPDATE crm.ask_edits SET status='dismissed',change_seq=nextval('crm.ask_edit_changes')
+                 WHERE run_id=$1 AND status='pending'",
+    )
+    .bind(run)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 fn stale() -> ApiError {
@@ -332,31 +373,40 @@ async fn preview(tx: &mut Transaction<'_, Postgres>, action: &Action, lock: bool
             value,
         } => {
             let (key, label) = field.display();
-            let entry: Option<(Value, String)> = sqlx::query_as(
-                "SELECT r.value,r.source_type FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1 AND c.field_key=$2",
-            ).bind(profile_id).bind(key).fetch_optional(&mut **tx).await?;
-            let (old, source) = match entry {
-                Some((old, source)) => {
-                    if !old.is_null()
-                        && (!old.is_string() || !matches!(source.as_str(), "manual" | "monica"))
-                    {
-                        return Err(invalid("这项资料来自导入记录，请在联系人页面核对。"));
-                    }
-                    (old, json!(source))
+            let copies = field_copies(tx, *profile_id, field).await?;
+            let mut previous = Vec::new();
+            let mut replaces = Vec::new();
+            for (field_key, item, old, source) in &copies {
+                if old.is_null() {
+                    continue;
                 }
-                None if key == "summary" => {
-                    let value: Option<String> =
-                        sqlx::query_scalar("SELECT summary FROM crm.profiles WHERE id=$1")
-                            .bind(profile_id)
-                            .fetch_one(&mut **tx)
-                            .await?;
-                    (json!(value), Value::Null)
+                if !old.is_string() || !matches!(source.as_str(), "manual" | "monica") {
+                    return Err(invalid("这项资料来自导入记录，请在联系人页面核对。"));
                 }
-                None => (Value::Null, Value::Null),
-            };
+                if !previous.contains(old) {
+                    previous.push(old.clone());
+                }
+                if field_key != key || item.is_some() {
+                    replaces.push(details::DetailRef {
+                        field_key: field_key.clone(),
+                        item: item.clone(),
+                    });
+                }
+            }
+            if previous.is_empty() && key == "summary" {
+                let value: Option<String> =
+                    sqlx::query_scalar("SELECT summary FROM crm.profiles WHERE id=$1")
+                        .bind(profile_id)
+                        .fetch_one(&mut **tx)
+                        .await?;
+                if let Some(value) = value {
+                    previous.push(json!(value));
+                }
+            }
+            state = json!({"copies":copies,"replaces":replaces});
             (
                 "补录联系人资料",
-                json!({(label):old,"来源":source}),
+                json!({(label):previous}),
                 json!({(label):value}),
             )
         }
@@ -423,61 +473,76 @@ async fn preview(tx: &mut Transaction<'_, Postgres>, action: &Action, lock: bool
     Ok(json!({"title":title,"people":people,"before":before,"after":after,"state":state}))
 }
 
-pub(super) async fn propose(
-    pool: &PgPool,
+async fn field_copies(
+    tx: &mut Transaction<'_, Postgres>,
+    profile: Uuid,
+    field: &ProfileField,
+) -> sqlx::Result<Vec<(String, Option<String>, Value, String)>> {
+    let names = field.names();
+    sqlx::query_as(
+        "WITH fields AS (
+            SELECT c.field_key,r.value,r.source_type FROM crm.field_current c
+            JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1
+         )
+         SELECT field_key,NULL::text AS item,value,source_type FROM fields
+         WHERE lower(btrim(field_key))=ANY($2)
+            OR ($3 AND lower(btrim(regexp_replace(field_key,'^(monica[.]|Monica · )','')))=ANY($2))
+         UNION ALL
+         SELECT field_key,entry.key,entry.value,source_type FROM fields
+         CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(value)='object' THEN value ELSE '{}'::jsonb END) AS entry
+         WHERE $3 AND field_key='monica.custom_fields' AND lower(btrim(entry.key))=ANY($2)
+         ORDER BY field_key,item",
+    )
+    .bind(profile).bind(names).bind(!matches!(field, ProfileField::Summary))
+    .fetch_all(&mut **tx).await
+}
+
+pub(super) async fn propose_locked(
+    tx: &mut Transaction<'_, Postgres>,
     chat: Uuid,
     run: Uuid,
-    lease: Uuid,
     call: &str,
     args: &Value,
-) -> Result<Uuid> {
+) -> Result<(Uuid, bool)> {
     if args.to_string().len() > MAX_ACTION_BYTES {
         return Err(invalid("本次编辑太长，请分成几项。"));
     }
     let action = serde_json::from_value::<Action>(args.clone())
         .map_err(|_| invalid("编辑参数无效，请检查操作类型和必填项。"))?
         .normalize()?;
-    let mut tx = pool.begin().await?;
-    sqlx::query_scalar::<_, Uuid>("SELECT id FROM crm.ask_chats WHERE id=$1 FOR UPDATE")
-        .bind(chat)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or_else(missing)?;
-    sqlx::query_scalar::<_, Uuid>("SELECT id FROM crm.ask_runs WHERE id=$1 AND chat_id=$2 AND lease_id=$3 AND status='running' AND lease_until>now() FOR UPDATE")
-        .bind(run).bind(chat).bind(lease).fetch_optional(&mut *tx).await?.ok_or_else(missing)?;
+    let hash = monica_core::identity::bytes_hash(call.as_bytes());
     if let Some(id) =
-        sqlx::query_scalar("SELECT id FROM crm.ask_edits WHERE run_id=$1 AND tool_call_id=$2")
+        sqlx::query_scalar("SELECT id FROM crm.ask_edits WHERE run_id=$1 AND tool_call_hash=$2")
             .bind(run)
-            .bind(call)
-            .fetch_optional(&mut *tx)
+            .bind(&hash)
+            .fetch_optional(&mut **tx)
             .await?
     {
-        return Ok(id);
+        return Ok((id, false));
     }
     let pending: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM crm.ask_edits e JOIN crm.ask_runs r ON r.id=e.run_id
-         WHERE r.chat_id=$1 AND e.status='pending' AND r.status<>'cancelled'",
+         WHERE r.chat_id=$1 AND e.status='pending'",
     )
     .bind(chat)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await?;
     if pending >= MAX_PENDING {
         return Err(invalid("会话里待确认的编辑太多。请先处理已有编辑。"));
     }
-    let preview = preview(&mut tx, &action, false).await?;
+    let preview = preview(tx, &action, false).await?;
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO crm.ask_edits(id,run_id,tool_call_id,action,preview) VALUES($1,$2,$3,$4,$5)",
+        "INSERT INTO crm.ask_edits(id,run_id,tool_call_hash,action,preview) VALUES($1,$2,$3,$4,$5)",
     )
     .bind(id)
     .bind(run)
-    .bind(call)
+    .bind(&hash)
     .bind(sqlx::types::Json(action))
     .bind(preview)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
-    tx.commit().await?;
-    Ok(id)
+    Ok((id, true))
 }
 
 #[derive(Deserialize)]
@@ -506,21 +571,22 @@ async fn resolve(
 ) -> Result<EditView> {
     let mut tx = pool.begin().await?;
     sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM crm.ask_chats WHERE id=$1 AND owner_id=$2 FOR KEY SHARE",
+        "SELECT id FROM crm.ask_chats WHERE id=$1 AND owner_id=$2 FOR UPDATE",
     )
     .bind(chat)
     .bind(owner)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(missing)?;
-    let (run_status, status, action, saved, result): (
+    let (seq, run_status, status, action, saved, result): (
+        i64,
         String,
         String,
         sqlx::types::Json<Action>,
         Value,
         Option<Value>,
     ) = sqlx::query_as(
-        "SELECT r.status,e.status,e.action,e.preview,e.result FROM crm.ask_edits e
+        "SELECT e.change_seq,r.status,e.status,e.action,e.preview,e.result FROM crm.ask_edits e
             JOIN crm.ask_runs r ON r.id=e.run_id WHERE e.id=$1 AND r.chat_id=$2 FOR UPDATE OF r,e",
     )
     .bind(id)
@@ -530,15 +596,24 @@ async fn resolve(
     .ok_or_else(missing)?;
     if status != "pending" {
         return Ok(EditView {
+            seq,
             id,
             status,
-            preview: saved,
+            preview: public_preview(saved),
             result,
         });
     }
     let (status, result) = if !confirm || run_status == "cancelled" {
         ("dismissed", None)
     } else {
+        // The Ask tag lookup is case-insensitive. Serialize competing
+        // confirmations before comparing the displayed snapshot.
+        if let Action::CreateTag { tag, .. } = &action.0 {
+            sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended(lower($1), 746032))")
+                .bind(tag)
+                .execute(&mut *tx)
+                .await?;
+        }
         let current = match preview(&mut tx, &action.0, true).await {
             Ok(current) => current,
             Err(error) if error.0.is_client_error() => Value::Null,
@@ -553,19 +628,29 @@ async fn resolve(
             )
         }
     };
-    sqlx::query("UPDATE crm.ask_edits SET status=$2,result=$3 WHERE id=$1")
+    let seq = sqlx::query_scalar(
+        "UPDATE crm.ask_edits SET status=$2,result=$3,change_seq=nextval('crm.ask_edit_changes') WHERE id=$1 RETURNING change_seq",
+    )
         .bind(id)
         .bind(status)
         .bind(&result)
-        .execute(&mut *tx)
+        .fetch_one(&mut *tx)
         .await?;
     tx.commit().await?;
     Ok(EditView {
+        seq,
         id,
         status: status.into(),
-        preview: saved,
+        preview: public_preview(saved),
         result,
     })
+}
+
+fn public_preview(mut preview: Value) -> Value {
+    if let Some(object) = preview.as_object_mut() {
+        object.remove("state");
+    }
+    preview
 }
 
 async fn apply(
@@ -639,18 +724,35 @@ async fn apply(
             field,
             value,
         } => {
-            profiles::change_locked(
-                tx,
-                profile_id,
-                owner,
-                profiles::Field {
-                    field_key: field.display().0.into(),
-                    value: json!(value),
-                    source_type: None,
-                },
-                "manual_edit",
-            )
-            .await?;
+            let key = field.display().0;
+            if key == "summary" {
+                profiles::change_locked(
+                    tx,
+                    profile_id,
+                    owner,
+                    profiles::Field {
+                        field_key: key.into(),
+                        value: json!(value),
+                        source_type: None,
+                    },
+                    "manual_edit",
+                )
+                .await?;
+            } else {
+                let replaces = serde_json::from_value(current["state"]["replaces"].clone())
+                    .map_err(|_| stale())?;
+                details::save_locked(
+                    tx,
+                    profile_id,
+                    owner,
+                    details::Save {
+                        field_key: key.into(),
+                        value,
+                        replaces,
+                    },
+                )
+                .await?;
+            }
             Ok(json!({"link":format!("/profiles/{profile_id}")}))
         }
         Action::AddDate { profile_id, date } => {

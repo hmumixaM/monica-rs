@@ -139,7 +139,7 @@ function EditCard({ chat, edit, refresh }: { chat: string; edit: Edit; refresh: 
         for (const person of saved.preview.people) {
           void client.invalidateQueries({ queryKey: queryKeys.profile(person.id) });
         }
-        for (const key of [directoryKey, queryKeys.home, ["tags"], ["timeline"], ["insights"]]) {
+        for (const key of [directoryKey, queryKeys.home, ["tags"], ["timeline"], ["feed"], ["insights"]]) {
           void client.invalidateQueries({ queryKey: key });
         }
       }
@@ -199,6 +199,7 @@ export function AskView() {
     [state.messages, state.run?.draft]);
   const locked = !ready || submitting || savingPeople;
   const busy = locked || running || (!!id && !state.loaded);
+  const editsById = useMemo(() => new Map(state.edits.map(edit => [edit.id, edit])), [state.edits]);
   const report = (error: unknown) => setFailure(error instanceof Error ? error.message : String(error));
 
   function open(session?: Conversation) {
@@ -391,7 +392,7 @@ export function AskView() {
               <div className={styles.answer}>
                 <Steps steps={turn.steps} live={live} />
                 {turn.editIds.map(editId => {
-                  const edit = state.edits.find(row => row.id === editId);
+                  const edit = editsById.get(editId);
                   return edit && <EditCard key={edit.id} chat={id} edit={edit} refresh={state.refresh} />;
                 })}
                 {turn.thinking.length > 0 && <Thinking key={id} parts={turn.thinking} />}

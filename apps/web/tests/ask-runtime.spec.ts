@@ -75,6 +75,7 @@ async function server(page: Page) {
       if (!edit) return route.fulfill({ status: 404 });
       const decision = route.request().postDataJSON();
       decisions.push(decision);
+      edit.seq = Math.max(...(row.edits ?? []).map(item => item.seq)) + 1;
       edit.status = decision.confirm ? 'applied' : 'dismissed';
       return route.fulfill({ json: edit });
     }
@@ -85,7 +86,9 @@ async function server(page: Page) {
       return route.fulfill({ json: row.chat });
     }
     const cursor = Number(url.searchParams.get('after') ?? '0');
-    return route.fulfill({ json: { chat: row.chat, run: row.run, edits: row.edits, more: false,
+    const editCursor = Number(url.searchParams.get('after_edit') ?? '0');
+    const changes = (row.edits ?? []).filter(edit => edit.seq > editCursor).sort((a, b) => a.seq - b.seq);
+    return route.fulfill({ json: { chat: row.chat, run: row.run, edits: changes.slice(0, 1), moreEdits: changes.length > 1, more: false,
       rows: row.messages.map((message, index) => ({ seq: index + 1, message })).filter(message => message.seq > cursor),
     } });
   });
@@ -217,20 +220,26 @@ test('Ask previews a saved edit and sends an approval without the editable paylo
   await expect(page.getByRole('button', { name: '停止回答' })).toBeVisible();
   const row = [...api.chats.values()][0];
   const editId = crypto.randomUUID();
+  const previousId = crypto.randomUUID();
   row.edits = [{
-    id: editId, status: 'pending', result: null,
+    id: previousId, seq: 1, status: 'applied', result: null,
+    preview: { title: '添加已有标签', people: [], before: null, after: { 标签: '同学' } },
+  }, {
+    id: editId, seq: 2, status: 'pending', result: null,
     preview: {
       title: '补录联系人资料', people: [{ id: api.profile, name: '合成联系人' }],
       before: { 常驻地: '杭州' }, after: { 常驻地: '上海' },
     },
   }];
-  row.messages.push({
-    role: 'toolResult', toolName: 'propose_monica_edit', toolCallId: 'edit-fixture',
-    isError: false, details: { editId },
+  for (const id of [previousId, editId]) row.messages.push({
+    role: 'toolResult', toolName: 'propose_monica_edit', toolCallId: `edit-fixture-${id}`,
+    isError: false, details: { editId: id },
   });
   row.chat.running = false;
   row.run = { ...row.run!, status: 'done', progress: '' };
   const card = page.getByRole('region', { name: '补录联系人资料' });
+  const previous = page.getByRole('region', { name: '添加已有标签' });
+  await expect(previous).toContainText('已应用');
   await expect(card).toContainText('杭州');
   await expect(card).toContainText('上海');
   await expect(card.getByRole('link', { name: '合成联系人' })).toBeVisible();
@@ -239,6 +248,7 @@ test('Ask previews a saved edit and sends an approval without the editable paylo
   await expect(card).toContainText('已应用');
   expect(api.decisions).toEqual([{ confirm: true }]);
   await page.reload();
+  await expect(previous).toContainText('已应用');
   await expect(card).toContainText('已应用');
   await expect(card.getByRole('button', { name: '确认写入' })).toHaveCount(0);
 });

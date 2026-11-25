@@ -178,6 +178,8 @@ async fn delete(
 struct Cursor {
     #[serde(default)]
     after: i64,
+    #[serde(default)]
+    after_edit: Option<i64>,
 }
 #[derive(Serialize)]
 struct SavedMessage {
@@ -240,7 +242,11 @@ async fn read(
         "SELECT id,status,progress,error,model,draft FROM crm.ask_runs WHERE chat_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1",
     )
     .bind(id).fetch_optional(&mut *tx).await?;
-    let edits = edits::list(&mut tx, id).await?;
+    let (edits, more_edits) = if let Some(after_edit) = cursor.after_edit {
+        edits::changes(&mut tx, id, after_edit).await?
+    } else {
+        (Vec::new(), false)
+    };
     tx.commit().await?;
     #[derive(Serialize)]
     struct Page {
@@ -248,6 +254,8 @@ async fn read(
         rows: Vec<SavedMessage>,
         run: Option<RunView>,
         edits: Vec<edits::EditView>,
+        #[serde(rename = "moreEdits")]
+        more_edits: bool,
         more: bool,
     }
     Ok((
@@ -257,6 +265,7 @@ async fn read(
             rows,
             run,
             edits,
+            more_edits,
             more,
         }),
     )
@@ -354,7 +363,7 @@ async fn cancel(
     let (owner, _) = user(&s, &headers).await?;
     let mut tx = s.pool.begin().await?;
     sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM crm.ask_chats WHERE id=$1 AND owner_id=$2 FOR KEY SHARE",
+        "SELECT id FROM crm.ask_chats WHERE id=$1 AND owner_id=$2 FOR UPDATE",
     )
     .bind(chat_id)
     .bind(owner)
@@ -372,6 +381,7 @@ async fn cancel(
     if let Some(draft) = draft {
         sqlx::query("UPDATE crm.ask_runs SET status='cancelled',progress='',draft=NULL,lease_id=NULL,lease_until=NULL WHERE id=$1")
             .bind(run_id).execute(&mut *tx).await?;
+        edits::dismiss_run(&mut tx, run_id).await?;
         if let Some(mut message) = draft {
             message["stopReason"] = json!("aborted");
             sqlx::query("INSERT INTO crm.ask_messages(chat_id,run_id,message) VALUES($1,$2,$3)")

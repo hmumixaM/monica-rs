@@ -3,7 +3,7 @@ pub(crate) mod activities;
 #[path = "profile_dates.rs"]
 pub(crate) mod dates;
 #[path = "profile_details.rs"]
-mod details;
+pub(crate) mod details;
 #[cfg(test)]
 #[path = "directory_policy_tests.rs"]
 mod directory_policy_tests;

@@ -480,15 +480,30 @@ fn result_above_the_old_limit_reaches_the_model_context() {
     assert_eq!(wire[3]["content"], result);
 }
 
+async fn fixture_edit_job(pool: &PgPool, path: &str) -> Job {
+    let chat = Uuid::parse_str(path.rsplit('/').next().unwrap()).unwrap();
+    let run = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.ask_runs(id,chat_id,model,timezone,people) VALUES($1,$2,'fixture','UTC','[]')")
+        .bind(run).bind(chat).execute(pool).await.unwrap();
+    let job = claim(pool).await.unwrap().unwrap();
+    assert_eq!(job.id, run);
+    job
+}
+
+async fn proposed_id(pool: &PgPool, job: &Job, call: &str, action: &Value) -> Uuid {
+    let receipt = save_edit_proposal(pool, job, &job.checkpoint.0, call, action)
+        .await
+        .unwrap();
+    assert_eq!(receipt["isError"], false, "{receipt}");
+    Uuid::parse_str(receipt["details"]["editId"].as_str().unwrap()).unwrap()
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 async fn ask_edits_require_owner_confirmation_and_commit_once(pool: PgPool) {
     let (state, app) = setup(&pool).await;
     let path = new_chat(&app).await;
-    let chat = Uuid::parse_str(path.rsplit('/').next().unwrap()).unwrap();
-    let run = Uuid::new_v4();
-    let lease = Uuid::new_v4();
-    sqlx::query("INSERT INTO crm.ask_runs(id,chat_id,model,timezone,people,status,lease_id,lease_until) VALUES($1,$2,'fixture','UTC','[]','running',$3,now()+interval '5 minutes')")
-        .bind(run).bind(chat).bind(lease).execute(&pool).await.unwrap();
+    let job = fixture_edit_job(&pool, &path).await;
+    let run = job.id;
     let people = [Uuid::new_v4(), Uuid::new_v4()];
     for (id, name) in people.iter().zip(["林同学", "周同学"]) {
         sqlx::query(
@@ -514,6 +529,16 @@ async fn ask_edits_require_owner_confirmation_and_commit_once(pool: PgPool) {
         .await
         .unwrap();
 
+    request(
+        &app,
+        "owner",
+        "PATCH",
+        &format!("/api/v1/profiles/{first}/fields"),
+        json!({"field_key":"monica.custom_fields","value":{"现居":"北京","未修改":"保留"}}),
+        StatusCode::OK,
+    )
+    .await;
+
     let actions = [
         json!({"action":"add_record","profile_ids":people,"record_type":"note","title":"重聚纪要","body":"在上海见面"}),
         json!({"action":"add_record","profile_ids":[first],"record_type":"activity","title":"线下见面","occurred_at":"2025-03-14T18:00:00+08:00"}),
@@ -526,23 +551,15 @@ async fn ask_edits_require_owner_confirmation_and_commit_once(pool: PgPool) {
     let mut ids = Vec::new();
     for (n, action) in actions.iter().enumerate() {
         let key = format!("edit-{n}");
-        let id = edits::propose(&pool, chat, run, lease, &key, action)
-            .await
-            .unwrap();
-        assert_eq!(
-            edits::propose(&pool, chat, run, lease, &key, action)
-                .await
-                .unwrap(),
-            id
-        );
+        let id = proposed_id(&pool, &job, &key, action).await;
+        assert_eq!(proposed_id(&pool, &job, &key, action).await, id);
         ids.push(id);
     }
     let unknown = json!({"action":"set_profile_field","profile_id":first,"field":"wechat.nickname","value":"禁止"});
-    assert!(
-        edits::propose(&pool, chat, run, lease, "unknown-write", &unknown)
-            .await
-            .is_err()
-    );
+    let invalid = save_edit_proposal(&pool, &job, &job.checkpoint.0, "unknown-write", &unknown)
+        .await
+        .unwrap();
+    assert_eq!(invalid["isError"], true);
     let count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM crm.activities WHERE title IN ('重聚纪要','线下见面')",
     )
@@ -550,7 +567,15 @@ async fn ask_edits_require_owner_confirmation_and_commit_once(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(count, 0);
-    let page = request(&app, "owner", "GET", &path, Value::Null, StatusCode::OK).await;
+    let page = request(
+        &app,
+        "owner",
+        "GET",
+        &format!("{path}?after_edit=0"),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
     assert_eq!(page["edits"].as_array().unwrap().len(), actions.len());
     assert!(
         page["edits"]
@@ -559,6 +584,16 @@ async fn ask_edits_require_owner_confirmation_and_commit_once(pool: PgPool) {
             .iter()
             .all(|edit| edit["status"] == "pending")
     );
+    assert!(
+        page["edits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|edit| edit["preview"]["before"]["常驻地"] == json!(["北京"]))
+    );
+    let edit_cursor = page["edits"].as_array().unwrap().last().unwrap()["seq"]
+        .as_i64()
+        .unwrap();
     let denied = format!("{path}/edits/{}", ids[0]);
     request(
         &app,
@@ -612,16 +647,33 @@ async fn ask_edits_require_owner_confirmation_and_commit_once(pool: PgPool) {
         .bind(first).bind(second).bind(existing_tag).fetch_one(&pool).await.unwrap();
     assert_eq!(counts, (2, 2, 1, 1, 1, 1));
 
+    let legacy: Value = sqlx::query_scalar("SELECT r.value FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1 AND c.field_key='monica.custom_fields'")
+        .bind(first).fetch_one(&pool).await.unwrap();
+    assert_eq!(legacy, json!({"未修改":"保留"}));
+    let updated = request(
+        &app,
+        "owner",
+        "GET",
+        &format!("{path}?after_edit={edit_cursor}"),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(updated["edits"].as_array().unwrap().len(), actions.len());
+    assert!(
+        updated["edits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|edit| edit["status"] == "applied")
+    );
+
     let replacement =
         json!({"action":"set_profile_field","profile_id":first,"field":"city","value":"南京"});
-    let stale = edits::propose(&pool, chat, run, lease, "old-preview", &replacement)
-        .await
-        .unwrap();
+    let stale = proposed_id(&pool, &job, "old-preview", &replacement).await;
     let newer =
         json!({"action":"set_profile_field","profile_id":first,"field":"city","value":"杭州"});
-    let new_id = edits::propose(&pool, chat, run, lease, "new-preview", &newer)
-        .await
-        .unwrap();
+    let new_id = proposed_id(&pool, &job, "new-preview", &newer).await;
     let new_result = request(
         &app,
         "owner",
@@ -643,9 +695,24 @@ async fn ask_edits_require_owner_confirmation_and_commit_once(pool: PgPool) {
     .await;
     assert_eq!(rejected["status"], "stale");
 
-    let pending = edits::propose(&pool, chat, run, lease, "cancelled-run", &actions[0])
-        .await
-        .unwrap();
+    // Force the transcript insert to fail after preparing a valid proposal.
+    sqlx::query("ALTER TABLE crm.ask_messages ADD CHECK (message->>'toolCallId' IS DISTINCT FROM 'unpublishable')")
+        .execute(&pool).await.unwrap();
+    assert!(
+        save_edit_proposal(&pool, &job, &job.checkpoint.0, "unpublishable", &actions[0])
+            .await
+            .is_err()
+    );
+    let orphaned: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM crm.ask_edits WHERE run_id=$1 AND tool_call_hash=$2)",
+    )
+    .bind(run)
+    .bind(monica_core::identity::bytes_hash(b"unpublishable"))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(!orphaned);
+    let pending = proposed_id(&pool, &job, "cancelled-run", &actions[0]).await;
     request(
         &app,
         "owner",
@@ -665,4 +732,169 @@ async fn ask_edits_require_owner_confirmation_and_commit_once(pool: PgPool) {
     )
     .await;
     assert_eq!(stopped["status"], "dismissed");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn model_edit_tool_preserves_arguments_and_long_provider_id(pool: PgPool) {
+    let (state, app) = setup(&pool).await;
+    let path = new_chat(&app).await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+    let arguments = json!({"action":"create_tag","tag":"同学重聚"});
+    let id = format!(
+        "call_fixture__thought__{}",
+        (0..150)
+            .map(|_| Uuid::new_v4().simple().to_string())
+            .collect::<String>()
+    );
+    let fake = Router::new().route("/v1/chat/completions", post(move |Json(body): Json<Value>| {
+        let id = id.clone();
+        let arguments = arguments.clone();
+        async move {
+            let messages = body["messages"].as_array().unwrap();
+            if let Some(result) = messages.iter().find(|message| message["role"] == "tool") {
+                assert_eq!(result["tool_call_id"], id);
+                let output: Value = serde_json::from_str(result["content"].as_str().unwrap()).unwrap();
+                assert_eq!(output["status"], "pending_confirmation");
+                events(&[(json!({"content":"请确认创建标签。"}),json!("stop"))],true)
+            } else {
+                let call = json!({"index":0,"id":id,"function":{"name":edits::NAME,"arguments":arguments.to_string()}});
+                events(&[(json!({"tool_calls":[call]}),json!("tool_calls"))],true)
+            }
+        }
+    }));
+    let upstream = tokio::spawn(async move { axum::serve(listener, fake).await.unwrap() });
+    request(&app,"owner","PATCH","/api/v1/ai/settings",
+        json!({"enabled":true,"base_url":endpoint,"model":"deepseek-v4-pro","api_key":"synthetic-key"}),StatusCode::OK).await;
+    let run_id = Uuid::new_v4();
+    request(
+        &app,
+        "owner",
+        "POST",
+        &format!("{path}/runs"),
+        question(run_id, "创建一个叫同学重聚的标签"),
+        StatusCode::ACCEPTED,
+    )
+    .await;
+    let job = claim(&pool).await.unwrap().unwrap();
+    assert_eq!(job.id, run_id);
+    timeout(Duration::from_secs(15), run(&state, &job))
+        .await
+        .unwrap()
+        .unwrap();
+    let saved = request(
+        &app,
+        "owner",
+        "GET",
+        &format!("{path}?after_edit=0"),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(saved["run"]["status"], "done");
+    let card = &saved["edits"][0];
+    assert_eq!(card["status"], "pending");
+    assert_eq!(card["preview"]["after"]["标签"], "同学重聚");
+    assert!(
+        saved["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["message"]["details"]["editId"] == card["id"])
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM crm.tags WHERE name='同学重聚'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    upstream.abort();
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn edit_receipt_pages_and_case_concurrent_tag_creation(pool: PgPool) {
+    let (_, app) = setup(&pool).await;
+    let first = new_chat(&app).await;
+    let second = new_chat(&app).await;
+    let first_job = fixture_edit_job(&pool, &first).await;
+    let second_job = fixture_edit_job(&pool, &second).await;
+    let a = proposed_id(
+        &pool,
+        &first_job,
+        "case-a",
+        &json!({"action":"create_tag","tag":"ClassNotes"}),
+    )
+    .await;
+    let b = proposed_id(
+        &pool,
+        &second_job,
+        "case-b",
+        &json!({"action":"create_tag","tag":"classnotes"}),
+    )
+    .await;
+    let first_decision = format!("{first}/edits/{a}");
+    let second_decision = format!("{second}/edits/{b}");
+    let (a_receipt, b_receipt) = tokio::join!(
+        request(
+            &app,
+            "owner",
+            "POST",
+            &first_decision,
+            json!({"confirm":true}),
+            StatusCode::OK
+        ),
+        request(
+            &app,
+            "owner",
+            "POST",
+            &second_decision,
+            json!({"confirm":true}),
+            StatusCode::OK
+        ),
+    );
+    let statuses = [
+        a_receipt["status"].as_str().unwrap(),
+        b_receipt["status"].as_str().unwrap(),
+    ];
+    assert!(statuses.contains(&"applied") && statuses.contains(&"stale"));
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM crm.tags WHERE lower(name)='classnotes'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 1);
+
+    sqlx::query(
+        "INSERT INTO crm.ask_edits(id,run_id,tool_call_hash,action,preview,status)
+        SELECT gen_random_uuid(),run_id,lpad(n::text,64,'0'),action,preview,'dismissed'
+        FROM crm.ask_edits CROSS JOIN generate_series(1,32) n WHERE id=$1",
+    )
+    .bind(a)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let page = request(
+        &app,
+        "owner",
+        "GET",
+        &format!("{first}?after_edit=0"),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    let rows = page["edits"].as_array().unwrap();
+    assert_eq!(rows.len(), 30);
+    assert_eq!(rows[0]["id"], json!(a));
+    assert_eq!(page["moreEdits"], true);
+    let cursor = rows.last().unwrap()["seq"].as_i64().unwrap();
+    let next = request(
+        &app,
+        "owner",
+        "GET",
+        &format!("{first}?after_edit={cursor}"),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(next["edits"].as_array().unwrap().len(), 3);
+    assert_eq!(next["moreEdits"], false);
 }

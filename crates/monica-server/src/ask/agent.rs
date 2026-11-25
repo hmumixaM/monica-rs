@@ -18,7 +18,7 @@ use chrono::Utc;
 use http_body_util::BodyExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use std::{
     collections::{BTreeMap, HashMap},
     time::{Duration, Instant},
@@ -159,13 +159,27 @@ async fn save(
     message: Option<&Value>,
     finish: Option<(&str, &str)>,
 ) -> Result<()> {
+    let mut tx = checkpoint_transaction(pool, job, checkpoint, finish).await?;
+    if let Some(message) = message {
+        insert_message(&mut tx, job, message).await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn checkpoint_transaction<'a>(
+    pool: &'a PgPool,
+    job: &Job,
+    checkpoint: &Checkpoint,
+    finish: Option<(&str, &str)>,
+) -> Result<Transaction<'a, Postgres>> {
+    // All message and edit cursor changes in a chat serialize on this row.
     let (status, detail) = finish.unwrap_or(("running", ""));
     let mut tx = pool.begin().await?;
-    let chat =
-        sqlx::query_scalar::<_, Uuid>("SELECT id FROM crm.ask_chats WHERE id=$1 FOR KEY SHARE")
-            .bind(job.chat_id)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let chat = sqlx::query_scalar::<_, Uuid>("SELECT id FROM crm.ask_chats WHERE id=$1 FOR UPDATE")
+        .bind(job.chat_id)
+        .fetch_optional(&mut *tx)
+        .await?;
     ensure!(chat.is_some(), "Ask chat was removed");
     let updated = sqlx::query(
         "UPDATE crm.ask_runs SET checkpoint=$3,status=$4,error=$5,draft=NULL,
@@ -183,16 +197,65 @@ async fn save(
     .await?
     .rows_affected();
     ensure!(updated == 1, "Ask lease lost");
-    if let Some(message) = message {
-        sqlx::query("INSERT INTO crm.ask_messages(chat_id,run_id,message) VALUES($1,$2,$3)")
-            .bind(job.chat_id)
-            .bind(job.id)
-            .bind(message)
-            .execute(&mut *tx)
-            .await?;
+    Ok(tx)
+}
+
+async fn insert_message(
+    tx: &mut Transaction<'_, Postgres>,
+    job: &Job,
+    message: &Value,
+) -> Result<()> {
+    sqlx::query("INSERT INTO crm.ask_messages(chat_id,run_id,message) VALUES($1,$2,$3)")
+        .bind(job.chat_id)
+        .bind(job.id)
+        .bind(message)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+fn tool_result(id: &str, name: &str, text: String, error: bool, details: Value) -> Value {
+    json!({"role":"toolResult","toolCallId":id,"toolName":name,"isError":error,"details":details,
+        "timestamp":Utc::now().timestamp_millis(),"content":[{"type":"text","text":text}]})
+}
+
+async fn save_edit_proposal(
+    pool: &PgPool,
+    job: &Job,
+    checkpoint: &Checkpoint,
+    call: &str,
+    args: &Value,
+) -> Result<Value> {
+    let mut tx = checkpoint_transaction(pool, job, checkpoint, None).await?;
+    let (message, insert) =
+        match edits::propose_locked(&mut tx, job.chat_id, job.id, call, args).await {
+            Ok((id, insert)) => (
+                tool_result(
+                    call,
+                    edits::NAME,
+                    json!({"status":"pending_confirmation","edit_id":id}).to_string(),
+                    false,
+                    json!({"editId":id}),
+                ),
+                insert,
+            ),
+            Err(error) if error.0.is_client_error() => (
+                tool_result(
+                    call,
+                    edits::NAME,
+                    json!({"error":error.1}).to_string(),
+                    true,
+                    Value::Null,
+                ),
+                true,
+            ),
+            Err(error) => return Err(anyhow!("Ask edit proposal failed: {}", error.1)),
+        };
+    if insert {
+        insert_message(&mut tx, job, &message).await?;
     }
     tx.commit().await?;
-    Ok(())
+    Ok(message)
 }
 
 async fn run(state: &AppState, job: &Job) -> Result<()> {
@@ -238,45 +301,26 @@ async fn run(state: &AppState, job: &Job) -> Result<()> {
         if let Some(call) = pending_call(&history.messages[history.question..]) {
             let id = call["id"].as_str().unwrap_or_default();
             let name = call["name"].as_str().unwrap_or_default();
-            let script = call["arguments"]["script"].as_str();
-            let title = if name == edits::NAME {
-                "准备编辑预览".into()
+            let message = if name == edits::NAME {
+                progress(pool, job, "正在准备编辑预览…", None).await?;
+                save_edit_proposal(pool, job, &cp, id, &call["arguments"]).await?
             } else {
-                lookup::title(&call["arguments"]["title"])
-            };
-            progress(pool, job, &format!("正在{title}…"), None).await?;
-            let (text, error, details) = match (name, script) {
-                ("monica_cli", Some(script)) if !script.trim().is_empty() => {
-                    lookup::run(state, owner.clone(), zone, script.to_owned()).await
-                }
-                (edits::NAME, _) => {
-                    match edits::propose(
-                        pool,
-                        job.chat_id,
-                        job.id,
-                        job.lease_id,
-                        id,
-                        &call["arguments"],
-                    )
-                    .await
-                    {
-                        Ok(id) => (
-                            json!({"status":"pending_confirmation","edit_id":id}).to_string(),
-                            false,
-                            json!({"editId":id}),
-                        ),
-                        Err(error) => (json!({"error":error.1}).to_string(), true, Value::Null),
+                let title = lookup::title(&call["arguments"]["title"]);
+                progress(pool, job, &format!("正在{title}…"), None).await?;
+                let (text, error, details) = match (name, call["arguments"]["script"].as_str()) {
+                    ("monica_cli", Some(script)) if !script.trim().is_empty() => {
+                        lookup::run(state, owner.clone(), zone, script.to_owned()).await
                     }
-                }
-                _ => (
-                    r#"{"error":"请通过 monica_cli 提供有效的 JavaScript 查询。"}"#.into(),
-                    true,
-                    Value::Null,
-                ),
+                    _ => (
+                        r#"{"error":"请通过 monica_cli 提供有效的 JavaScript 查询。"}"#.into(),
+                        true,
+                        Value::Null,
+                    ),
+                };
+                let message = tool_result(id, name, text, error, details);
+                save(pool, job, &cp, Some(&message), None).await?;
+                message
             };
-            let message = json!({"role":"toolResult","toolCallId":id,"toolName":name,"isError":error,"details":details,
-                "timestamp":Utc::now().timestamp_millis(),"content":[{"type":"text","text":text}]});
-            save(pool, job, &cp, Some(&message), None).await?;
             let mut message = message;
             message.as_object_mut().unwrap().remove("details");
             history.push(message);
@@ -488,6 +532,13 @@ impl Reply {
                         .unwrap_or(json!({}));
                     json!({"title":lookup::title(&args["title"]),
                         "script":args["script"].as_str().filter(|script| script.len() <= 32_000)})
+                } else if call.name == edits::NAME
+                    && call.arguments.len() <= edits::MAX_ACTION_BYTES
+                {
+                    serde_json::from_str::<Value>(&call.arguments)
+                        .ok()
+                        .filter(Value::is_object)
+                        .unwrap_or_else(|| json!({}))
                 } else {
                     json!({})
                 };

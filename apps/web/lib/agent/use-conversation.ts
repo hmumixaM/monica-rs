@@ -11,6 +11,9 @@ export function useConversation(id: string) {
     if (!id) return;
     const controller = new AbortController();
     let cursor = 0;
+    let editCursor = 0;
+    const editsById = new Map<string, Edit>();
+    let edits: Edit[] = [];
     let messages: Message[] = [];
     let timer: ReturnType<typeof setTimeout>;
     let polling = false;
@@ -25,20 +28,24 @@ export function useConversation(id: string) {
       try {
         let page;
         do {
-          page = await readConversation(id, cursor, controller.signal);
+          page = await readConversation(id, cursor, controller.signal, editCursor);
           if (controller.signal.aborted) return;
           if (page.rows.length) messages = [...messages, ...page.rows.map(({ message }) => message)];
           cursor = page.rows.at(-1)?.seq ?? cursor;
-        } while (page.more);
+          if (page.edits?.length) {
+            for (const edit of page.edits) editsById.set(edit.id, edit);
+            editCursor = page.edits.at(-1)!.seq;
+            edits = [...editsById.values()];
+          }
+        } while (page.more || page.moreEdits);
         errors = 0;
         active = page.chat.running;
         setView(previous => {
           const run = page.run;
-          const edits = page.edits ?? [];
           const same = previous.id === id && previous.messages === messages && !previous.failure
             && previous.run?.id === run?.id && previous.run?.status === run?.status
             && previous.run?.progress === run?.progress && previous.run?.error === run?.error
-            && JSON.stringify(previous.edits) === JSON.stringify(edits)
+            && previous.edits === edits
             && previous.run?.model === run?.model && JSON.stringify(previous.run?.draft) === JSON.stringify(run?.draft);
           return same ? previous : { id, messages, run, edits, loaded: true, failure: '' };
         });

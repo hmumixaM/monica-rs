@@ -14,6 +14,7 @@ export type Message =
 export type CliQueryDetails = { queries: string[]; omittedQueries: number };
 export type Run = { id: string; status: string; progress: string; error: string; model: string; draft: Message | null };
 export type Edit = {
+  seq: number;
   id: string;
   status: 'pending' | 'applied' | 'dismissed' | 'stale';
   preview: {
@@ -24,7 +25,7 @@ export type Edit = {
   };
   result: { message?: string; link?: string } | null;
 };
-export type ChatPage = { chat: Conversation; rows: { seq: number; message: Message }[]; run: Run | null; edits?: Edit[]; more: boolean };
+export type ChatPage = { chat: Conversation; rows: { seq: number; message: Message }[]; run: Run | null; edits?: Edit[]; moreEdits?: boolean; more: boolean };
 
 type Export = { version: number; conversation?: Pick<Conversation, 'title' | 'people'>; messages: Message[] };
 const chats = '/api/v1/ask/chats';
@@ -61,8 +62,11 @@ export const listConversations = (signal?: AbortSignal, retry = false) => reques
 export const createConversation = (id: string) => request<Conversation>(chats, json('POST', { id }), true);
 export const editConversation = (id: string, people: PickedPerson[]) => request<Conversation>(`${chats}/${id}`, json('PATCH', { people }));
 export const deleteConversation = (id: string) => request<void>(`${chats}/${id}`, json('DELETE'));
-export const readConversation = (id: string, after = 0, signal?: AbortSignal) =>
-  request<ChatPage>(`${chats}/${id}?after=${after}`, { signal });
+export const readConversation = (id: string, after = 0, signal?: AbortSignal, afterEdit?: number) => {
+  const params = new URLSearchParams({ after: String(after) });
+  if (afterEdit !== undefined) params.set('after_edit', String(afterEdit));
+  return request<ChatPage>(`${chats}/${id}?${params}`, { signal });
+};
 export const decideEdit = (chat: string, edit: string, confirm: boolean) =>
   request<Edit>(`${chats}/${chat}/edits/${edit}`, json('POST', { confirm }), true);
 export const stop = (id: string, run: string) => request<void>(`${chats}/${id}/runs/${run}`, json('DELETE'), true);

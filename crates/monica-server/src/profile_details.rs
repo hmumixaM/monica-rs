@@ -17,16 +17,16 @@ pub fn routes() -> Router<AppState> {
 }
 
 #[derive(Deserialize, Serialize)]
-struct DetailRef {
-    field_key: String,
-    item: Option<String>,
+pub(crate) struct DetailRef {
+    pub(crate) field_key: String,
+    pub(crate) item: Option<String>,
 }
 #[derive(Deserialize)]
-struct Save {
-    field_key: String,
-    value: String,
+pub(crate) struct Save {
+    pub(crate) field_key: String,
+    pub(crate) value: String,
     #[serde(default)]
-    replaces: Vec<DetailRef>,
+    pub(crate) replaces: Vec<DetailRef>,
 }
 #[derive(Deserialize)]
 struct Remove {
@@ -134,9 +134,21 @@ async fn save(
     State(s): State<AppState>,
     h: HeaderMap,
     Path(id): Path<Uuid>,
-    Json(mut p): Json<Save>,
+    Json(p): Json<Save>,
 ) -> Result<Json<Value>> {
     let (actor, _) = user(&s, &h).await?;
+    let mut tx = s.pool.begin().await?;
+    let result = save_locked(&mut tx, id, actor, p).await?;
+    tx.commit().await?;
+    Ok(Json(result))
+}
+
+pub(crate) async fn save_locked(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    actor: Uuid,
+    mut p: Save,
+) -> Result<Value> {
     if !(1..=120).contains(&p.field_key.chars().count())
         || !(1..=20000).contains(&p.value.chars().count())
         || p.replaces.len() > 20
@@ -152,9 +164,8 @@ async fn save(
     if matches!(p.field_key.as_str(), "display_name" | "summary") {
         return Err(invalid("Edit the name and summary from the profile header"));
     }
-    let mut tx = s.pool.begin().await?;
-    lock(&mut tx, id).await?;
-    if let Some(row) = current(&mut tx, id, &p.field_key).await?
+    lock(tx, id).await?;
+    if let Some(row) = current(tx, id, &p.field_key).await?
         && !row["value"].is_null()
         && (!matches!(row["source"].as_str(), Some("manual" | "monica"))
             || row["value"].is_object())
@@ -169,12 +180,12 @@ async fn save(
         .iter()
         .filter(|r| !(r.field_key == p.field_key && r.item.is_none()))
         .collect();
-    reserve(&mut tx, id, &retired, Some(json!(p.value))).await?;
+    reserve(tx, id, &retired, Some(json!(p.value))).await?;
     for r in &retired {
-        erase(&mut tx, id, actor, r).await?;
+        erase(tx, id, actor, r).await?;
     }
     change_locked(
-        &mut tx,
+        tx,
         id,
         actor,
         Field {
@@ -186,9 +197,8 @@ async fn save(
     )
     .await?;
     sqlx::query("INSERT INTO crm.audit_events(user_id,action,entity_type,entity_id,metadata) VALUES($1,'profile.detail.saved','profile',$2,$3)")
-        .bind(actor).bind(id).bind(json!({"field_key":p.field_key,"replaced":retired})).execute(&mut *tx).await?;
-    tx.commit().await?;
-    Ok(Json(json!({"field_key":p.field_key,"value":p.value})))
+        .bind(actor).bind(id).bind(json!({"field_key":p.field_key,"replaced":retired})).execute(&mut **tx).await?;
+    Ok(json!({"field_key":p.field_key,"value":p.value}))
 }
 
 async fn remove(
