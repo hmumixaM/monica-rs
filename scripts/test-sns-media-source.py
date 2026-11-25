@@ -61,6 +61,7 @@ class SourceMedia(unittest.TestCase):
       header, _ = fetch.frame(self.db, '127', 1, destination=dest, cache_root=self.cache,
                               live_motion=True, source_media_id='clip', raw_xml=xml)
   self.assertTrue(header['verified_cached_video'])
+  self.assertEqual(header['downloaded_md5'],source_md5)
   self.assertEqual(dest.read_bytes(), clip)
 
  def test_native_video_poster_uses_its_source_thumbnail_cdn(self):

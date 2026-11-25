@@ -225,6 +225,7 @@ def frame(source, external, slot, cache_root=None, source_tid=None, destination=
             request = Request(fetch, headers={'User-Agent': 'MicroMessenger Client', 'Accept': '*/*'})
             stream = build_opener(NoRedirect()).open(request, timeout=20)
         digest = hashlib.sha256()
+        original_digest = hashlib.md5() if source_digest else None
         total = 0
         data = bytearray() if destination is None else None
         with stream:
@@ -234,6 +235,8 @@ def frame(source, external, slot, cache_root=None, source_tid=None, destination=
                     total += len(block)
                     if total > limit:raise ValueError('object too large')
                     digest.update(block)
+                    if original_digest is not None:
+                        original_digest.update(block)
                     if output is not None:output.write(block)
                     else:data.extend(block)
             finally:
@@ -245,6 +248,7 @@ def frame(source, external, slot, cache_root=None, source_tid=None, destination=
                     source_media_id=media.findtext('id'),
                     raw_xml_sha256=xml_hash(xml), parent_media_id=parent_media_id,
                     downloaded_sha256=digest.hexdigest(), cached=cached,
+                    downloaded_md5=original_digest.hexdigest() if original_digest is not None else None,
                     verified_cached_video=bool(cached and source_digest)), bytes(data) if data is not None else None
 
 

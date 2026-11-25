@@ -1,5 +1,5 @@
 """Stream one source-backed native video; fully decode it before publication."""
-import hashlib,json,os,struct,subprocess,tempfile
+import hashlib,json,os,re,struct,subprocess,tempfile
 from pathlib import Path
 
 
@@ -54,6 +54,11 @@ def obtain(fetch,source,external,slot,cache,source_tid,stage,runtime,source_medi
                     out.flush();os.fsync(out.fileno())
                 finally:
                     if child.poll()is None:child.kill();child.wait()
+        expected = (header.get('source_md5') or '').lower()
+        if (not source_md5 and re.fullmatch(r'[0-9a-f]{32}', expected)
+                and header.get('downloaded_md5') != expected
+                and not fetch.verified_video_cache(decoded, expected)):
+            raise ValueError('sns_video_source_digest_mismatch')
         asset=validate(decoded,runtime,source_md5=source_md5)
         target=stage/'objects'/asset['sha256']
         if not target.exists():

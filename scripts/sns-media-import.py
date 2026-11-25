@@ -334,6 +334,8 @@ def import_event(db, source, media, state, runtime, cache, event_id):
             # Exceptions from HTTP/XML may include image credentials. Persist
             # only the exception class, never its text, request URL or stderr.
             code = f'http_{error.code}' if isinstance(error, HTTPError) else type(error).__name__
+            if isinstance(error, ValueError) and error.args == ('sns_video_source_digest_mismatch',):
+                code = 'source_digest_mismatch'
             saved[key]=dict(status='failed',code=code)
         atomic(ledger,saved)
     if staged:
