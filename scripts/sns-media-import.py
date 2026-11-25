@@ -38,21 +38,30 @@ def atomic(path, value):
     finally:os.close(directory)
 
 
-def source_motion(fetch, source, external, content):
+def source_motion(fetch, source, external, content, archived=None):
     expected_hash = content.get('raw_xml_sha256')
     if not expected_hash:
         return []
     try:
         with fetch.read_post(source, external, content.get('source_tid'), missing_ok=True) as xml:
-            if not xml or '<LivePhoto' not in xml or fetch.xml_hash(xml) != expected_hash:
-                return []
-            _, obj = fetch.post_xml(xml)
-    except (fetch.ET.ParseError, UnicodeError):
-        return []  # Ready/static assets can still be reused.
+            current = xml
+    except (FileNotFoundError, ValueError, sqlite3.Error):
+        current = None
+    xml = current
+    if not xml or fetch.xml_hash(xml) != expected_hash:
+        xml = archived() if archived else None
+        if not xml or fetch.xml_hash(xml) != expected_hash:
+            return []
+    if '<LivePhoto' not in xml:
+        return []
+    try:
+        _, obj = fetch.post_xml(xml)
+    except fetch.ET.ParseError:
+        return []
     if obj is None or obj.findtext('id') != external:
         return []
     parents = {photo.get('role'): photo for photo in content.get('media', [])}
-    return [motion for motion in fetch.live_assets(obj)
+    return [{**motion, '_raw_xml': xml} for motion in fetch.live_assets(obj)
             if (parent := parents.get(f"media-{motion['_slot']}"))
             and parent.get('media_type') == 'image'
             and parent.get('source_media_id') == motion['parent_media_id']]
@@ -213,7 +222,7 @@ def import_event(db, source, media, state, runtime, cache, event_id):
             poster={**photo,'role':photo['role']+'-poster','media_type':'image','source_url':photo['thumbnail_url'],'thumbnail_url':None,'_slot':int(photo['role'].removeprefix('media-')),'_thumbnail':True}
             value=[str(event_id),poster['role'],poster.get('source_media_id'),poster.get('source_md5'),poster['source_url'],None]
             identities.append((hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest(),poster))
-    for motion in source_motion(fetch, source, external, content):
+    for motion in source_motion(fetch, source, external, content, lambda: archived_xml(db, event_id)):
         value = [str(event_id), motion['role'], motion['source_media_id'], motion['source_md5'],
                  motion['source_url'], content['raw_xml_sha256']]
         identities.append((hashlib.sha256(json.dumps(value).encode()).hexdigest(), motion))
@@ -260,7 +269,7 @@ def import_event(db, source, media, state, runtime, cache, event_id):
         try:
             if photo['media_type']=='video':
                 video=module('sns_video_stream',scripts/'sns-video.py')
-                header=video.obtain(fetch,source,external,slot,cache,content.get('source_tid'),stage,runtime,source_media_id=photo.get('source_media_id'),live_motion=live)
+                header=video.obtain(fetch,source,external,slot,cache,content.get('source_tid'),stage,runtime,source_media_id=photo.get('source_media_id'),live_motion=live,raw_xml=photo.get('_raw_xml'))
                 if live:
                     if (header['raw_xml_sha256'] != content['raw_xml_sha256']
                             or header['parent_media_id'] != photo['parent_media_id']
@@ -316,7 +325,8 @@ def import_event(db, source, media, state, runtime, cache, event_id):
         except Exception as error:
             # Exceptions from HTTP/XML may include image credentials. Persist
             # only the exception class, never its text, request URL or stderr.
-            saved[key]=dict(status='failed',code=type(error).__name__)
+            code = f'http_{error.code}' if isinstance(error, HTTPError) else type(error).__name__
+            saved[key]=dict(status='failed',code=code)
         atomic(ledger,saved)
     if staged:
         manifest=stage/'manifest.json';atomic(manifest,dict(rows=[row for _,row in staged]))

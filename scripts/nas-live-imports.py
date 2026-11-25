@@ -528,7 +528,7 @@ class Consumer:
                     status[key] += earlier_media.get(key, 0)
             return status
 
-    def import_sns_media(self, source):
+    def import_sns_media(self, source, budget=60):
         runtime = getattr(self.args, 'sns_runtime', None)
         snapshot = source/'sns/sns.db'
         if not snapshot.is_file():
@@ -539,14 +539,18 @@ class Consumer:
             missing = self.db.execute("""
                 SELECT e.id FROM crm.timeline_events e
                 WHERE e.provider='wechat' AND e.event_type='post' AND e.status='active' AND (
-                  (e.occurred_at>=%s AND e.content ? 'source_tid' AND EXISTS (
+                  (e.content ? 'source_tid' AND EXISTS (
                     SELECT 1 FROM jsonb_array_elements(coalesce(e.content->'media','[]')) m
                     CROSS JOIN LATERAL (VALUES
                         (m->>'role', m->>'media_type'='image' OR (m->>'media_type'='video' AND m->>'source_url' IS NOT NULL)),
                         ((m->>'role')||'-poster', m->>'media_type'='video' AND m->>'thumbnail_url' IS NOT NULL)
                     ) slot(role, expected)
-                    WHERE slot.expected AND NOT EXISTS (
-                        SELECT 1 FROM crm.media_links l WHERE l.entity_type='social_post' AND l.entity_id=e.id AND l.role=slot.role
+                    WHERE slot.expected AND (e.occurred_at>=%s OR
+                        (m->>'media_type'='video' AND nullif(m->>'source_url','') IS NOT NULL)) AND NOT EXISTS (
+                        SELECT 1 FROM crm.media_links l JOIN crm.media_assets a ON a.id=l.media_id
+                        WHERE l.entity_type='social_post' AND l.entity_id=e.id AND l.role=slot.role
+                          AND a.media_type LIKE CASE WHEN slot.role=m->>'role' AND m->>'media_type'='video'
+                              THEN 'video/%%' ELSE 'image/%%' END
                     )
                   )) OR EXISTS (
                     SELECT 1 FROM crm.social_interactions i
@@ -589,7 +593,7 @@ class Consumer:
             'SELECT event_id,attempts FROM sns_pending WHERE retry_at<=? ORDER BY (attempts>0),retry_at,event_id LIMIT 24',
             (time.time(),),
         ).fetchall()
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + budget
         for event_id, attempts in due:
             if STOP or time.monotonic() >= deadline:
                 break
@@ -616,6 +620,17 @@ class Consumer:
         status = dict(sns_pending=pending, sns_ready=ready, sns_failed=failures)
         self.progress('sns_media_checked', provider='wechat', **status)
         return status
+
+    def wait_for_source_cycle(self):
+        deadline = time.monotonic() + self.args.interval
+        source = self.state/'chatlog-export'
+        while not STOP and (remaining := deadline - time.monotonic()) > 0:
+            if (getattr(self.args, 'sns_runtime', None) and (source/'sns/sns.db').is_file()
+                and self.journal.execute('SELECT 1 FROM sns_pending WHERE retry_at<=? LIMIT 1', (time.time(),)).fetchone()):
+                self.guard()
+                self.import_sns_media(source, budget=min(remaining, 60))
+            else:
+                time.sleep(min(remaining, 2))
 
     def changed_message_media(self, mid):
         # React only to a newly imported source revision. Completed photos are
@@ -706,10 +721,13 @@ def main():
                             return 1
                 if args.once:
                     break
-                for _ in range(args.interval):
-                    if STOP:
-                        break
-                    time.sleep(1)
+                try:
+                    consumer.wait_for_source_cycle()
+                except Exception as error:
+                    consumer.progress('sns_media_retry', provider='wechat', error_code=failure_code(error))
+                    if db.closed or db.broken:
+                        return 1
+                    time.sleep(min(args.interval, 5))
         finally:
             consumer.close()
         return 1 if failed else 0

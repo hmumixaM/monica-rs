@@ -142,6 +142,36 @@ class LiveImportContract(unittest.TestCase):
         self.assertEqual(self.db.execute("SELECT count(*)FROM crm.audit_events WHERE action='media.sns_existing_file_linked'").fetchone()[0],1)
         self.assertEqual(self.db.execute('SELECT count(*) FROM crm.media_provenance WHERE media_id=%s',(mid,)).fetchone()[0],1)
 
+    def test_native_video_before_cutoff_is_recovered_during_the_idle_window(self):
+        from psycopg.types.json import Jsonb
+
+        event = uuid.uuid4()
+        clip = {'role': 'media-1', 'media_type': 'video', 'source_url': 'https://snsvideo.c2c.wechat.com/clip'}
+        content = {'source_tid': '100', 'media': [clip]}
+        self.db.execute("""INSERT INTO crm.timeline_events
+            (id,provider,object_id,external_id,event_type,occurred_at,content,content_hash,version)
+            VALUES(%s,'wechat',%s,'100','post','2026-11-01',%s,'synthetic',1)""",
+            (event, uuid.uuid4(), Jsonb(content)))
+        snapshot = self.args.state/'chatlog-export/sns/sns.db'
+        snapshot.parent.mkdir(parents=True)
+        snapshot.touch()
+        self.consumer.journal.execute('PRAGMA user_version=2')
+        self.args.sns_runtime = self.args.state/'runtime'
+        self.args.interval = 30
+        self.consumer.journal.execute('INSERT INTO sns_pending(event_id) VALUES(?)', (str(uuid.uuid4()),))
+        seen = []
+
+        def import_event(db, source, media, state, runtime, cache, event_id):
+            self.assertEqual(source, snapshot)
+            seen.append(event_id)
+            return dict(ready=1, failed=0)
+
+        with patch.object(live.time, 'monotonic', side_effect=[0, 0, 0, 0, 0, 31]), \
+             patch.object(live, 'module', return_value=types.SimpleNamespace(import_event=import_event)):
+            self.consumer.wait_for_source_cycle()
+        self.assertIn(event, seen)
+        self.assertEqual(self.consumer.journal.execute('SELECT count(*) FROM sns_pending').fetchone()[0], 0)
+
     def test_social_ack_retry_cas_reuse_and_raw_bytes(self):
         folder = self.args.source/'raw/linkedin'
         (folder/'assets').mkdir(parents=True)

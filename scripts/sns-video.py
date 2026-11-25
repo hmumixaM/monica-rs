@@ -21,11 +21,11 @@ def validate(path,runtime):
     return dict(sha256=digest.hexdigest(),byte_length=path.stat().st_size,media_type='video/mp4',width=stream['width'],height=stream['height'],duration_ms=round(float(info['format']['duration'])*1000))
 
 
-def obtain(fetch,source,external,slot,cache,source_tid,stage,runtime,source_media_id=None,live_motion=False):
+def obtain(fetch,source,external,slot,cache,source_tid,stage,runtime,source_media_id=None,live_motion=False,raw_xml=None):
     scripts=Path(__file__).resolve().parent
     with tempfile.TemporaryDirectory(prefix='.video-',dir=stage)as temporary:
         root=Path(temporary);cipher=root/'source';decoded=root/'decoded'
-        header,_=fetch.frame(source,external,slot,cache_root=cache,source_tid=source_tid,destination=cipher,source_media_id=source_media_id,live_motion=live_motion)
+        header,_=fetch.frame(source,external,slot,cache_root=cache,source_tid=source_tid,destination=cipher,source_media_id=source_media_id,live_motion=live_motion,raw_xml=raw_xml)
         encoded=json.dumps(header).encode()
         with cipher.open('rb')as inp,decoded.open('wb')as out:
             child=subprocess.Popen([str(runtime/'node-run'),str(scripts.parent/'tools/sns-decrypt/decrypt-video.cjs'),str(runtime/'wasm')],stdin=subprocess.PIPE,stdout=out,stderr=subprocess.PIPE)
