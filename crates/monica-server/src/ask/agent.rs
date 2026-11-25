@@ -1,6 +1,6 @@
 //! PostgreSQL owns the queue and transcript. A lease fences every write; losing
 //! it cancels the model stream or read-only lookup in the worker.
-use super::{Actor, Person, lookup, model_settings};
+use super::{Actor, MAX_MESSAGE_BYTES, Person, lookup, message_bytes, model_settings};
 use crate::{
     ai::browser::{ask_completion, deepseek_medium},
     auth::AppState,
@@ -32,6 +32,7 @@ const MAX_ROUNDS: usize = 50;
 const MAX_WINDOW_BYTES: usize = 1_200_000;
 const MAX_STREAM_BYTES: usize = 512 * 1024;
 const MAX_STORED_CONTEXT_MESSAGES: i64 = 400;
+const MAX_HISTORY_BYTES: usize = 6 * 1024 * 1024;
 const LOOKUP_LIMIT: &str = "本轮查询已到上限。请根据已核实的资料回答，并说明还有哪些范围没查完。";
 const CONTINUE: &str = "继续根据已有资料回答。如果资料不够，先缩小范围再查。";
 const CONTINUE_ANSWER: &str = "上一段回答达到输出上限，请从断开的地方继续，避免重复。";
@@ -197,22 +198,7 @@ async fn run(state: &AppState, job: &Job) -> Result<()> {
     let owner: Actor = (job.owner_id, job.email.clone());
     let prompt = system_prompt(&job.people.0, zone);
     let mut cp = job.checkpoint.0.clone();
-    let history: Vec<(Option<Uuid>, Value)> = sqlx::query_as(
-        "SELECT run_id,message FROM (
-            SELECT seq,run_id,message - 'details' AS message FROM crm.ask_messages WHERE chat_id=$1 ORDER BY seq DESC LIMIT $2
-         ) m ORDER BY seq",
-    ).bind(job.chat_id).bind(MAX_STORED_CONTEXT_MESSAGES).fetch_all(pool).await?;
-    let mut current_start = history
-        .iter()
-        .position(|(run_id, message)| run_id == &Some(job.id) && message["role"] == "user")
-        .context("Ask run has no question in its saved history")?;
-    let mut history = history
-        .into_iter()
-        .map(|(_, message)| message)
-        .collect::<Vec<_>>();
-    // Keep the start of the running turn when a very large history was restored.
-    history.drain(..current_start.saturating_sub(200));
-    current_start = current_start.min(200);
+    let mut history = History::load(pool, job).await?;
     let settings = model_settings(state)
         .await
         .map_err(|error| anyhow!("model settings unavailable ({})", error.0))?;
@@ -246,7 +232,7 @@ async fn run(state: &AppState, job: &Job) -> Result<()> {
     loop {
         // A restart resumes an unfinished tool call by replaying only that
         // read-only script. Calls whose results were saved stay completed.
-        if let Some(call) = pending_call(&history[current_start..]) {
+        if let Some(call) = pending_call(&history.messages[history.question..]) {
             let id = call["id"].as_str().unwrap_or_default();
             let name = call["name"].as_str().unwrap_or_default();
             let script = call["arguments"]["script"].as_str();
@@ -275,7 +261,7 @@ async fn run(state: &AppState, job: &Job) -> Result<()> {
         let reply = match get_reply(
             state,
             job,
-            &history,
+            &history.messages,
             &prompt,
             &cp.instruction,
             allow_tools,
@@ -287,6 +273,16 @@ async fn run(state: &AppState, job: &Job) -> Result<()> {
             Err(detail) => return save(pool, job, &cp, None, Some(("failed", &detail))).await,
         };
         let mut message = reply.message(true, &job.model);
+        if message_bytes(&message) > MAX_MESSAGE_BYTES {
+            return save(
+                pool,
+                job,
+                &cp,
+                None,
+                Some(("failed", "模型输出过长。本轮查询进度已保存。")),
+            )
+            .await;
+        }
         let finish = if !reply.calls.is_empty() && allow_tools {
             cp.rounds += 1;
             cp.instruction = if cp.rounds >= MAX_ROUNDS {
@@ -325,6 +321,69 @@ async fn run(state: &AppState, job: &Job) -> Result<()> {
             return Ok(());
         }
         history.push(message);
+    }
+}
+
+struct History {
+    messages: Vec<Value>,
+    sizes: Vec<usize>,
+    bytes: usize,
+    question: usize,
+}
+
+impl History {
+    async fn load(pool: &PgPool, job: &Job) -> Result<Self> {
+        let rows: Vec<(Option<Uuid>, Value)> = sqlx::query_as(
+            "WITH recent AS MATERIALIZED (
+                SELECT seq,encoded_bytes FROM crm.ask_messages
+                WHERE chat_id=$1 ORDER BY seq DESC LIMIT $2
+             ), sized AS (
+                SELECT seq,sum(encoded_bytes) OVER (ORDER BY seq DESC) AS bytes FROM recent
+             ), selected AS (
+                SELECT seq FROM sized WHERE bytes<=$4
+                UNION
+                (SELECT seq FROM crm.ask_messages WHERE run_id=$3 ORDER BY seq LIMIT 1)
+             )
+             SELECT m.run_id,m.message - 'details' FROM crm.ask_messages m
+             JOIN selected USING(seq) ORDER BY seq",
+        )
+        .bind(job.chat_id)
+        .bind(MAX_STORED_CONTEXT_MESSAGES)
+        .bind(job.id)
+        .bind(MAX_HISTORY_BYTES as i64)
+        .fetch_all(pool)
+        .await?;
+        let question = rows
+            .iter()
+            .position(|(run, message)| *run == Some(job.id) && message["role"] == "user")
+            .context("Ask run has no question in its saved history")?;
+        let messages = rows
+            .into_iter()
+            .map(|(_, message)| message)
+            .collect::<Vec<_>>();
+        let sizes: Vec<_> = messages.iter().map(message_bytes).collect();
+        let bytes = sizes.iter().sum();
+        Ok(Self {
+            messages,
+            sizes,
+            bytes,
+            question,
+        })
+    }
+
+    fn push(&mut self, message: Value) {
+        let size = message_bytes(&message);
+        self.bytes += size;
+        self.messages.push(message);
+        self.sizes.push(size);
+        while self.bytes > MAX_HISTORY_BYTES && self.messages.len() > 2 {
+            // Keep the current question as well as the newest assistant call
+            // and its results as earlier history rolls out of the byte budget.
+            let oldest = usize::from(self.question == 0);
+            self.messages.remove(oldest);
+            self.bytes -= self.sizes.remove(oldest);
+            self.question = self.question.saturating_sub(1);
+        }
     }
 }
 
@@ -394,20 +453,22 @@ impl Reply {
         }
         if with_calls {
             for call in self.calls.values() {
-                let mut args = serde_json::from_str::<Value>(&call.arguments)
-                    .ok()
-                    .filter(Value::is_object)
-                    .unwrap_or(json!({}));
-                if call.name == "monica_cli" {
-                    args = json!({"title":lookup::title(&args["title"]),
-                        "script":args["script"].as_str().filter(|script| script.len() <= 32_000)});
-                }
+                let args = if call.name == "monica_cli" {
+                    let args = serde_json::from_str::<Value>(&call.arguments)
+                        .ok()
+                        .filter(Value::is_object)
+                        .unwrap_or(json!({}));
+                    json!({"title":lookup::title(&args["title"]),
+                        "script":args["script"].as_str().filter(|script| script.len() <= 32_000)})
+                } else {
+                    json!({})
+                };
                 content.push(json!({"type":"toolCall","id":if call.id.is_empty() { format!("call_{}",Uuid::new_v4().simple()) } else { call.id.clone() },
                     "name":call.name,"arguments":args,"providerData":call.provider_data}));
             }
         }
         json!({"role":"assistant","content":content,"timestamp":Utc::now().timestamp_millis(),"model":model,
-            "reasoningDetails":self.reasoning_details, "stopReason":if self.finish=="length" { "length" } else if with_calls && !self.calls.is_empty() { "toolUse" } else { "stop" }})
+            "reasoningDetails":if with_calls { self.reasoning_details.as_slice() } else { &[] }, "stopReason":if self.finish=="length" { "length" } else if with_calls && !self.calls.is_empty() { "toolUse" } else { "stop" }})
     }
 }
 
@@ -606,6 +667,12 @@ async fn stream(
             && (!reply.answer.is_empty() || !reply.thinking.is_empty())
         {
             let message = reply.message(false, &job.model);
+            if message_bytes(&message) > MAX_MESSAGE_BYTES {
+                return Ok(Err(ModelError::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "模型输出过长。本轮查询进度已保存。",
+                )));
+            }
             progress(
                 pool,
                 job,
@@ -941,11 +1008,11 @@ pub(super) fn imported_message(message: Value) -> Option<Value> {
                 "text" => Some(json!({"type":"text","text":part["text"].as_str()?})),
                 "thinking" if part["redacted"] != true => Some(json!({"type":"thinking","thinking":part["thinking"].as_str()?})),
                 "toolCall" => Some(json!({"type":"toolCall","id":part["id"].as_str()?,"name":part["name"].as_str()?,
-                    "arguments":part["arguments"].as_object()?})),
+                    "arguments":part["arguments"].as_object()?, "providerData":part["providerData"].as_object()})),
                 _ => None,
             }).collect::<Vec<_>>();
             Some(
-                json!({"role":"assistant","content":content,"timestamp":timestamp,"model":message["model"].as_str(),"stopReason":message["stopReason"].as_str().unwrap_or("stop")}),
+                json!({"role":"assistant","content":content,"timestamp":timestamp,"model":message["model"].as_str(),"reasoningDetails":message["reasoningDetails"].as_array(),"stopReason":message["stopReason"].as_str().unwrap_or("stop")}),
             )
         }
         "toolResult" => Some(

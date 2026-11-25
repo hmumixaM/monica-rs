@@ -135,6 +135,7 @@ pub(super) async fn run(
     let permit = match state
         .resources
         .acquire_background(monica_core::resources::TaskResources {
+            cpu: 1,
             memory_bytes: 96 * 1024 * 1024,
             ..Default::default()
         })
@@ -949,9 +950,10 @@ fn directory_command(root: &Value, name: &str, args: &Value, today: &str) -> Res
                 .filter_map(Value::as_str)
                 .map(|text| {
                     format!(
-                        "{} {}",
+                        "{} {} {}",
                         text.to_lowercase(),
-                        monica_core::link_matching::pinyin_compact(text)
+                        monica_core::link_matching::pinyin_compact(text),
+                        monica_core::link_matching::pinyin_initials(text)
                     )
                 })
                 .collect::<Vec<_>>()

@@ -185,6 +185,12 @@ fn syllables(s: &str, ignore_unknown: bool) -> Vec<String> {
 pub fn pinyin_compact(s: &str) -> String {
     compact(&syllables(s, false).join(" "))
 }
+pub fn pinyin_initials(s: &str) -> String {
+    syllables(s, true)
+        .iter()
+        .filter_map(|value| value.chars().next())
+        .collect()
+}
 pub fn instagram_username(s: &str) -> String {
     let mut s = s.trim().to_string();
     if s.contains("://") {

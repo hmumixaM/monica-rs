@@ -17,7 +17,7 @@ CREATE TABLE crm.ask_runs (
     timezone text NOT NULL,
     people jsonb NOT NULL,
     checkpoint jsonb NOT NULL DEFAULT '{}',
-    draft jsonb,
+    draft jsonb CHECK (octet_length(draft::text) <= 3145728),
     lease_id uuid,
     lease_until timestamptz,
     created_at timestamptz NOT NULL DEFAULT now()
@@ -30,6 +30,9 @@ CREATE TABLE crm.ask_messages (
     seq bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     chat_id uuid NOT NULL REFERENCES crm.ask_chats(id) ON DELETE CASCADE,
     run_id uuid REFERENCES crm.ask_runs(id) ON DELETE CASCADE,
-    message jsonb NOT NULL
+    message jsonb NOT NULL,
+    encoded_bytes integer GENERATED ALWAYS AS (octet_length(message::text)) STORED
+        CHECK (encoded_bytes <= 3145728)
 );
 CREATE INDEX ask_messages_chat ON crm.ask_messages (chat_id, seq);
+CREATE INDEX ask_messages_run ON crm.ask_messages (run_id, seq) WHERE run_id IS NOT NULL;

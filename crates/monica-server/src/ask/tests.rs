@@ -114,7 +114,7 @@ async fn ask_runs_without_a_browser_and_recovers_a_stream_after_real_tag_lookup(
         .await
         .unwrap();
     let mut people = Vec::new();
-    for (index, name) in ["甲Q", "乙Q", "标签以外"].iter().enumerate() {
+    for (index, name) in ["张三", "乙Q", "标签以外"].iter().enumerate() {
         let profile = Uuid::new_v4();
         sqlx::query(
             "INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person',$2)",
@@ -139,7 +139,7 @@ async fn ask_runs_without_a_browser_and_recovers_a_stream_after_real_tag_lookup(
     let attempts = Arc::new(AtomicUsize::new(0));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
-    let script = r#"const a = cli("directory",{tags:["qd"],limit:1}); const b = cli("directory",{tags:["QD"],offset:a.next_offset}); return {total:a.total, rows:[...a.rows,...b.rows], security:[typeof require,typeof fetch,typeof process]};"#;
+    let script = r#"const a = cli("directory",{tags:["qd"],limit:1}); const b = cli("directory",{tags:["QD"],offset:a.next_offset}); return {total:a.total, rows:[...a.rows,...b.rows], initials:cli("directory",{query:"zs"}).rows.map(p=>p.name), security:[typeof require,typeof fetch,typeof process]};"#;
     let fake = Router::new().route("/v1/chat/completions",post({
         let attempts = attempts.clone();
         move |Json(body): Json<Value>| {
@@ -157,6 +157,7 @@ async fn ask_runs_without_a_browser_and_recovers_a_stream_after_real_tag_lookup(
                 assert_eq!(saved["tool_call_id"],"tag-fixture");
                 let output: Value = serde_json::from_str(saved["content"].as_str().unwrap()).unwrap();
                 assert_eq!(output["total"],2);
+                assert_eq!(output["initials"],json!(["张三"]));
                 assert_eq!(output["security"],json!(["undefined","undefined","undefined"]));
                 for person in people { assert!(output["rows"].as_array().unwrap().iter().any(|row| row["link"]==format!("/profiles/{person}"))); }
                 assert_eq!(messages.iter().find(|m| m["role"]=="assistant").unwrap()["reasoning_content"],"先查标签");
@@ -245,7 +246,7 @@ async fn ask_runs_without_a_browser_and_recovers_a_stream_after_real_tag_lookup(
             .as_array()
             .unwrap()
             .len(),
-        2
+        3
     );
     assert_eq!(
         messages[3]["message"]["content"][0]["thinking"],
@@ -394,9 +395,11 @@ fn gemini_tool_signatures_survive_same_model_turns_in_litellm() {
         "provider_specific_fields":{"thought_signature":signature}
     }]},"finish_reason":"tool_calls"}]});
     add_event(&mut reply, event.to_string().as_bytes()).unwrap();
+    reply.reasoning_details = vec![json!({"type":"reasoning.encrypted","data":"opaque-replay"})];
+    let restored = imported_message(reply.message(true, "gemini-4-neon")).unwrap();
     let history = vec![
         json!({"role":"user","content":"sample"}),
-        reply.message(true, "gemini-4-neon"),
+        restored,
         json!({"role":"toolResult","toolCallId":id,"content":[{"type":"text","text":"example data"}]}),
     ];
     let same = model_context(&history, "system", "", "gemini-4-neon", 50_000);
@@ -406,8 +409,59 @@ fn gemini_tool_signatures_survive_same_model_turns_in_litellm() {
         signature
     );
     assert_eq!(same[3]["tool_call_id"], id);
+    assert_eq!(same[2]["reasoning_details"][0]["data"], "opaque-replay");
     let switched = model_context(&history, "system", "", "deepseek-v4-pro", 50_000);
     assert_eq!(switched[2]["tool_calls"][0]["id"], "call_fixture");
     assert!(switched[2]["tool_calls"][0]["provider_specific_fields"].is_null());
     assert_eq!(switched[3]["tool_call_id"], "call_fixture");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn long_transcripts_page_by_bytes_and_import_checks_auth_first(pool: PgPool) {
+    let (_, app) = setup(&pool).await;
+    let import = "/api/v1/ask/chats/import";
+    request(
+        &app,
+        "expired",
+        "POST",
+        import,
+        json!({"invalid":true}),
+        StatusCode::UNAUTHORIZED,
+    )
+    .await;
+    let payload = "x".repeat(550_000);
+    let messages = (0..5)
+        .map(|i| json!({"role":"user","content":format!("{i}{payload}")}))
+        .collect::<Vec<_>>();
+    let chat = request(
+        &app,
+        "owner",
+        "POST",
+        import,
+        json!({"version":1,"messages":messages}),
+        StatusCode::OK,
+    )
+    .await;
+    let path = format!("/api/v1/ask/chats/{}", chat["id"].as_str().unwrap());
+    let first = request(&app, "owner", "GET", &path, Value::Null, StatusCode::OK).await;
+    let rows = first["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 3);
+    assert_eq!(first["more"], true);
+    let next = request(
+        &app,
+        "owner",
+        "GET",
+        &format!("{path}?after={}", rows[2]["seq"]),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(next["rows"].as_array().unwrap().len(), 2);
+    assert_eq!(next["more"], false);
+    assert!(
+        next["rows"][0]["message"]["content"]
+            .as_str()
+            .unwrap()
+            .starts_with('3')
+    );
 }

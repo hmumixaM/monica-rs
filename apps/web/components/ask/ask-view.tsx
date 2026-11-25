@@ -115,6 +115,7 @@ export function AskView() {
   const [model, setModel] = useState("");
   const [legacy, setLegacy] = useState<LegacyChat[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [savingPeople, setSavingPeople] = useState(false);
   const pending = useRef<{ id: string; question: string; request: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -123,7 +124,8 @@ export function AskView() {
   const running = state.run?.status === "queued" || state.run?.status === "running";
   const transcript = useMemo(() => turns(state.run?.draft ? [...state.messages, state.run.draft] : state.messages),
     [state.messages, state.run?.draft]);
-  const busy = !ready || submitting || running || (!!id && !state.loaded);
+  const locked = !ready || submitting || savingPeople;
+  const busy = locked || running || (!!id && !state.loaded);
   const report = (error: unknown) => setFailure(error instanceof Error ? error.message : String(error));
 
   function open(session?: Conversation) {
@@ -169,21 +171,30 @@ export function AskView() {
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [state.messages, state.run?.draft, state.run?.progress]);
 
   async function choosePeople(next: PickedPerson[]) {
-    if (id) {
+    setPeople(next);
+    if (!id) return;
+    setSavingPeople(true);
+    try {
       const session = await editConversation(id, next);
       setSessions(rows => rows.map(row => row.id === id ? session : row));
+    } finally {
+      setSavingPeople(false);
     }
-    setPeople(next);
   }
   // Arriving from a profile ("问 Monica 关于 TA") starts with that person selected.
   const fromProfile = params.get("profile");
   const applied = useRef<string | null>(null);
   useEffect(() => {
     if (!fromProfile || !ready || applied.current === fromProfile) return;
-    applied.current = fromProfile;
+    let active = true;
     void fetchJson<{ id: string; display_name: string; avatar_media_id?: string | null }>(`/api/v1/profiles/${encodeURIComponent(fromProfile)}`)
-      .then((profile) => choosePeople([{ id: profile.id, display_name: profile.display_name, avatar_media_id: profile.avatar_media_id ?? null }]))
-      .catch(report);
+      .then(profile => {
+        if (!active) return;
+        applied.current = fromProfile;
+        return choosePeople([{ id: profile.id, display_name: profile.display_name, avatar_media_id: profile.avatar_media_id ?? null }]);
+      })
+      .catch(error => { if (active) report(error); });
+    return () => { active = false; };
   }, [fromProfile, ready, id]);
 
   // A question typed on the home page arrives ready to send.
@@ -260,24 +271,24 @@ export function AskView() {
     <PageHeader title="问 Monica" description="问一个人的近况、聊过的事，或者整体的往来。回答里的链接可以打开原文。" />
     <div className={styles.workspace}>
       <aside className={styles.sessions} aria-label="会话">
-        <Button block variant="secondary" disabled={!ready || submitting} onClick={startNew}><MessageSquarePlus size={15} aria-hidden="true" />新会话</Button>
+        <Button block variant="secondary" disabled={locked} onClick={startNew}><MessageSquarePlus size={15} aria-hidden="true" />新会话</Button>
         <ul role="list">{sessions.map((session) => <li key={session.id} data-current={session.id === id ? "" : undefined}>
-          <button type="button" disabled={!ready || submitting} aria-current={session.id === id ? "true" : undefined}
+          <button type="button" disabled={locked} aria-current={session.id === id ? "true" : undefined}
             onClick={() => { if (session.id !== id) open(session); }}>{session.title}</button>
-          <IconButton size="sm" label={`删除会话：${session.title}`} disabled={!ready || submitting}
+          <IconButton size="sm" label={`删除会话：${session.title}`} disabled={locked}
             onClick={() => void remove(session)}><Trash2 size={13} /></IconButton>
         </li>)}</ul>
       </aside>
 
       <section className={styles.chat} aria-label="当前会话">
         <header className={styles.chatHeader}>
-          <Select className={styles.sessionSelect} aria-label="选择会话" value={id} disabled={!ready || submitting} onChange={(event) => {
+          <Select className={styles.sessionSelect} aria-label="选择会话" value={id} disabled={locked} onChange={(event) => {
             const selected = sessions.find((session) => session.id === event.target.value);
             open(selected);
           }}>{!id && <option value="">新会话</option>}{sessions.map((session) => <option key={session.id} value={session.id}>{session.title}</option>)}</Select>
           <h2>{current?.title ?? "新会话"}</h2>
-          <IconButton className={styles.newMobile} label="新会话" disabled={!ready || submitting} onClick={startNew}><MessageSquarePlus size={17} /></IconButton>
-          <Menu trigger={<IconButton label="会话操作" disabled={!ready || submitting}><Ellipsis size={17} /></IconButton>} items={[
+          <IconButton className={styles.newMobile} label="新会话" disabled={locked} onClick={startNew}><MessageSquarePlus size={17} /></IconButton>
+          <Menu trigger={<IconButton label="会话操作" disabled={locked}><Ellipsis size={17} /></IconButton>} items={[
             ...(current ? [{ label: "删除当前会话", icon: <Trash2 size={15} />, onSelect: () => void remove(current) }] : []),
             { label: "导出会话", disabled: !id, icon: <Download size={15} />, onSelect: () => void exportConversation(id).catch(report) },
             { label: "导入会话", icon: <Upload size={15} />, disabled: submitting, onSelect: () => fileInput.current?.click() },
@@ -298,7 +309,7 @@ export function AskView() {
             <strong>{people.length ? `想了解${people.map((person) => person.display_name).join("、")}的什么？` : "想知道什么？"}</strong>
             <p>{people.length ? "Monica 会翻看聊天、动态和已整理的资料来回答。" : "直接提问，或者先在下面选一个人，问题就会围绕 TA。"}</p>
             <div className={styles.starters}>{(people.length ? PERSON_STARTERS : STARTERS).map((text) =>
-              <button key={text} type="button" disabled={!ready || submitting} onClick={() => fill(text)}>{text}</button>)}</div>
+              <button key={text} type="button" disabled={locked} onClick={() => fill(text)}>{text}</button>)}</div>
           </div>}
           {transcript.map((turn, index) => {
             const live = running && index === transcript.length - 1;
@@ -331,7 +342,7 @@ export function AskView() {
               : <button type="button" className={styles.addPerson} disabled={busy} onClick={() => setPicking(true)}>@ {people.length ? "再加一个人" : "选择人物"}</button>}
           </div>
           <div className={styles.inputRow}>
-            <textarea ref={input} id="monica-question" name="question" aria-label="问题" rows={2} value={question} disabled={!ready || submitting} onKeyDown={onKey}
+            <textarea ref={input} id="monica-question" name="question" aria-label="问题" rows={2} value={question} disabled={locked} onKeyDown={onKey}
               onChange={(event) => setQuestion(event.target.value)} placeholder={people.length ? "问关于 TA 的问题…" : "输入问题…"} />
             {running && state.run
               ? <IconButton label="停止回答" className={styles.send} onClick={() => void stop(id, state.run!.id).then(state.refresh).catch(report)}><Square size={15} /></IconButton>

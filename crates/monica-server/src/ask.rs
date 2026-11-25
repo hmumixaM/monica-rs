@@ -8,7 +8,7 @@ use crate::{
 };
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, Path, Query, State},
+    extract::{DefaultBodyLimit, FromRequest, Path, Query, Request, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -17,12 +17,19 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::PgPool;
+use std::time::Duration;
 use uuid::Uuid;
 
 type Result<T> = std::result::Result<T, ApiError>;
 type Actor = (Uuid, String);
 const IMPORT_BYTES: usize = 24 * 1024 * 1024;
 const MESSAGE_PAGE: i64 = 100;
+const MESSAGE_PAGE_BYTES: i64 = 2 * 1024 * 1024;
+const MAX_MESSAGE_BYTES: usize = 1536 * 1024;
+
+fn message_bytes(message: &Value) -> usize {
+    message.to_string().len()
+}
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
@@ -166,7 +173,7 @@ struct Cursor {
     #[serde(default)]
     after: i64,
 }
-#[derive(Serialize, sqlx::FromRow)]
+#[derive(Serialize)]
 struct SavedMessage {
     seq: i64,
     message: Value,
@@ -197,22 +204,52 @@ async fn read(
         .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(missing)?;
-    let mut rows: Vec<SavedMessage> = sqlx::query_as(
-        "SELECT seq,message FROM crm.ask_messages WHERE chat_id=$1 AND seq>$2 ORDER BY seq LIMIT $3",
+    // Fetch one extra cursor as a sentinel. PostgreSQL decides which rows
+    // fit before SQLx decodes their potentially large JSON values.
+    let entries: Vec<(i64, Option<Value>)> = sqlx::query_as(
+        "WITH recent AS MATERIALIZED (
+            SELECT seq,encoded_bytes FROM crm.ask_messages WHERE chat_id=$1 AND seq>$2 ORDER BY seq LIMIT $3
+         ), sized AS (
+            SELECT seq,row_number() OVER ordered AS position,
+                sum(encoded_bytes) OVER ordered AS bytes
+            FROM recent WINDOW ordered AS (ORDER BY seq)
+         ) SELECT sized.seq,m.message FROM sized
+         LEFT JOIN crm.ask_messages m ON m.seq=sized.seq
+            AND (position=1 OR (position<$3 AND bytes<=$4))
+         ORDER BY sized.seq",
     )
-    .bind(id).bind(cursor.after.max(0)).bind(MESSAGE_PAGE + 1).fetch_all(&mut *tx).await?;
-    let more = rows.len() as i64 > MESSAGE_PAGE;
-    if more {
-        rows.pop();
-    }
+    .bind(id).bind(cursor.after.max(0)).bind(MESSAGE_PAGE + 1).bind(MESSAGE_PAGE_BYTES)
+    .fetch_all(&mut *tx).await?;
+    let more = entries.last().is_some_and(|(_, message)| message.is_none());
+    let rows = entries
+        .into_iter()
+        .filter_map(|(seq, message)| {
+            Some(SavedMessage {
+                seq,
+                message: message?,
+            })
+        })
+        .collect::<Vec<_>>();
     let run: Option<RunView> = sqlx::query_as(
         "SELECT id,status,progress,error,model,draft FROM crm.ask_runs WHERE chat_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1",
     )
     .bind(id).fetch_optional(&mut *tx).await?;
     tx.commit().await?;
+    #[derive(Serialize)]
+    struct Page {
+        chat: Chat,
+        rows: Vec<SavedMessage>,
+        run: Option<RunView>,
+        more: bool,
+    }
     Ok((
         [(axum::http::header::CACHE_CONTROL, "private, no-store")],
-        Json(json!({"chat":chat,"rows":rows,"run":run,"more":more})),
+        Json(Page {
+            chat,
+            rows,
+            run,
+            more,
+        }),
     )
         .into_response())
 }
@@ -352,12 +389,27 @@ struct ImportChat {
     #[serde(default)]
     people: Vec<Person>,
 }
-async fn import(
-    State(s): State<AppState>,
-    headers: HeaderMap,
-    Json(input): Json<Imported>,
-) -> Result<Json<Chat>> {
-    let (owner, _) = user(&s, &headers).await?;
+async fn import(State(s): State<AppState>, request: Request) -> Result<Response> {
+    let (owner, _) = user(&s, request.headers()).await?;
+    let _permit = tokio::time::timeout(
+        Duration::from_millis(250),
+        s.resources
+            .acquire_background(monica_core::resources::TaskResources {
+                memory_bytes: 128 * 1024 * 1024,
+                ..Default::default()
+            }),
+    )
+    .await
+    .ok()
+    .and_then(std::result::Result::ok)
+    .ok_or(ApiError(
+        StatusCode::TOO_MANY_REQUESTS,
+        "会话导入暂时繁忙，请稍后再试。",
+    ))?;
+    let Json(input) = match Json::<Imported>::from_request(request, &s).await {
+        Ok(input) => input,
+        Err(error) => return Ok(error.into_response()),
+    };
     if input.version != 1 || input.messages.len() > 12_000 {
         return Err(invalid("无法导入这个版本或大小的会话文件。"));
     }
@@ -379,6 +431,12 @@ async fn import(
         .into_iter()
         .filter_map(agent::imported_message)
         .collect::<Vec<_>>();
+    if messages
+        .iter()
+        .any(|message| message_bytes(message) > MAX_MESSAGE_BYTES)
+    {
+        return Err(invalid("导入文件中有一条会话记录过长。"));
+    }
     let mut tx = s.pool.begin().await?;
     sqlx::query("INSERT INTO crm.ask_chats(id,owner_id,title,people) VALUES($1,$2,$3,$4)")
         .bind(id)
@@ -390,5 +448,5 @@ async fn import(
     sqlx::query("INSERT INTO crm.ask_messages(chat_id,message) SELECT $1,value FROM jsonb_array_elements($2) WITH ORDINALITY AS entry(value,position) ORDER BY position")
         .bind(id).bind(Value::Array(messages)).execute(&mut *tx).await?;
     tx.commit().await?;
-    Ok(Json(chat(&s.pool, owner, id).await?))
+    Ok(Json(chat(&s.pool, owner, id).await?).into_response())
 }

@@ -10,6 +10,7 @@ async function server(page: Page) {
   const submissions: string[] = [];
   const cancelled: string[] = [];
   let dropStart = false;
+  let editGate: Promise<void> | undefined;
   const submitted = new Set<string>();
   const profile = '00000000-0000-4000-8000-000000000042';
 
@@ -68,13 +69,24 @@ async function server(page: Page) {
       return route.fulfill({ status: 204 });
     }
     if (method === 'DELETE') { chats.delete(id); return route.fulfill({ status: 204 }); }
-    if (method === 'PATCH') { row.chat.people = route.request().postDataJSON().people; return route.fulfill({ json: row.chat }); }
+    if (method === 'PATCH') {
+      await editGate;
+      row.chat.people = route.request().postDataJSON().people;
+      return route.fulfill({ json: row.chat });
+    }
     const cursor = Number(url.searchParams.get('after') ?? '0');
     return route.fulfill({ json: { chat: row.chat, run: row.run, more: false,
       rows: row.messages.map((message, index) => ({ seq: index + 1, message })).filter(message => message.seq > cursor),
     } });
   });
-  return { chats, unexpected, cancelled, submissions, profile, disconnectNextStart() { dropStart = true; } };
+  return { chats, unexpected, cancelled, submissions, profile,
+    disconnectNextStart() { dropStart = true; },
+    holdPeopleEdit() {
+      let release!: () => void;
+      editGate = new Promise(resolve => { release = resolve; });
+      return release;
+    },
+  };
 }
 
 async function ask(page: Page, question: string) {
@@ -163,4 +175,27 @@ test('imported browser exports are retained by the server after reload', async (
   await expect.poll(() => api.chats.size).toBe(0);
   await page.reload();
   await expect(page.getByText('之前的回答')).toHaveCount(0);
+});
+
+test('the question uses the visible person selection while a save is pending', async ({ page }) => {
+  const api = await server(page);
+  await page.goto('/ask');
+  await page.getByLabel('导入会话文件').setInputFiles({
+    name: 'people.json', mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({ version: 1, conversation: { title: '人物会话', people: [
+      { id: api.profile, display_name: '合成联系人', avatar_media_id: null },
+    ] }, messages: [] })),
+  });
+  const remove = page.getByRole('button', { name: '移除人物 合成联系人' });
+  await expect(remove).toBeVisible();
+  await page.getByLabel('问题', { exact: true }).fill('问一下近况');
+  const release = api.holdPeopleEdit();
+  await remove.click();
+  await expect(remove).toHaveCount(0);
+  const send = page.getByRole('button', { name: '提问', exact: true });
+  await expect(send).toBeDisabled();
+  release();
+  await send.click();
+  await expect(page.getByRole('button', { name: '停止回答' })).toBeVisible();
+  expect([...api.chats.values()][0].chat.people).toEqual([]);
 });
