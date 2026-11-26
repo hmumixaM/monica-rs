@@ -145,6 +145,9 @@ runpy.run_path(script, run_name="__main__")
 ''')
     worker.chmod(0o755)
     notices=a.output/'licenses';notices.mkdir()
+    postgres_notices=a.postgres_prefix/'monica-licenses'
+    if postgres_notices.is_dir():
+        shutil.copytree(postgres_notices, notices/'PostgreSQL-source')
     geo=ROOT/'crates/monica-server/src/pages/geonames'
     shutil.copy2(geo/'README.md',notices/'GeoNames.md')
     shutil.copy2(geo/'PROVENANCE.json',notices/'GeoNames-PROVENANCE.json')

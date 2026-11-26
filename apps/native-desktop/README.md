@@ -42,6 +42,15 @@ python3 scripts/macos-verify.py 'apps/native-desktop/src-tauri/target/release/bu
 
 `macos-bundle.py` requires a fresh output directory (default `apps/native-desktop/runtime`). It copies only explicit server/static assets, PostgreSQL executables/libraries, ffprobe, the WhatsApp Go bridge, Chatlog and the isolated Python/Chromium distribution, relocates dynamic dependencies, signs changed native files and rejects remaining Homebrew links. For a repeat build, preserve the previous runtime outside that location and create a new output. `--server` and `--postgres-prefix` can select explicit test inputs. No existing database, browser session, collector configuration or `.env` is read.
 
+For distributable packages, build PostgreSQL from the [upstream 16.15 source archive](https://ftp.postgresql.org/pub/source/v16.15/postgresql-16.15.tar.bz2). Install the Apple Silicon Homebrew build dependencies `openssl@3`, `icu4c@78`, `lz4`, `zstd`, `pkgconf`, and ensure the Xcode command-line tools are available.
+
+```sh
+python3 scripts/macos-build-portable.py /path/to/postgresql-16.15.tar.bz2 .local-validation/portable-postgres
+python3 scripts/macos-bundle.py --postgres-prefix .local-validation/portable-postgres
+```
+
+The upstream build uses a consistent relative layout for `bin`, `lib`, and `share` so PostgreSQL's configuration templates work on Macs without Homebrew. The bundler relocates its linked libraries alongside the executables.
+
 `macos-chatlog.py` needs read access to the pinned Chatlog Beta repository in `apps/desktop/patches/chatlog/beta.json`. It builds the snapshot service with its locked Rust dependencies and copies their notices into the package.
 
 The local artifact is ad-hoc signed, not notarized or ready for public distribution. The recorded initial 161.68 MiB app included a debug Rust backend and no external collectors/models; its size is not a like-for-like comparison with the previous full desktop bundle.
