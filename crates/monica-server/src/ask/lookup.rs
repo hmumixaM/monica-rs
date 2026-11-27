@@ -23,6 +23,8 @@ use uuid::Uuid;
 
 #[path = "aggregations.rs"]
 mod aggregations;
+#[path = "contact_insights.rs"]
+mod contact_insights;
 
 const MAX_LOOKUPS: usize = 240;
 const LOOKUP_BYTES: usize = 256 * 1024;
@@ -119,6 +121,69 @@ const COMMANDS: &[CommandSpec] = &[
         description: "读取人物已导入且未删除的私聊月统计，含收发、系统和方向未知的记录。用 YYYY-MM 筛选月份，含起止月。只看数量和趋势时优先用此命令。",
         list: Some("months"),
         fields: "month sent received total system unknown records",
+    },
+    CommandSpec {
+        name: "contact_calendar",
+        parameters: "year? 或 day?, limit?, offset?",
+        description: "按年看每天联系了几个人，或用 day（YYYY-MM-DD）查看当天联系的对象、私聊条数与通话次数。按 America/Chicago 归日，私聊来自每周统计快照。可用 next_offset 翻页。",
+        list: Some("rows"),
+        fields: "date people profile_id name messages calls link",
+    },
+    CommandSpec {
+        name: "contact_activity",
+        parameters: "profile_id, from_month?, to_month?",
+        description: "查看某人的私聊收发、通话和社交互动月趋势，按 America/Chicago 归月。用 YYYY-MM 指定起止月（含起止）。",
+        list: Some("months"),
+        fields: "month sent received calls interactions",
+    },
+    CommandSpec {
+        name: "contact_events_summary",
+        parameters: "profile_id",
+        description: "读取人物已收录通话与收支的全部汇总。通话有语音、视频、方向和时长，收支金额按币种区分。",
+        list: None,
+        fields: "profile_id calls money money_amount_unit link",
+    },
+    CommandSpec {
+        name: "source_coverage",
+        parameters: "profile_id, provider?",
+        description: "查看人物各已关联来源的已收录记录数量、时间范围和同步状态。可选 provider；覆盖范围只描述已收录记录。",
+        list: Some("sources"),
+        fields: "connection_id provider name state enabled last_success_at records earliest_at latest_at",
+    },
+    CommandSpec {
+        name: "import_daily",
+        parameters: "provider?, connection_id?, days?, limit?, offset?",
+        description: "查看最近每天的导入记录、处理量、变化和失败数。可按来源或连接筛选，days 默认 7，最大 366；按 next_offset 翻页。",
+        list: Some("records"),
+        fields: "date provider connection_id stream records processed inserted changed unchanged failures",
+    },
+    CommandSpec {
+        name: "group_members",
+        parameters: "group_id, limit?, offset?",
+        description: "列出群的已记录现任成员、角色和加入时间。群 ID 从 directory 的 group 结果取得；按 next_offset 翻页。",
+        list: Some("members"),
+        fields: "profile_id name role joined_at link",
+    },
+    CommandSpec {
+        name: "social_statistics",
+        parameters: "profile_id?, provider?, from_month?, to_month?",
+        description: "查看个人或全局按平台汇总的发帖、获赞和评论量及发帖月趋势。provider 可用 wechat、instagram、linkedin；起止月仅筛月趋势，totals 为全部时间。UTC 归月。",
+        list: Some("providers"),
+        fields: "provider totals monthly first_at latest_at",
+    },
+    CommandSpec {
+        name: "profile_history",
+        parameters: "profile_id, field_key?, before?, limit?",
+        description: "浏览人物资料字段历史版本，含资料来源、观测时间、冲突和删除状态。可用 field_key（如 monica.company）筛选；把 next 原样作为 before 继续。值过长会截短。",
+        list: Some("revisions"),
+        fields: "id field_key value value_truncated source_type source_account_id source_record_id operation observed_at is_conflict link",
+    },
+    CommandSpec {
+        name: "profile_fact_history",
+        parameters: "profile_id, fact_type?, before?, before_id?, limit?",
+        description: "浏览人物结构化经历的来源历史，包括 employment（工作）、education（教育）和 address（地址）。保留原始观测时间和来源。翻页时把 next.before 和 next.before_id 原样传回。",
+        list: Some("revisions"),
+        fields: "id fact_type fact_key organization value value_truncated source_type source_account_id source_record_id observed_at is_conflict link",
     },
     CommandSpec {
         name: "search_messages",
@@ -581,6 +646,15 @@ impl Lookup {
             "places" => self.places(args).await,
             "relationship_network" => self.relationship_network(args).await,
             "chat_statistics" => self.chat_statistics(args).await,
+            "contact_calendar" => self.contact_calendar(args).await,
+            "contact_activity" => self.contact_activity(args).await,
+            "contact_events_summary" => self.contact_events_summary(args).await,
+            "source_coverage" => self.source_coverage(args).await,
+            "import_daily" => self.import_daily(args).await,
+            "group_members" => self.group_members(args).await,
+            "social_statistics" => self.social_statistics(args).await,
+            "profile_history" => self.profile_history(args, false).await,
+            "profile_fact_history" => self.profile_history(args, true).await,
             "birthdays" => self.birthdays(args).await,
             "profile_suggestions" => self.profile_suggestions(args).await,
             "image_notes" => self.image_notes(args).await,

@@ -2,18 +2,39 @@ use super::Result;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
-pub async fn read(pool: &PgPool, profile: Option<Uuid>) -> Result<Value> {
+pub const PROVIDERS: &[&str] = &["wechat", "instagram", "linkedin"];
+pub async fn read(
+    pool: &PgPool,
+    profile: Option<Uuid>,
+    provider: Option<&str>,
+    posts_only: bool,
+) -> Result<Value> {
     let mut providers = json!({});
-    for provider in ["wechat", "instagram", "linkedin"] {
+    for &provider in PROVIDERS
+        .iter()
+        .filter(|name| provider.is_none_or(|p| p == **name))
+    {
         providers[provider] = json!({"posts":0,"likes":0,"comments":0,"authors":0,"local_photo_posts":0,"people":0,"monthly":[],"leaders":[],"charts":[]});
     }
-    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('provider',provider,'posts',count(*),'authors',count(DISTINCT profile_id),'likes',coalesce(sum(CASE WHEN jsonb_typeof(content->'like_count')='number' THEN (content->>'like_count')::bigint ELSE 0 END),0),'comments',coalesce(sum(CASE WHEN jsonb_typeof(content->'comment_count')='number' THEN (content->>'comment_count')::bigint ELSE 0 END),0),'first',min(occurred_at),'latest',max(occurred_at)) FROM crm.timeline_events WHERE event_type='post' AND ($1::uuid IS NULL OR profile_id=$1) GROUP BY provider").bind(profile).fetch_all(pool).await?;
+    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('provider',provider,'posts',count(*),'authors',count(DISTINCT profile_id),'likes',coalesce(sum(CASE WHEN jsonb_typeof(content->'like_count')='number' THEN (content->>'like_count')::bigint ELSE 0 END),0),'comments',coalesce(sum(CASE WHEN jsonb_typeof(content->'comment_count')='number' THEN (content->>'comment_count')::bigint ELSE 0 END),0),'first',min(occurred_at),'latest',max(occurred_at)) FROM crm.timeline_events WHERE event_type='post' AND provider=ANY($2) AND ($3::text IS NULL OR provider=$3) AND (NOT $4 OR status<>'deleted') AND ($1::uuid IS NULL OR profile_id=$1) GROUP BY provider").bind(profile).bind(PROVIDERS.to_vec()).bind(provider).bind(posts_only).fetch_all(pool).await?;
     for row in rows {
         let provider = row["provider"].as_str().unwrap();
         providers[provider]
             .as_object_mut()
             .unwrap()
             .extend(row.as_object().unwrap().clone());
+    }
+    let monthly:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('provider',provider,'month',to_char(occurred_at AT TIME ZONE 'UTC','YYYY-MM'),'count',count(*)) FROM crm.timeline_events WHERE event_type='post' AND occurred_at IS NOT NULL AND provider=ANY($2) AND ($3::text IS NULL OR provider=$3) AND (NOT $4 OR status<>'deleted') AND ($1::uuid IS NULL OR profile_id=$1) GROUP BY provider,to_char(occurred_at AT TIME ZONE 'UTC','YYYY-MM') ORDER BY to_char(occurred_at AT TIME ZONE 'UTC','YYYY-MM')").bind(profile).bind(PROVIDERS.to_vec()).bind(provider).bind(posts_only).fetch_all(pool).await?;
+    for row in monthly {
+        providers[row["provider"].as_str().unwrap()]["monthly"]
+            .as_array_mut()
+            .unwrap()
+            .push(row.clone());
+    }
+    if posts_only {
+        return Ok(
+            json!({"providers":providers,"as_of":chrono::Utc::now().to_rfc3339(),"profile_id":profile}),
+        );
     }
     for (sql, key) in [
         (
@@ -31,13 +52,6 @@ pub async fn read(pool: &PgPool, profile: Option<Uuid>) -> Result<Value> {
                 p[key] = json!(n);
             }
         }
-    }
-    let monthly:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('provider',provider,'month',to_char(occurred_at AT TIME ZONE 'UTC','YYYY-MM'),'count',count(*)) FROM crm.timeline_events WHERE event_type='post' AND occurred_at IS NOT NULL AND ($1::uuid IS NULL OR profile_id=$1) GROUP BY provider,to_char(occurred_at AT TIME ZONE 'UTC','YYYY-MM') ORDER BY to_char(occurred_at AT TIME ZONE 'UTC','YYYY-MM')").bind(profile).fetch_all(pool).await?;
-    for row in monthly {
-        providers[row["provider"].as_str().unwrap()]["monthly"]
-            .as_array_mut()
-            .unwrap()
-            .push(row.clone());
     }
     let leaders:Vec<Value>=sqlx::query_scalar("WITH totals AS(SELECT provider,profile_id,count(*) posts,sum(coalesce((content->>'like_count')::bigint,0)+coalesce((content->>'comment_count')::bigint,0)) value FROM crm.timeline_events WHERE event_type='post' AND profile_id IS NOT NULL AND ($1::uuid IS NULL OR profile_id=$1) GROUP BY provider,profile_id),ranked AS(SELECT t.*,p.display_name name,p.avatar_media_id,row_number() OVER(PARTITION BY t.provider ORDER BY t.value DESC,t.posts DESC,t.profile_id) ranking FROM totals t JOIN crm.profiles p ON p.id=t.profile_id WHERE p.archived_at IS NULL) SELECT to_jsonb(r) FROM ranked r WHERE ranking<=8 ORDER BY provider,ranking").bind(profile).fetch_all(pool).await?;
     for row in leaders {

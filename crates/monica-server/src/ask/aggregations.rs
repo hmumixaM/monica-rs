@@ -439,7 +439,7 @@ fn week(args: &Value) -> Result<&str> {
     Ok(value)
 }
 
-fn month<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
+pub(super) fn month<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
     let value = arg(args, key)?;
     if !value.is_empty() {
         let date = NaiveDate::parse_from_str(&format!("{value}-01"), "%Y-%m-%d")

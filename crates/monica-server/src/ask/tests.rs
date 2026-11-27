@@ -356,6 +356,144 @@ async fn ask_worker_executes_compressed_vision_and_rejects_non_user_search_terms
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn asks_read_contact_insights_and_history_with_filters_and_cursors(pool: PgPool) {
+    let (state, _) = setup(&pool).await;
+    let actor: Actor =
+        sqlx::query_as("SELECT id,email FROM crm.app_users WHERE email='owner@example.invalid'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let (person, peer, group, old_id, account, connection, evidence) = (
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+    );
+    sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name,archived_at) VALUES
+        ($1,'person','Alex',NULL),($2,'person','Blake',NULL),($3,'group','Book Club',NULL),($4,'person','Old Alex',now())")
+        .bind(person).bind(peer).bind(group).bind(old_id).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.profile_redirects(old_profile_id,new_profile_id) VALUES($1,$2)")
+        .bind(old_id)
+        .bind(person)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO crm.group_memberships(group_profile_id,person_profile_id,role) VALUES($1,$2,'owner'),($1,$3,'member')")
+        .bind(group).bind(person).bind(peer).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.contact_events(id,provider,profile_id,kind,external_id,occurred_at,content) VALUES
+        (gen_random_uuid(),'wechat',$1,'call','ask-insights-call','2026-02-25T12:00:00Z','{\"duration_seconds\":45}')")
+        .bind(person).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.source_connections(id,provider,external_account,display_name,connection_method) VALUES($1,'mail','fake-account','Account','imap')")
+        .bind(connection).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.connection_evidence(id,connection_id,external_id,revision,content_hash,kind,occurred_at,included) VALUES
+        ($1,$2,'ask-insights-mail',1,'fixture','message','2026-02-25T12:00:00Z',true)")
+        .bind(evidence).bind(connection).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.connection_evidence_people(evidence_id,profile_id,role) VALUES($1,$2,'sender')")
+        .bind(evidence).bind(person).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.import_activity_daily(bucket,provider,account,stream,records,processed,inserted,changed,unchanged,failures)
+        VALUES(now(),'mail',$1,'messages',5,5,5,0,0,0),(now()-interval '1 day','mail',$1,'messages',2,1,1,0,0,1)")
+        .bind(connection.to_string()).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,profile_id,event_type,external_id,occurred_at,content,content_hash,version)
+        VALUES(gen_random_uuid(),'wechat',gen_random_uuid(),$1,'post','ask-jan','2026-01-10T12:00:00Z','{\"like_count\":3}','fixture',1),
+        (gen_random_uuid(),'wechat',gen_random_uuid(),$1,'post','ask-feb','2026-02-10T12:00:00Z','{\"comment_count\":2}','fixture',1),
+        (gen_random_uuid(),'wechat',gen_random_uuid(),$1,'post','ask-deleted','2026-02-11T12:00:00Z','{\"like_count\":99}','fixture',1)")
+        .bind(person).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE crm.timeline_events SET status='deleted' WHERE external_id='ask-deleted'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("SELECT setval(pg_get_serial_sequence('crm.field_revisions','revision_seq'),9007199254740992,true)").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,field_key,value,content_hash,source_type,operation) VALUES
+        (gen_random_uuid(),$1,'monica.company',to_jsonb('Before'::text),'fixture','manual','manual_edit'),
+        (gen_random_uuid(),$1,'monica.company',to_jsonb('After'::text),'fixture','manual','manual_edit'),
+        (gen_random_uuid(),$1,'monica.note',to_jsonb(repeat('旧',3000)),'fixture','manual','manual_edit')")
+        .bind(person).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.source_accounts(id,provider,external_id,object_kind,display_name) VALUES($1,'linkedin','ask-insights','person','Source')")
+        .bind(account).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.source_account_links(account_id,profile_id) VALUES($1,$2)")
+        .bind(account)
+        .bind(person)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let value = json!({"title":"Historic role"});
+    let content = monica_core::content::register(&mut tx, "structured_fact", &value)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    sqlx::query("INSERT INTO crm.source_structured_revisions(id,source_account_id,fact_type,fact_key,content_object_id,content_hash,value,source_type,source_record_id,object_id,source_version,observed_at)
+        SELECT gen_random_uuid(),$1,'employment','job-'||n,$2,$3,$4,'linkedin','fixture',gen_random_uuid(),1,'2026-02-25T12:00:00.123456Z' FROM generate_series(1,2)n")
+        .bind(account).bind(content.id).bind(content.hash).bind(value).execute(&pool).await.unwrap();
+    let script = format!(
+        r#"
+        const profile_id="{person}", group_id="{group}", connection_id="{connection}";
+        const members=cli("group_members",{{group_id,limit:1}});
+        const imports=cli("import_daily",{{connection_id,limit:1}});
+        const history=cli("profile_history",{{profile_id,field_key:"monica.company",limit:1,fields:["value"]}});
+        const fact=cli("profile_fact_history",{{profile_id:"{old_id}",fact_type:"employment",limit:1}});
+        return {{year:cli("contact_calendar",{{year:2026}}), day:cli("contact_calendar",{{day:"2026-02-25",fields:["name","calls"]}}),
+            activity:cli("contact_activity",{{profile_id,from_month:"2026-02",to_month:"2026-02"}}), calls:cli("contact_events_summary",{{profile_id}}),
+            coverage:cli("source_coverage",{{profile_id,provider:"mail"}}), imports, olderImports:cli("import_daily",{{connection_id,offset:imports.next_offset,limit:1}}),
+            members, nextMember:cli("group_members",{{group_id,offset:members.next_offset,limit:1}}),
+            social:cli("social_statistics",{{profile_id,provider:"wechat",from_month:"2026-02"}}), history,
+            olderHistory:cli("profile_history",{{profile_id,field_key:"monica.company",before:history.next,limit:1}}),
+            longHistory:cli("profile_history",{{profile_id,field_key:"monica.note"}}), fact,
+            olderFact:cli("profile_fact_history",{{profile_id:"{old_id}",fact_type:"employment", ...fact.next,limit:1}})}};
+    "#
+    );
+    let (result, error, _) = lookup::run(&state, actor, chrono_tz::UTC, script).await;
+    assert!(!error, "{result}");
+    let result: Value = serde_json::from_str(&result).unwrap();
+    assert_eq!(
+        result["year"]["rows"],
+        json!([{"date":"2026-02-25","people":1}])
+    );
+    assert_eq!(result["day"]["rows"], json!([{"name":"Alex","calls":1}]));
+    assert_eq!(result["activity"]["months"][0]["calls"], 1);
+    assert_eq!(result["calls"]["calls"]["duration_seconds"], 45);
+    assert_eq!(result["coverage"]["sources"][0]["records"], 1);
+    assert_eq!(result["imports"]["records"][0]["records"], 5);
+    assert_eq!(result["olderImports"]["records"][0]["failures"], 1);
+    assert_eq!(result["members"]["members"][0]["role"], "owner");
+    assert_eq!(
+        result["nextMember"]["members"][0]["profile_id"],
+        json!(peer)
+    );
+    assert_eq!(
+        result["social"]["providers"],
+        json!([{
+            "provider":"wechat","totals":{"posts":2,"likes":3,"comments":2,"authors":1},
+            "monthly":[{"provider":"wechat","month":"2026-02","count":1}],
+            "first_at":"2026-01-10T12:00:00+00:00","latest_at":"2026-02-10T12:00:00+00:00"
+        }])
+    );
+    assert_eq!(result["history"]["revisions"], json!([{"value":"After"}]));
+    assert_eq!(result["olderHistory"]["revisions"][0]["value"], "Before");
+    assert_eq!(result["olderHistory"]["next"], Value::Null);
+    assert_eq!(
+        result["longHistory"]["revisions"][0]["value_truncated"],
+        true
+    );
+    assert_eq!(
+        result["fact"]["revisions"][0]["value"]["title"],
+        "Historic role"
+    );
+    assert_ne!(
+        result["fact"]["revisions"][0]["id"],
+        result["olderFact"]["revisions"][0]["id"]
+    );
+    assert_eq!(
+        result["olderFact"]["revisions"][0]["fact_type"],
+        "employment"
+    );
+    assert_eq!(result["olderFact"]["next"], Value::Null);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn ask_reads_saved_aggregations_through_the_javascript_tools(pool: PgPool) {
     let (state, app) = setup(&pool).await;
     let owner: Uuid =

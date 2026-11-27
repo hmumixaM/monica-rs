@@ -234,6 +234,7 @@ struct History {
     field_key: Option<String>,
     limit: Option<i64>,
     before: Option<i64>,
+    compact: Option<bool>,
 }
 async fn history(
     State(s): State<AppState>,
@@ -244,12 +245,34 @@ async fn history(
     user(&s, &h).await?;
     // Bound each disjoint owner stream before merging. An OR/EXISTS over the
     // global sequence can scan other people's entire imported histories.
-    let rows:Vec<Value>=sqlx::query_scalar("WITH candidates AS ((SELECT r.* FROM crm.profile_aliases($1) owner JOIN LATERAL (SELECT r.* FROM crm.field_revisions r WHERE r.source_account_id IS NULL AND r.profile_id=owner AND ($2::text IS NULL OR field_key=$2) AND ($3::bigint IS NULL OR revision_seq<$3) ORDER BY revision_seq DESC LIMIT $4) r ON true) UNION ALL SELECT r.* FROM crm.source_account_links l JOIN LATERAL (SELECT r.* FROM crm.field_revisions r WHERE r.source_account_id=l.account_id AND ($2::text IS NULL OR field_key=$2) AND ($3::bigint IS NULL OR revision_seq<$3) ORDER BY revision_seq DESC LIMIT $4) r ON true WHERE l.profile_id=$1) SELECT to_jsonb(r) FROM candidates r ORDER BY revision_seq DESC LIMIT $4").bind(id).bind(q.field_key).bind(q.before).bind(q.limit.unwrap_or(100).clamp(1,200)).fetch_all(&s.pool).await?;
+    let rows:Vec<Value>=sqlx::query_scalar("WITH candidates AS ((SELECT r.* FROM crm.profile_aliases($1) owner JOIN LATERAL (SELECT r.* FROM crm.field_revisions r WHERE r.source_account_id IS NULL AND r.profile_id=owner AND ($2::text IS NULL OR field_key=$2) AND ($3::bigint IS NULL OR revision_seq<$3) ORDER BY revision_seq DESC LIMIT $4) r ON true) UNION ALL SELECT r.* FROM crm.source_account_links l JOIN LATERAL (SELECT r.* FROM crm.field_revisions r WHERE r.source_account_id=l.account_id AND ($2::text IS NULL OR field_key=$2) AND ($3::bigint IS NULL OR revision_seq<$3) ORDER BY revision_seq DESC LIMIT $4) r ON true WHERE l.profile_id=crm.canonical_profile($1)) SELECT to_jsonb(r) FROM candidates r ORDER BY revision_seq DESC LIMIT $4").bind(id).bind(q.field_key).bind(q.before).bind(q.limit.unwrap_or(100).clamp(1,200)).fetch_all(&s.pool).await?;
     Ok(Json(json!(
         rows.iter()
-            .map(|row| revision_out(row, true))
+            .map(|row| {
+                let mut revision = revision_out(row, true);
+                if q.compact == Some(true) {
+                    compact_revision(&mut revision);
+                }
+                revision
+            })
             .collect::<Vec<_>>()
     )))
+}
+
+fn compact_revision(row: &mut Value) {
+    const VALUE_BYTES: usize = 2000;
+    let encoded = row["value"].to_string();
+    if encoded.len() <= VALUE_BYTES {
+        return;
+    }
+    let text = row["value"].as_str().unwrap_or(&encoded);
+    let boundary = text
+        .char_indices()
+        .map(|(index, _)| index)
+        .find(|&index| index >= VALUE_BYTES - 4)
+        .unwrap_or(text.len());
+    row["value"] = json!(format!("{}…", &text[..boundary]));
+    row["value_truncated"] = json!(true);
 }
 async fn restore(
     State(s): State<AppState>,

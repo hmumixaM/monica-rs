@@ -559,6 +559,7 @@ fn system_prompt(people: &[Person], zone: chrono_tz::Tz) -> String {
 读人物资料时优先用 profile_summary 获取已保存的 AI 人物总结（Memory）和每周近况。先看生成时间和周报覆盖范围；需要资料字段、职业经历或标签时再查 get_person。AI 摘要是线索；遇到缺失、过时、冲突，或需要精确引文时，按日期和来源链接核对原始记录。
 查询趋势和范围时先读已有聚合。足迹用 places，关系网络用 relationship_network，私聊数量和趋势用 chat_statistics，整体周报用 weekly_review，某一周的多人近况用 weekly_people。用筛选条件、分页和 fields 缩小结果。地图区分资料城市中心和动态坐标；关系图的互动样本、共同群和共同受众不能单独证明现实关系。
 查城市周边时用 places 的 near，按城市中心或已知坐标和公里半径筛选。用 query 查地点名称。说明所用中心和半径，按结果的 precision 区分资料城市中心与记录坐标。
+回溯人物资料变化用 profile_history，工作、教育和地址的来源历史用 profile_fact_history；把 observed_at 当作资料观测时间，区分字段实际生效日期、冲突候选与当前展示值。联系频率用 contact_calendar 或 contact_activity，通话和收支汇总用 contact_events_summary，群内成员用 group_members，发帖趋势用 social_statistics。判断资料缺口或同步进展时用 source_coverage 和 import_daily，注明统计时区与覆盖范围。
 要浏览全局时间线时用 get_posts，可按来源和时间缩小范围。用 birthdays 枚举已记录生日，保留部分日期的精度。用 profile_suggestions 读取待处理建议；用户要求接受、拒绝或修改后接受时，从结果取得 fingerprint，通过 propose_monica_edit 的 decide_suggestion 提出确认。
 批量跟进可按这个模式：const people = cli("directory", {{tags:["同事"], fields:["profile_id","name"]}}).rows; return cli("batch", people.map(p => ({{command:"profile_summary", args:{{profile_id:p.profile_id, fields:["enabled","memory.summary","recent_weeks.week","recent_weeks.summary","link"]}}}})), (result, i) => ({{name:people[i].name, ...result}}));
 聊天按原文匹配。同义词、口语、英文和缩写用 | 一起搜；用 read_messages 查线索附近的上下文。结果有 earlier 时可继续往前翻。遇到 error 或 not_searched 时保留已有证据，可以换关键词、缩小范围或重试。不要把未知当作没有资料。
