@@ -199,12 +199,183 @@ async fn search(State(s): State<AppState>, Query(q): Query<Search>) -> Result<Js
         .replace('%', "\\%")
         .replace('_', "\\_");
     let like = format!("%{escaped}%");
-    let rows:Vec<Value>=sqlx::query_scalar(r#"SELECT to_jsonb(hits) FROM (
- (SELECT p.id,'profile' entity_type,p.display_name title,coalesce(p.summary,'') summary,NULL::timestamptz occurred_at,p.id profile_id,p.display_name profile_name,p.profile_type kind,p.avatar_media_id,NULL::text provider FROM crm.directory_profiles p WHERE p.archived_at IS NULL AND(p.display_name ILIKE $1 OR p.summary ILIKE $1) ORDER BY p.display_name ILIKE $2 DESC,length(p.display_name),p.display_name LIMIT $3)
- UNION ALL (SELECT t.id,'tag',t.name,'',NULL,NULL,NULL,NULL,NULL,NULL FROM crm.tags t WHERE t.name ILIKE $1 ORDER BY length(t.name),t.name LIMIT $3)
- UNION ALL (SELECT x.id,'timeline',coalesce(p.display_name,x.provider),left(x.text,240),x.occurred_at,x.profile_id,p.display_name,x.kind,p.avatar_media_id,x.provider FROM crm.page_posts x LEFT JOIN crm.directory_profiles p ON p.id=x.profile_id WHERE x.text ILIKE $1 ORDER BY x.occurred_at DESC NULLS LAST,x.id LIMIT $3)
- UNION ALL (SELECT a.id,'activity',a.title,coalesce(a.body,''),a.occurred_at,p.id,p.display_name,a.activity_type,NULL,a.source_type FROM crm.activities a LEFT JOIN LATERAL(SELECT p.id,p.display_name FROM crm.activity_participants ap JOIN crm.directory_profiles p ON p.id=ap.profile_id WHERE ap.activity_id=a.id ORDER BY p.display_name,p.id LIMIT 1) p ON true WHERE a.activity_type NOT IN('wechat_direct_summary','wechat_group_summary') AND(a.title ILIKE $1 OR a.body ILIKE $1) ORDER BY a.occurred_at DESC,a.id LIMIT $3)
- ) hits"#).bind(like).bind(format!("{escaped}%")).bind(q.limit.unwrap_or(30).clamp(1,100)).fetch_all(&mut *tx).await?;
+    let rows: Vec<Value> = sqlx::query_scalar(include_str!("search.sql"))
+        .bind(like)
+        .bind(format!("{escaped}%"))
+        .bind(q.limit.unwrap_or(30).clamp(1, 100))
+        .bind(needle.strip_prefix('@').unwrap_or(&needle))
+        .bind(&needle)
+        .fetch_all(&mut *tx)
+        .await?;
     tx.commit().await?;
     Ok(Json(json!(rows)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::{Body, to_bytes},
+        http::Request,
+    };
+    use tower::ServiceExt;
+
+    async fn timeline_hits(app: &Router, term: &str) -> Vec<Value> {
+        let query = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("q", term)
+            .finish();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/search?{query}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), 128 * 1024).await.unwrap();
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "{}",
+            String::from_utf8_lossy(&bytes)
+        );
+        serde_json::from_slice::<Vec<Value>>(&bytes)
+            .unwrap()
+            .into_iter()
+            .filter(|hit| hit["entity_type"] == "timeline")
+            .collect()
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn timeline_search_finds_linked_handles_mentions_and_saved_ocr(pool: sqlx::PgPool) {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::new(
+            pool.clone(),
+            "synthetic-timeline-search-secret",
+            "http://testserver".into(),
+            root.path().to_owned(),
+        )
+        .await
+        .unwrap();
+        let app =
+            crate::auth::delegated_routes(state, (Uuid::new_v4(), "search@example.invalid".into()));
+        let person = Uuid::new_v4();
+        let post = Uuid::new_v4();
+        let story = Uuid::new_v4();
+        let image = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Author')",
+        )
+        .bind(person)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO crm.identities(id,profile_id,provider,external_id,username,status) VALUES(gen_random_uuid(),$1,'instagram','1001','Search_Alias','active')")
+            .bind(person).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,profile_id,event_type,external_id,content,content_hash,version,occurred_at)
+            VALUES($1,'instagram',$1,$2,'post','p1',$4,'post-hash',1,'2026-01-02T01:00:00Z'),($3,'instagram',$3,NULL,'story','s1',$5,'story-hash',1,'2026-01-03T01:00:00Z')")
+            .bind(post).bind(person).bind(story)
+            .bind(json!({"text":"Ordinary caption","username":"Posting_Handle","tagged_users":[{"username":"tagged_handle"}]}))
+            .bind(json!({"text":"Ordinary story","reel_mentions":[{"user":{"username":"Search_Alias"}}]}))
+            .execute(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,source_type)
+            VALUES($1,repeat('a',64),'image/png',1,'synthetic/search-image','manual')",
+        )
+        .bind(image)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO crm.media_links(media_id,entity_type,entity_id,role) VALUES($1,'social_post',$2,'media-1')")
+            .bind(image).bind(post).execute(&pool).await.unwrap();
+
+        let hits = timeline_hits(&app, "@SEARCH_ALIAS").await;
+        assert_eq!(hits.len(), 2, "{hits:?}");
+        assert_eq!(hits[0]["id"], json!(story));
+        assert_eq!(hits[0]["match_source"], "mention");
+        assert_eq!(hits[1]["id"], json!(post));
+        assert_eq!(hits[1]["match_source"], "account");
+        assert_eq!(
+            timeline_hits(&app, "posting_handle").await[0]["id"],
+            json!(post)
+        );
+        assert_eq!(
+            timeline_hits(&app, "tagged_handle").await[0]["match_source"],
+            "mention"
+        );
+        assert_eq!(
+            timeline_hits(&app, "ordinary caption").await[0]["match_source"],
+            "caption"
+        );
+        assert!(timeline_hits(&app, "searchXalias").await.is_empty());
+
+        assert!(timeline_hits(&app, "2nd").await.is_empty());
+        sqlx::query("INSERT INTO crm.image_ocr_readings(media_id,status,text,generated_at) VALUES($1,'complete',$2,now())")
+            .bind(image).bind(format!("{} 2nd floor 票价", "intro ".repeat(70))).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.media_readings(entity_id,entity_type,status,items) VALUES($1,'social_story','complete',$2)")
+            .bind(story).bind(json!([{"text":"2nd entrance"}])).execute(&pool).await.unwrap();
+        let hits = timeline_hits(&app, "2nd").await;
+        assert_eq!(hits.len(), 2, "{hits:?}");
+        assert_eq!(hits[0]["summary"], "2nd entrance");
+        assert_eq!(hits[1]["match_source"], "ocr");
+        assert!(hits[1]["summary"].as_str().unwrap().contains("2nd floor"));
+        assert_eq!(timeline_hits(&app, "票价").await[0]["id"], json!(post));
+        sqlx::query("UPDATE crm.image_ocr_readings SET text='Corrected label' WHERE media_id=$1")
+            .bind(image)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let hits = timeline_hits(&app, "2nd").await;
+        assert_eq!(hits.len(), 1, "{hits:?}");
+        assert_eq!(hits[0]["id"], json!(story));
+
+        let wechat = Uuid::new_v4();
+        let wechat_post = Uuid::new_v4();
+        let wechat_mention = Uuid::new_v4();
+        sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','WeChat author')")
+            .bind(wechat).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.identities(id,profile_id,provider,external_id,status) VALUES(gen_random_uuid(),$1,'wechat','wxid_search','active')")
+            .bind(wechat).execute(&pool).await.unwrap();
+        sqlx::query("WITH alias AS (
+             INSERT INTO crm.field_revisions(id,profile_id,field_key,value,content_hash,source_type,operation)
+             VALUES(gen_random_uuid(),$1,'wechat.alias','\"WechatAlias\"','alias-hash','wechat','observe') RETURNING id
+            ) INSERT INTO crm.field_current(profile_id,field_key,revision_id) SELECT $1,'wechat.alias',id FROM alias")
+            .bind(wechat).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,profile_id,event_type,external_id,content,content_hash,version)
+            VALUES($1,'wechat',$1,$2,'post','wx-post','{\"text\":\"WeChat caption\"}','wx-post-hash',1),
+                  ($3,'wechat',$3,NULL,'post','wx-mention','{\"text\":\"WeChat mention\"}','wx-mention-hash',1)")
+            .bind(wechat_post).bind(wechat).bind(wechat_mention).execute(&pool).await.unwrap();
+        let before_mention = timeline_hits(&app, "wechatAlias").await;
+        assert_eq!(before_mention.len(), 1, "{before_mention:?}");
+        assert_eq!(before_mention[0]["id"], json!(wechat_post));
+        sqlx::query("INSERT INTO crm.social_interactions(id,post_id,provider,external_id,interaction_type,content,metadata)
+            VALUES(gen_random_uuid(),$1,'wechat','wx-mentioned','mention','{}','{\"target_external_id\":\"wxid_search\"}')")
+            .bind(wechat_mention).execute(&pool).await.unwrap();
+        for term in ["wechatAlias", "wxid_search"] {
+            let hits = timeline_hits(&app, term).await;
+            assert_eq!(hits.len(), 2, "{hits:?}");
+            assert!(
+                hits.iter()
+                    .any(|hit| hit["id"] == json!(wechat_post) && hit["match_source"] == "account")
+            );
+            assert!(
+                hits.iter()
+                    .any(|hit| hit["id"] == json!(wechat_mention)
+                        && hit["match_source"] == "mention")
+            );
+        }
+        sqlx::query("INSERT INTO crm.media_links(media_id,entity_type,entity_id,role) VALUES($1,'social_post',$2,'media-1')")
+            .bind(image).bind(wechat_post).execute(&pool).await.unwrap();
+        assert_eq!(
+            timeline_hits(&app, "Corrected label")
+                .await
+                .iter()
+                .filter(|hit| hit["provider"] == "wechat" && hit["match_source"] == "ocr")
+                .count(),
+            1
+        );
+    }
 }

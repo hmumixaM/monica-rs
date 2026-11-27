@@ -50,7 +50,15 @@ fn dependencies(path: &str) -> (&'static [&'static str], bool) {
             false,
         ),
         "/api/v1/search" => (
-            &["profile", "posts", "activity", "tag", "organization"],
+            &[
+                "profile",
+                "posts",
+                "activity",
+                "tag",
+                "organization",
+                "identity",
+                "post-search",
+            ],
             false,
         ),
         "/api/v1/home" => (&["profile", "calendar", "weekly-statistics"], true),
