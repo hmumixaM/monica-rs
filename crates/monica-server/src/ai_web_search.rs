@@ -13,6 +13,7 @@ use std::{sync::OnceLock, time::Duration};
 
 pub(crate) const NAME: &str = "search_public_web";
 const EXA_SEARCH: &str = "https://api.exa.ai/search";
+const QUERY_LIMIT: usize = 500;
 const RESPONSE_LIMIT: usize = 512 * 1024;
 
 pub(super) fn routes() -> Router<AppState> {
@@ -74,14 +75,13 @@ async fn save(
 pub(crate) fn tool() -> Value {
     json!({"type":"function","function":{
         "name":NAME,
-        "description":"通过 Exa 检索公开网页，主要用于核实好友已公开的职业或主页、最新消息以及地点信息。只提取本轮用户问题中的公开关键词，用空格分隔。私人往来和本地资料用 Monica 查询。返回网页链接、日期和摘录；同名人物需核对身份。",
-        "parameters":{"type":"object","properties":{"query":{"type":"string","maxLength":500,"description":"只包含核实公开信息所需的关键词"}},"required":["query"],"additionalProperties":false}
+        "description":"通过 Exa 检索公开网页，主要用于核实好友已公开的职业或主页、最新消息以及地点信息。可根据对话和联系人资料组织搜索词，例如姓名、机构、平台或公开地名。私人往来和聊天原文用 Monica 查询。返回网页链接、日期和摘录；同名人物需核对身份。",
+        "parameters":{"type":"object","properties":{"query":{"type":"string","maxLength":QUERY_LIMIT,"description":"用于核实公开信息的搜索词或短句"}},"required":["query"],"additionalProperties":false}
     }})
 }
 
-pub(crate) async fn search(s: &AppState, args: &Value, question: &str) -> anyhow::Result<Value> {
-    let query = args["query"].as_str().map(str::trim).unwrap_or_default();
-    validate_query(query, question)?;
+pub(crate) async fn search(s: &AppState, args: &Value) -> anyhow::Result<Value> {
+    let query = search_query(args)?;
     let encrypted: Option<String> = sqlx::query_scalar("SELECT exa_credential_ciphertext FROM crm.ai_settings WHERE id AND enabled AND execution_enabled AND qa_enabled")
         .fetch_optional(&s.pool).await?.flatten();
     let credentials = s
@@ -94,19 +94,13 @@ pub(crate) async fn search(s: &AppState, args: &Value, question: &str) -> anyhow
     search_at(client(), EXA_SEARCH, key, query).await
 }
 
-fn validate_query(query: &str, question: &str) -> anyhow::Result<()> {
+fn search_query(args: &Value) -> anyhow::Result<&str> {
+    let query = args["query"].as_str().map(str::trim).unwrap_or_default();
     ensure!(
-        !query.is_empty() && query.chars().count() <= 500,
-        "公开搜索词须为 1 至 500 个字符。"
+        !query.is_empty() && query.chars().count() <= QUERY_LIMIT,
+        "公开搜索词须为 1 至 {QUERY_LIMIT} 个字符。"
     );
-    let question = question.to_lowercase();
-    ensure!(
-        query
-            .split_whitespace()
-            .all(|term| question.contains(&term.to_lowercase())),
-        "公开搜索只能使用本轮提问中出现的关键词。请使用用户明确提供的公开词。"
-    );
-    Ok(())
+    Ok(query)
 }
 
 fn client() -> &'static reqwest::Client {
@@ -178,41 +172,30 @@ mod tests {
     use axum::routing::post;
 
     #[test]
-    fn public_query_uses_only_current_question_terms() {
-        assert!(
-            validate_query(
-                "芝加哥艺术博物馆 营业时间",
-                "请查芝加哥艺术博物馆的公开营业时间"
-            )
-            .is_ok()
-        );
-        assert!(
-            validate_query(
-                "芝加哥艺术博物馆 私聊地址",
-                "请查芝加哥艺术博物馆的公开营业时间"
-            )
-            .is_err()
-        );
+    fn public_query_checks_input_length() {
+        assert!(search_query(&json!({"query":" "})).is_err());
+        assert!(search_query(&json!({"query":"馆".repeat(QUERY_LIMIT + 1)})).is_err());
     }
 
     #[tokio::test]
-    async fn exa_sends_only_search_terms_and_projects_public_sources() {
+    async fn exa_sends_contextual_search_terms_and_projects_public_sources() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("http://{}/search", listener.local_addr().unwrap());
         let app = Router::new().route("/search", post(|headers: HeaderMap, Json(body): Json<Value>| async move {
             assert_eq!(headers["x-api-key"], "synthetic-exa-key");
-            assert_eq!(body, json!({"query":"public museum hours","contents":{"highlights":true}}));
+            assert_eq!(body, json!({"query":"Art Institute of Chicago official hours","contents":{"highlights":true}}));
             Json(json!({"results":[
                 {"url":"https://example.invalid/museum","title":"Museum hours","publishedDate":"2026-02-03T00:00:00Z","highlights":["Open at 10"],"text":"Unrequested text"},
                 {"url":"javascript:invalid","title":"Invalid source"}
             ]}))
         }));
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let args = json!({"query":"  Art Institute of Chicago official hours  "});
         let value = search_at(
             client(),
             &endpoint,
             "synthetic-exa-key",
-            "public museum hours",
+            search_query(&args).unwrap(),
         )
         .await
         .unwrap();

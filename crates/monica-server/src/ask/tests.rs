@@ -158,7 +158,7 @@ async fn exa_settings_only_return_status_and_store_encrypted_key(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn ask_worker_executes_compressed_vision_and_rejects_non_user_search_terms(pool: PgPool) {
+async fn ask_worker_executes_compressed_vision_and_rejects_empty_search(pool: PgPool) {
     use base64::Engine;
     let (mut state, app) = setup(&pool).await;
     let media_root = tempfile::tempdir().unwrap();
@@ -248,7 +248,7 @@ async fn ask_worker_executes_compressed_vision_and_rejects_non_user_search_terms
                         if !messages.iter().any(|m|m["role"]=="tool") {
                             let calls = json!([
                                 {"index":0,"id":"vision-fixture","function":{"name":"inspect_images","arguments":json!({"image_ids":ids,"question":"How bright is the pixel?"}).to_string()}},
-                                {"index":1,"id":"private-search","function":{"name":"search_public_web","arguments":json!({"query":"private chat token"}).to_string()}}
+                                {"index":1,"id":"empty-search","function":{"name":"search_public_web","arguments":json!({"query":" "}).to_string()}}
                             ]);
                             return events(&[(json!({"tool_calls":calls}),json!("tool_calls"))],true);
                         }
@@ -262,7 +262,7 @@ async fn ask_worker_executes_compressed_vision_and_rejects_non_user_search_terms
                         assert_eq!(observed["skipped"][0]["image_id"],json!(ids[2]));
                         assert_eq!(observed["skipped"][1]["reason"],"视觉模型输入超限");
                         assert!(!observed.to_string().contains("data:image"));
-                        assert!(tool("private-search")["error"].as_str().unwrap().contains("本轮提问"));
+                        assert!(tool("empty-search")["error"].as_str().unwrap().contains("1 至 500"));
                         return events(&[(json!({"content":"Done"}),json!("stop"))],true);
                     }
                     let attempt = attempts.fetch_add(1, Ordering::SeqCst);
@@ -350,7 +350,7 @@ async fn ask_worker_executes_compressed_vision_and_rejects_non_user_search_terms
     assert!(
         checkpoint
             .0
-            .reserve_external(web_search::NAME, "private-search")
+            .reserve_external(web_search::NAME, "empty-search")
             .is_err()
     );
 }
