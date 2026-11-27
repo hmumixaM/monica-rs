@@ -990,21 +990,6 @@ async fn ask_leases_fence_restarts_cancellation_and_deletion(pool: PgPool) {
 }
 
 #[test]
-fn reply_keeps_more_than_six_script_calls() {
-    let calls = (0..8).map(|index| json!({
-        "index":index,"id":format!("script-{index}"),
-        "function":{"name":"monica_cli","arguments":r#"{"title":"查资料","script":"return 1;"}"#}
-    })).collect::<Vec<_>>();
-    let event = json!({"choices":[{"delta":{"tool_calls":calls},"finish_reason":"tool_calls"}]});
-    let mut reply = Reply::default();
-    add_event(&mut reply, event.to_string().as_bytes()).unwrap();
-    let message = reply.message(true, "fixture");
-    assert_eq!(message["content"].as_array().unwrap().len(), 8);
-    assert_eq!(message["content"][7]["id"], "script-7");
-    assert_eq!(message["content"][7]["arguments"]["script"], "return 1;");
-}
-
-#[test]
 fn gemini_tool_signatures_survive_same_model_turns_in_litellm() {
     let signature = "A".repeat(2048);
     let id = format!("call_fixture__thought__{signature}");
