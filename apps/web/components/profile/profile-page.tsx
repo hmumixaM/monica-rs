@@ -55,7 +55,11 @@ export function ProfileView({ profileId }: { profileId: string }) {
   const overview = { data: summary.data?.overview };
   const profile = (detail.data as Profile | undefined) ?? summary.data?.profile;
   useEffect(() => {
-    if (canonicalId !== profileId) router.replace(`/profiles/${canonicalId}${params.size ? `?${params}` : ""}`);
+    if (canonicalId !== profileId) {
+      const next = new URLSearchParams(params);
+      next.delete("merge_with");
+      router.replace(`/profiles/${canonicalId}${next.size ? `?${next}` : ""}`);
+    }
   }, [canonicalId, profileId, router, params]);
 
   useEffect(() => {
@@ -72,7 +76,7 @@ export function ProfileView({ profileId }: { profileId: string }) {
   </Page>;
 
   const person = profile.profile_type === "person";
-  const mergeTarget = params.get("merge_with");
+  const mergeTarget = canonicalId === profileId ? params.get("merge_with") : null;
   const tabs = tabsFor(person);
   const requested = params.get("tab") || "overview";
   const tab = tabs.some((item) => item.id === requested) ? requested : "overview";

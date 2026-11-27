@@ -4,6 +4,7 @@ for(const width of [390,1440])test(`imported months and explicit merge remain us
  test.setTimeout(60000);
  await page.setViewportSize({width,height:844});
  const source='00000000-0000-4000-8000-000000000001',target='00000000-0000-4000-8000-000000000002';
+ const redirected='00000000-0000-4000-8000-000000000003';
  const person=(id:string)=>({id,profile_type:'person',display_name:id===source?'原人物':'保留人物',fields:[],identities:[],structured_facts:[]});
  let posted:Record<string,unknown>|undefined;
  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
@@ -20,8 +21,11 @@ for(const width of [390,1440])test(`imported months and explicit merge remain us
   if(path.endsWith('/ribbon'))return route.fulfill({json:{timezone:'America/Chicago',months:[]}});
   return route.fulfill({json:[]});
  });
- await page.goto(`/profiles/${source}?tab=messages&merge_with=${target}`);
  const dialog=page.getByRole('dialog',{name:'合并同一个人的资料'});
+ await page.goto(`/profiles/${redirected}?tab=messages&merge_with=${target}`);
+ await expect(page).toHaveURL(new RegExp(`/profiles/${source}\\?tab=messages$`));
+ await expect(dialog).toHaveCount(0);
+ await page.goto(`/profiles/${source}?tab=messages&merge_with=${target}`);
  await expect(dialog.getByRole('option',{name:'保留人物'})).toHaveCount(1);
  await expect(dialog.getByLabel('保留这份人物资料')).toHaveValue(target);
  await expect(dialog.getByRole('button',{name:'合并并保留历史'})).toBeDisabled();
