@@ -61,6 +61,7 @@ impl Lookup {
                 &[],
             )
             .await?;
+        let profile = s(&data["profile_id"]);
         Ok(
             json!({"profile_id":profile,"calls":data["calls"],"money":data["money"],
             "money_amount_unit":"minor_currency_unit",
@@ -80,6 +81,7 @@ impl Lookup {
                 "state":row["state"],"enabled":row["enabled"],"last_success_at":row["last_success_at"],"records":row["records"],
                 "earliest_at":row["earliest_at"],"latest_at":row["latest_at"]}))
             .collect();
+        let profile = s(&data["profile_id"]);
         Ok(
             json!({"profile_id":profile,"sources":sources,"coverage":data["coverage"],"link":format!("/profiles/{profile}")}),
         )
@@ -158,12 +160,12 @@ impl Lookup {
             "provider":provider,"totals":{"posts":row["posts"],"likes":row["likes"],"comments":row["comments"],"authors":row["authors"]},
             "monthly":months_in(&row["monthly"],from,to),"first_at":row["first"],"latest_at":row["latest"]
         })).collect();
-        let link = profile.map_or_else(
+        let link = data["profile_id"].as_str().map_or_else(
             || "/insights".into(),
             |profile| format!("/profiles/{profile}"),
         );
         Ok(
-            json!({"profile_id":profile,"providers":stats,"as_of":data["as_of"],"timezone":"UTC","link":link}),
+            json!({"profile_id":data["profile_id"],"providers":stats,"as_of":data["as_of"],"timezone":"UTC","link":link}),
         )
     }
 

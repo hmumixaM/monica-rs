@@ -398,10 +398,16 @@ async fn coverage(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
     user(&s, &h).await?;
-    let sources:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('connection_id',c.id,'provider',c.provider,'display_name',c.display_name,'state',c.state,'enabled',c.enabled,'last_success_at',c.last_success_at,'error',c.error,'records',count(*),'earliest_at',min(e.occurred_at),'latest_at',max(e.occurred_at)) FROM crm.source_connections c JOIN crm.connection_evidence e ON e.connection_id=c.id WHERE e.included AND NOT e.deleted AND EXISTS(SELECT 1 FROM crm.connection_evidence_people p WHERE p.evidence_id=e.id AND p.profile_id=$1) GROUP BY c.id ORDER BY max(e.occurred_at) DESC NULLS LAST").bind(id).fetch_all(&s.pool).await?;
-    let identifiers:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('kind',kind,'value',value,'is_self',is_self) FROM crm.person_identifiers WHERE profile_id=$1 ORDER BY kind,value").bind(id).fetch_all(&s.pool).await?;
+    let mut tx = s
+        .pool
+        .begin_with("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        .await?;
+    let id = crate::pages::canonical(&mut tx, id).await?;
+    let sources:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('connection_id',c.id,'provider',c.provider,'display_name',c.display_name,'state',c.state,'enabled',c.enabled,'last_success_at',c.last_success_at,'error',c.error,'records',count(*),'earliest_at',min(e.occurred_at),'latest_at',max(e.occurred_at)) FROM crm.source_connections c JOIN crm.connection_evidence e ON e.connection_id=c.id WHERE e.included AND NOT e.deleted AND EXISTS(SELECT 1 FROM crm.connection_evidence_people p WHERE p.evidence_id=e.id AND p.profile_id=$1) GROUP BY c.id ORDER BY max(e.occurred_at) DESC NULLS LAST").bind(id).fetch_all(&mut *tx).await?;
+    let identifiers:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('kind',kind,'value',value,'is_self',is_self) FROM crm.person_identifiers WHERE profile_id=$1 ORDER BY kind,value").bind(id).fetch_all(&mut *tx).await?;
+    tx.commit().await?;
     Ok(Json(
-        json!({"sources":sources,"identifiers":identifiers,"coverage":"已收录内容的时间范围；未完成同步的历史不计为完整覆盖"}),
+        json!({"profile_id":id,"sources":sources,"identifiers":identifiers,"coverage":"已收录内容的时间范围；未完成同步的历史不计为完整覆盖"}),
     ))
 }
 #[derive(Deserialize)]

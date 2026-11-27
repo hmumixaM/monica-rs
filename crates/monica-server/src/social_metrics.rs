@@ -9,6 +9,14 @@ pub async fn read(
     provider: Option<&str>,
     posts_only: bool,
 ) -> Result<Value> {
+    let mut tx = pool
+        .begin_with("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        .await?;
+    let profile = match (profile, posts_only) {
+        (Some(id), true) => Some(crate::pages::canonical(&mut tx, id).await?),
+        _ => profile,
+    };
+    let as_of = chrono::Utc::now().to_rfc3339();
     let mut providers = json!({});
     for &provider in PROVIDERS
         .iter()
@@ -16,7 +24,7 @@ pub async fn read(
     {
         providers[provider] = json!({"posts":0,"likes":0,"comments":0,"authors":0,"local_photo_posts":0,"people":0,"monthly":[],"leaders":[],"charts":[]});
     }
-    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('provider',provider,'posts',count(*),'authors',count(DISTINCT profile_id),'likes',coalesce(sum(CASE WHEN jsonb_typeof(content->'like_count')='number' THEN (content->>'like_count')::bigint ELSE 0 END),0),'comments',coalesce(sum(CASE WHEN jsonb_typeof(content->'comment_count')='number' THEN (content->>'comment_count')::bigint ELSE 0 END),0),'first',min(occurred_at),'latest',max(occurred_at)) FROM crm.timeline_events WHERE event_type='post' AND provider=ANY($2) AND ($3::text IS NULL OR provider=$3) AND (NOT $4 OR status<>'deleted') AND ($1::uuid IS NULL OR profile_id=$1) GROUP BY provider").bind(profile).bind(PROVIDERS.to_vec()).bind(provider).bind(posts_only).fetch_all(pool).await?;
+    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('provider',provider,'posts',count(*),'authors',count(DISTINCT profile_id),'likes',coalesce(sum(CASE WHEN jsonb_typeof(content->'like_count')='number' THEN (content->>'like_count')::bigint ELSE 0 END),0),'comments',coalesce(sum(CASE WHEN jsonb_typeof(content->'comment_count')='number' THEN (content->>'comment_count')::bigint ELSE 0 END),0),'first',min(occurred_at),'latest',max(occurred_at)) FROM crm.timeline_events WHERE event_type='post' AND provider=ANY($2) AND ($3::text IS NULL OR provider=$3) AND (NOT $4 OR status NOT IN ('deleted','merged')) AND ($1::uuid IS NULL OR profile_id=$1) GROUP BY provider").bind(profile).bind(PROVIDERS.to_vec()).bind(provider).bind(posts_only).fetch_all(&mut *tx).await?;
     for row in rows {
         let provider = row["provider"].as_str().unwrap();
         providers[provider]
@@ -24,17 +32,16 @@ pub async fn read(
             .unwrap()
             .extend(row.as_object().unwrap().clone());
     }
-    let monthly:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('provider',provider,'month',to_char(occurred_at AT TIME ZONE 'UTC','YYYY-MM'),'count',count(*)) FROM crm.timeline_events WHERE event_type='post' AND occurred_at IS NOT NULL AND provider=ANY($2) AND ($3::text IS NULL OR provider=$3) AND (NOT $4 OR status<>'deleted') AND ($1::uuid IS NULL OR profile_id=$1) GROUP BY provider,to_char(occurred_at AT TIME ZONE 'UTC','YYYY-MM') ORDER BY to_char(occurred_at AT TIME ZONE 'UTC','YYYY-MM')").bind(profile).bind(PROVIDERS.to_vec()).bind(provider).bind(posts_only).fetch_all(pool).await?;
+    let monthly:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('provider',provider,'month',to_char(occurred_at AT TIME ZONE 'UTC','YYYY-MM'),'count',count(*)) FROM crm.timeline_events WHERE event_type='post' AND occurred_at IS NOT NULL AND provider=ANY($2) AND ($3::text IS NULL OR provider=$3) AND (NOT $4 OR status NOT IN ('deleted','merged')) AND ($1::uuid IS NULL OR profile_id=$1) GROUP BY provider,to_char(occurred_at AT TIME ZONE 'UTC','YYYY-MM') ORDER BY to_char(occurred_at AT TIME ZONE 'UTC','YYYY-MM')").bind(profile).bind(PROVIDERS.to_vec()).bind(provider).bind(posts_only).fetch_all(&mut *tx).await?;
     for row in monthly {
         providers[row["provider"].as_str().unwrap()]["monthly"]
             .as_array_mut()
             .unwrap()
             .push(row.clone());
     }
+    tx.commit().await?;
     if posts_only {
-        return Ok(
-            json!({"providers":providers,"as_of":chrono::Utc::now().to_rfc3339(),"profile_id":profile}),
-        );
+        return Ok(json!({"providers":providers,"as_of":as_of,"profile_id":profile}));
     }
     for (sql, key) in [
         (

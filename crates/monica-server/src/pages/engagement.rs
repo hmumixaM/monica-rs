@@ -192,7 +192,7 @@ struct Day {
 }
 async fn day(State(s): State<AppState>, Query(q): Query<Day>) -> Result<Json<Value>> {
     let mut tx = snapshot(&s).await?;
-    let people:Vec<Value>=sqlx::query_scalar("WITH contacts AS(SELECT c.profile_id,d.sent+d.received messages,0::bigint calls FROM crm.weekly_message_days d JOIN crm.conversations c ON c.id=d.conversation_id WHERE c.conversation_type='direct' AND d.day=$1::text::date AND d.sent+d.received>0 UNION ALL SELECT profile_id,0,count FROM crm.contact_days WHERE day=$1::text::date AND kind='call' AND count>0) SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'messages',sum(c.messages),'calls',sum(c.calls)) FROM contacts c JOIN crm.directory_profiles p ON p.id=c.profile_id AND p.archived_at IS NULL AND p.profile_type='person' GROUP BY p.id,p.display_name,p.avatar_media_id ORDER BY sum(c.calls) DESC,sum(c.messages) DESC,p.display_name").bind(q.day.to_string()).fetch_all(&mut *tx).await?;
+    let people:Vec<Value>=sqlx::query_scalar("WITH contacts AS(SELECT c.profile_id,d.sent+d.received messages,0::bigint calls FROM crm.weekly_message_days d JOIN crm.conversations c ON c.id=d.conversation_id WHERE c.conversation_type='direct' AND d.day=$1::text::date AND d.sent+d.received>0 UNION ALL SELECT profile_id,0,count FROM crm.contact_days WHERE day=$1::text::date AND kind='call' AND count>0) SELECT jsonb_build_object('profile_id',p.id,'name',p.display_name,'avatar_media_id',p.avatar_media_id,'messages',sum(c.messages),'calls',sum(c.calls)) FROM contacts c JOIN crm.directory_profiles p ON p.id=c.profile_id AND p.archived_at IS NULL AND p.profile_type='person' GROUP BY p.id,p.display_name,p.avatar_media_id ORDER BY sum(c.calls) DESC,sum(c.messages) DESC,p.display_name,p.id").bind(q.day.to_string()).fetch_all(&mut *tx).await?;
     let message_snapshot_at = message_snapshot_at(&mut tx).await?;
     tx.commit().await?;
     Ok(Json(
@@ -202,11 +202,11 @@ async fn day(State(s): State<AppState>, Query(q): Query<Day>) -> Result<Json<Val
 pub(super) async fn ribbon_value(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result<Value> {
     let zone = "America/Chicago";
     let messages = crate::messages::stats::rows(tx, id, zone).await?;
-    let months:Vec<Value>=sqlx::query_scalar(r#"WITH messages AS(SELECT month,sent,received FROM jsonb_to_recordset($3) AS x(month text,sent bigint,received bigint)),m AS(
+    let months:Vec<Value>=sqlx::query_scalar(r#"WITH messages AS(SELECT month,sent,received FROM jsonb_to_recordset($2) AS x(month text,sent bigint,received bigint)),m AS(
  SELECT month,sent,received,0::bigint calls,0::bigint interactions FROM messages
- UNION ALL SELECT to_char(occurred_at AT TIME ZONE $2,'YYYY-MM'),0,0,count(*),0 FROM crm.contact_events WHERE profile_id=$1 AND kind='call' AND occurred_at IS NOT NULL GROUP BY 1
- UNION ALL SELECT to_char(i.occurred_at AT TIME ZONE $2,'YYYY-MM'),0,0,0,count(*) FROM crm.social_interactions i JOIN crm.page_posts p ON p.id=i.post_id WHERE i.author_profile_id=$1 AND p.profile_id IS DISTINCT FROM i.author_profile_id AND i.interaction_type IN('like','comment','reply') AND i.occurred_at IS NOT NULL GROUP BY 1)
- SELECT jsonb_build_object('month',month,'sent',sum(sent),'received',sum(received),'calls',sum(calls),'interactions',sum(interactions)) FROM m GROUP BY month ORDER BY month"#).bind(id).bind(zone).bind(json!(messages)).fetch_all(&mut **tx).await?;
+ UNION ALL SELECT to_char(day,'YYYY-MM'),0,0,sum(count),0 FROM crm.contact_days WHERE profile_id=$1 AND kind='call' AND count>0 GROUP BY 1
+ UNION ALL SELECT i.month,0,0,0,sum(i.count) FROM crm.interaction_months i JOIN crm.page_posts p ON p.id=i.post_id WHERE i.profile_id=$1 AND p.profile_id IS DISTINCT FROM i.profile_id AND i.count>0 GROUP BY 1)
+ SELECT jsonb_build_object('month',month,'sent',sum(sent),'received',sum(received),'calls',sum(calls),'interactions',sum(interactions)) FROM m GROUP BY month ORDER BY month"#).bind(id).bind(json!(messages)).fetch_all(&mut **tx).await?;
     Ok(json!({"timezone":zone,"months":months}))
 }
 async fn ribbon(State(s): State<AppState>, Path(id): Path<Uuid>) -> Result<Json<Value>> {

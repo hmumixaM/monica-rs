@@ -384,7 +384,8 @@ async fn asks_read_contact_insights_and_history_with_filters_and_cursors(pool: P
     sqlx::query("INSERT INTO crm.group_memberships(group_profile_id,person_profile_id,role) VALUES($1,$2,'owner'),($1,$3,'member')")
         .bind(group).bind(person).bind(peer).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO crm.contact_events(id,provider,profile_id,kind,external_id,occurred_at,content) VALUES
-        (gen_random_uuid(),'wechat',$1,'call','ask-insights-call','2026-02-25T12:00:00Z','{\"duration_seconds\":45}')")
+        (gen_random_uuid(),'wechat',$1,'call','ask-insights-call','2026-02-25T12:00:00Z','{\"duration_seconds\":45}'),
+        (gen_random_uuid(),'wechat',$1,'call','ask-insights-old-call','2026-02-25T13:00:00Z','{\"duration_seconds\":90,\"is_deleted\":true}')")
         .bind(person).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO crm.source_connections(id,provider,external_account,display_name,connection_method) VALUES($1,'mail','fake-account','Account','imap')")
         .bind(connection).execute(&pool).await.unwrap();
@@ -399,12 +400,23 @@ async fn asks_read_contact_insights_and_history_with_filters_and_cursors(pool: P
     sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,profile_id,event_type,external_id,occurred_at,content,content_hash,version)
         VALUES(gen_random_uuid(),'wechat',gen_random_uuid(),$1,'post','ask-jan','2026-01-10T12:00:00Z','{\"like_count\":3}','fixture',1),
         (gen_random_uuid(),'wechat',gen_random_uuid(),$1,'post','ask-feb','2026-02-10T12:00:00Z','{\"comment_count\":2}','fixture',1),
-        (gen_random_uuid(),'wechat',gen_random_uuid(),$1,'post','ask-deleted','2026-02-11T12:00:00Z','{\"like_count\":99}','fixture',1)")
+        (gen_random_uuid(),'wechat',gen_random_uuid(),$1,'post','ask-deleted','2026-02-11T12:00:00Z','{\"like_count\":99}','fixture',1),
+        (gen_random_uuid(),'wechat',gen_random_uuid(),$1,'post','ask-merged','2026-02-12T12:00:00Z','{\"like_count\":99}','fixture',1)")
         .bind(person).execute(&pool).await.unwrap();
-    sqlx::query("UPDATE crm.timeline_events SET status='deleted' WHERE external_id='ask-deleted'")
+    sqlx::query("UPDATE crm.timeline_events SET status=CASE external_id WHEN 'ask-deleted' THEN 'deleted' ELSE 'merged' END
+        WHERE external_id IN ('ask-deleted','ask-merged')")
         .execute(&pool)
         .await
         .unwrap();
+    sqlx::query("WITH peer_post AS (
+        INSERT INTO crm.timeline_events(id,provider,object_id,profile_id,event_type,external_id,occurred_at,content,content_hash,version)
+        VALUES(gen_random_uuid(),'wechat',gen_random_uuid(),$2,'post','ask-peer','2026-02-10T12:00:00Z','{}','fixture',1)
+        RETURNING id
+    )
+    INSERT INTO crm.social_interactions(id,post_id,provider,external_id,interaction_type,author_profile_id,occurred_at,content,is_deleted)
+    SELECT gen_random_uuid(),id,'wechat',v.external_id,'like',$1,'2026-02-25T12:00:00Z','{}',v.deleted
+    FROM peer_post CROSS JOIN (VALUES('like-active',false),('like-deleted',true)) v(external_id,deleted)")
+        .bind(person).bind(peer).execute(&pool).await.unwrap();
     sqlx::query("SELECT setval(pg_get_serial_sequence('crm.field_revisions','revision_seq'),9007199254740992,true)").execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,field_key,value,content_hash,source_type,operation) VALUES
         (gen_random_uuid(),$1,'monica.company',to_jsonb('Before'::text),'fixture','manual','manual_edit'),
@@ -436,10 +448,10 @@ async fn asks_read_contact_insights_and_history_with_filters_and_cursors(pool: P
         const history=cli("profile_history",{{profile_id,field_key:"monica.company",limit:1,fields:["value"]}});
         const fact=cli("profile_fact_history",{{profile_id:"{old_id}",fact_type:"employment",limit:1}});
         return {{year:cli("contact_calendar",{{year:2026}}), day:cli("contact_calendar",{{day:"2026-02-25",fields:["name","calls"]}}),
-            activity:cli("contact_activity",{{profile_id,from_month:"2026-02",to_month:"2026-02"}}), calls:cli("contact_events_summary",{{profile_id}}),
-            coverage:cli("source_coverage",{{profile_id,provider:"mail"}}), imports, olderImports:cli("import_daily",{{connection_id,offset:imports.next_offset,limit:1}}),
+            activity:cli("contact_activity",{{profile_id,from_month:"2026-02",to_month:"2026-02"}}), calls:cli("contact_events_summary",{{profile_id:"{old_id}"}}),
+            coverage:cli("source_coverage",{{profile_id:"{old_id}",provider:"mail"}}), imports, olderImports:cli("import_daily",{{connection_id,offset:imports.next_offset,limit:1}}),
             members, nextMember:cli("group_members",{{group_id,offset:members.next_offset,limit:1}}),
-            social:cli("social_statistics",{{profile_id,provider:"wechat",from_month:"2026-02"}}), history,
+            social:cli("social_statistics",{{profile_id:"{old_id}",provider:"wechat",from_month:"2026-02"}}), history,
             olderHistory:cli("profile_history",{{profile_id,field_key:"monica.company",before:history.next,limit:1}}),
             longHistory:cli("profile_history",{{profile_id,field_key:"monica.note"}}), fact,
             olderFact:cli("profile_fact_history",{{profile_id:"{old_id}",fact_type:"employment", ...fact.next,limit:1}})}};
@@ -454,6 +466,10 @@ async fn asks_read_contact_insights_and_history_with_filters_and_cursors(pool: P
     );
     assert_eq!(result["day"]["rows"], json!([{"name":"Alex","calls":1}]));
     assert_eq!(result["activity"]["months"][0]["calls"], 1);
+    assert_eq!(result["activity"]["months"][0]["interactions"], 1);
+    assert_eq!(result["calls"]["profile_id"], json!(person));
+    assert_eq!(result["coverage"]["profile_id"], json!(person));
+    assert_eq!(result["social"]["profile_id"], json!(person));
     assert_eq!(result["calls"]["calls"]["duration_seconds"], 45);
     assert_eq!(result["coverage"]["sources"][0]["records"], 1);
     assert_eq!(result["imports"]["records"][0]["records"], 5);
