@@ -157,7 +157,7 @@ function run(source) {
     const request = (command, args) => parse(lookup(stringify([command, args])));
     const cli = (command, args = {}, project) => {
         if (command !== 'batch') return request(command, args);
-        if (!Array.isArray(args) || args.length > 240) throw new Error('batch 最多接受 240 项查询。');
+        if (!Array.isArray(args)) throw new Error('batch 需要查询数组。');
         if (project !== undefined && typeof project !== 'function') throw new Error('batch 的第三个参数必须是提取函数。');
         const rows = [];
         for (let i = 0; i < args.length; i += 6) {

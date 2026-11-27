@@ -32,13 +32,11 @@ use uuid::Uuid;
 
 const WORKERS: usize = 4;
 const MODEL_RETRIES: usize = 10;
-const MAX_ROUNDS: usize = 50;
 const MAX_WINDOW_BYTES: usize = 1_200_000;
 const MAX_STREAM_BYTES: usize = 512 * 1024;
 const MAX_STORED_CONTEXT_MESSAGES: i64 = 400;
 const MAX_HISTORY_BYTES: usize = 6 * 1024 * 1024;
 const MAX_IMAGE_READS: usize = 3;
-const LOOKUP_LIMIT: &str = "本轮查询已到上限。请根据已核实的资料回答，并说明还有哪些范围没查完。";
 const CONTINUE: &str = "继续根据已有资料回答。如果资料不够，先缩小范围再查。";
 const CONTINUE_ANSWER: &str = "上一段回答达到输出上限，请从断开的地方继续，避免重复。";
 
@@ -58,7 +56,6 @@ struct Job {
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 struct Checkpoint {
-    rounds: usize,
     nudges: usize,
     continuations: usize,
     instruction: String,
@@ -381,7 +378,7 @@ async fn run(state: &AppState, job: &Job) -> Result<()> {
             continue;
         }
 
-        let allow_tools = cp.rounds < MAX_ROUNDS && cp.nudges < 2;
+        let allow_tools = cp.nudges < 2;
         let reply = match get_reply(
             state,
             job,
@@ -408,12 +405,7 @@ async fn run(state: &AppState, job: &Job) -> Result<()> {
             .await;
         }
         let finish = if !reply.calls.is_empty() && allow_tools {
-            cp.rounds += 1;
-            cp.instruction = if cp.rounds >= MAX_ROUNDS {
-                LOOKUP_LIMIT.into()
-            } else {
-                String::new()
-            };
+            cp.instruction.clear();
             None
         } else {
             if !reply.calls.is_empty() {

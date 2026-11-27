@@ -26,7 +26,6 @@ mod aggregations;
 #[path = "contact_insights.rs"]
 mod contact_insights;
 
-const MAX_LOOKUPS: usize = 240;
 const LOOKUP_BYTES: usize = 256 * 1024;
 const DIRECTORY_BYTES: usize = 32 * 1024 * 1024;
 const TRACE_BYTES: usize = 64 * 1024;
@@ -195,7 +194,7 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "search_messages",
         parameters: "query, profile_id?, chat?, since?, before?",
-        description: "搜索私聊和群聊，查询词用 | 分隔，最多 6 个，每项按原文匹配。可按人物、direct/group 或时间筛选。",
+        description: "搜索私聊和群聊，查询词用 | 分隔，每项按原文匹配。可按人物、direct/group 或时间筛选。",
         list: Some("messages"),
         fields: "at from text link group chat_with profile_id image_ids",
     },
@@ -284,7 +283,7 @@ pub(super) fn tool() -> Value {
         .join("\n");
     json!({"type":"function","function":{
         "name":"monica_cli",
-        "description":format!("运行 JavaScript 查询 Monica。用同步函数 cli(command, args) 读取，再 return 需要的信息。可用 cli(\"batch\", [{{command,args}}], (result, index) => ...) 分批并行查阅并提取数据，结果顺序与输入一致。程序最多执行 240 项只读查询。cli(\"help\", {{command}}) 查看说明。{FIELDS_HELP}\n{descriptions}"),
+        "description":format!("运行 JavaScript 查询 Monica。用同步函数 cli(command, args) 读取，再 return 需要的信息。可用 cli(\"batch\", [{{command,args}}], (result, index) => ...) 分批并行查阅并提取数据，结果顺序与输入一致。cli(\"help\", {{command}}) 查看说明。{FIELDS_HELP}\n{descriptions}"),
         "parameters":{"type":"object","properties":{
             "title":{"type":"string","description":"用简短中文概括这段脚本要查什么，如「筛选 QD 标签并读取近况」"},
             "script":{"type":"string","description":"JavaScript 函数体，最后 return 查询结果"}},
@@ -310,7 +309,6 @@ struct Lookup {
     router: Router,
     zone: Tz,
     directory: OnceCell<Value>,
-    attempts: AtomicUsize,
     good: AtomicUsize,
     failed: AtomicUsize,
 }
@@ -343,7 +341,6 @@ pub(super) async fn run(
         router: delegated_routes(state.clone(), owner),
         zone,
         directory: OnceCell::new(),
-        attempts: AtomicUsize::new(0),
         good: AtomicUsize::new(0),
         failed: AtomicUsize::new(0),
     };
@@ -500,10 +497,6 @@ impl Lookup {
 
     async fn checked(&self, name: &str, args: &Value) -> Value {
         let result = async {
-            ensure!(
-                self.attempts.fetch_add(1, Ordering::Relaxed) < MAX_LOOKUPS,
-                "本脚本的查询次数已用完。请分批查询。"
-            );
             ensure!(args.is_object(), "查询参数必须是对象。");
             let fields = requested_fields(args)?;
             let mut value = self.command(name, args).await?;
@@ -932,7 +925,6 @@ impl Lookup {
             .split(['|', '｜'])
             .map(str::trim)
             .filter(|q| !q.is_empty() && unique.insert(*q))
-            .take(6)
             .collect::<Vec<_>>();
         ensure!(!terms.is_empty(), "请提供要搜索的关键词。");
         let mut pages = Vec::new();
