@@ -1229,6 +1229,16 @@ async fn ask_confirms_linkedin_tracking_and_previews_profile_merges(pool: PgPool
     sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Source'),($2,'person','Target')")
         .bind(source).bind(target).execute(&pool).await.unwrap();
     let url = "https://www.linkedin.com/in/test-person";
+    let previous = "https://www.linkedin.com/in/obsolete-target";
+    request(
+        &app,
+        "owner",
+        "PATCH",
+        &format!("/api/v1/profiles/{source}/fields"),
+        json!({"field_key":"monica.custom_fields","value":{"LinkedIn":previous}}),
+        StatusCode::OK,
+    )
+    .await;
     let action = json!({
         "action":"add_linkedin_target","profile_id":source,
         "account":"https://uk.linkedin.com/in/Test-Person/?trk=fixture"
@@ -1265,15 +1275,28 @@ async fn ask_confirms_linkedin_tracking_and_previews_profile_merges(pool: PgPool
     );
     let script = format!(
         r#"
-        return {{person:cli("get_person",{{profile_id:"{source}",fields:["sources.linkedin.profile_url"]}}),
+        return {{person:cli("get_person",{{profile_id:"{source}",fields:["sources.linkedin"]}}),
           merge:cli("profile_merge_preview",{{source_profile_id:"{source}",target_profile_id:"{target}"}})}};
     "#
     );
-    let (reply, error, _) =
-        lookup::run(&state, (job.owner_id, job.email), chrono_tz::UTC, script).await;
+    let (reply, error, _) = lookup::run(
+        &state,
+        (job.owner_id, job.email.clone()),
+        chrono_tz::UTC,
+        script,
+    )
+    .await;
     assert!(!error, "{reply}");
     let reply: Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(reply["person"]["sources"]["linkedin"]["profile_url"], url);
+    assert_eq!(
+        reply["person"]["sources"]["linkedin"]["source_profile_url"],
+        previous
+    );
+    assert_eq!(
+        reply["person"]["sources"]["linkedin"]["linked_profile_urls"],
+        json!([url])
+    );
     assert_eq!(reply["merge"]["source"]["name"], "Source");
     assert_eq!(reply["merge"]["target"]["name"], "Target");
     assert_eq!(reply["merge"]["counts"]["accounts"], 1);
@@ -1289,6 +1312,77 @@ async fn ask_confirms_linkedin_tracking_and_previews_profile_merges(pool: PgPool
             .unwrap(),
         0
     );
+
+    let edit = proposed_id(&pool, &job, "linkedin-stale", &action).await;
+    let mut disable = pool.begin().await.unwrap();
+    let (account, pid): (Uuid, i32) = sqlx::query_as(
+        "SELECT id,pg_backend_pid() FROM crm.source_accounts
+         WHERE provider='linkedin' AND external_id='test-person' FOR UPDATE",
+    )
+    .fetch_one(&mut *disable)
+    .await
+    .unwrap();
+    sqlx::query("DELETE FROM crm.linkedin_collection_targets WHERE account_id=$1")
+        .bind(account)
+        .execute(&mut *disable)
+        .await
+        .unwrap();
+    let confirm_app = app.clone();
+    let edit_path = format!("{path}/edits/{edit}");
+    let confirmation = tokio::spawn(async move {
+        request(
+            &confirm_app,
+            "owner",
+            "POST",
+            &edit_path,
+            json!({"confirm":true}),
+            StatusCode::OK,
+        )
+        .await
+    });
+    timeout(Duration::from_secs(8), async {
+        while !sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)))",
+        )
+        .bind(pid)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        {
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    disable.commit().await.unwrap();
+    assert_eq!(confirmation.await.unwrap()["status"], "stale");
+    assert_eq!(
+        monica_core::collector::targets(&pool).await.unwrap()["targets"],
+        json!([])
+    );
+
+    let archived =
+        json!({"action":"add_linkedin_target","profile_id":target,"account":"not-created"});
+    let edit = proposed_id(&pool, &job, "linkedin-archived", &archived).await;
+    sqlx::query("UPDATE crm.profiles SET archived_at=now() WHERE id=$1")
+        .bind(target)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        request(
+            &app,
+            "owner",
+            "POST",
+            &format!("{path}/edits/{edit}"),
+            json!({"confirm":true}),
+            StatusCode::OK
+        )
+        .await["status"],
+        "stale"
+    );
+    assert!(!sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM crm.source_accounts WHERE provider='linkedin' AND external_id='not-created')")
+        .fetch_one(&pool).await.unwrap());
 }
 
 #[sqlx::test(migrations = "../../migrations")]

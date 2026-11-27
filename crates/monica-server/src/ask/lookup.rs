@@ -812,22 +812,28 @@ impl Lookup {
                 (!fields.is_empty()).then(|| (provider.clone(), Value::Object(fields)))
             })
             .collect::<serde_json::Map<_, _>>();
-        if let Some(url) = array(&profile["identities"])
+        let linkedin_urls = array(&profile["identities"])
             .iter()
             .filter(|identity| identity["provider"] == "linkedin")
-            .find_map(|identity| {
+            .filter_map(|identity| {
                 identity["profile_url"]
                     .as_str()
                     .filter(|url| !url.is_empty())
             })
-        {
-            sources
+            .collect::<Vec<_>>();
+        if let Some(first) = linkedin_urls.first() {
+            let linkedin = sources
                 .entry("linkedin")
                 .or_insert_with(|| json!({}))
                 .as_object_mut()
-                .unwrap()
-                .entry("profile_url")
-                .or_insert_with(|| json!(url));
+                .unwrap();
+            let previous = linkedin.get("profile_url").and_then(Value::as_str);
+            if !previous.is_some_and(|url| linkedin_urls.contains(&url))
+                && let Some(previous) = linkedin.insert("profile_url".into(), json!(first))
+            {
+                linkedin.insert("source_profile_url".into(), previous);
+            }
+            linkedin.insert("linked_profile_urls".into(), json!(linkedin_urls));
         }
         let facts = array(&profile["presentation"]["facts"])
             .iter()

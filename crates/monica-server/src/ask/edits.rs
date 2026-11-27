@@ -7,7 +7,7 @@ use crate::{
         validate_suggestion_meetup, validate_suggestion_value,
     },
     auth::{ApiError, AppState, session_user},
-    collector::save_linkedin_locked,
+    collector::linkedin_error,
     profiles::{self, activities, dates, details, relationships},
 };
 use axum::{
@@ -16,9 +16,10 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 use chrono::{DateTime, Datelike, Utc};
+use monica_core::collector::{self, LockedLinkedinAccount};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sqlx::{PgPool, Postgres, Row, Transaction};
+use sqlx::{Acquire, PgPool, Postgres, Row, Transaction};
 use std::collections::BTreeSet;
 use uuid::Uuid;
 
@@ -350,8 +351,7 @@ async fn preview(tx: &mut Transaction<'_, Postgres>, action: &Action, lock: bool
         "SELECT id,display_name,profile_type FROM crm.profiles
          WHERE id=ANY($1) AND archived_at IS NULL ORDER BY id",
     );
-    // The LinkedIn collector locks the source account before the profile.
-    if lock && !matches!(action, Action::AddLinkedinTarget { .. }) {
+    if lock {
         sql.push_str(" FOR UPDATE");
     }
     let people: Vec<(Uuid, String, String)> =
@@ -762,18 +762,30 @@ async fn resolve(
                 .execute(&mut *tx)
                 .await?;
         }
-        let current = match preview(&mut tx, &action.0, true).await {
+        // A stale LinkedIn approval must roll back any account created to
+        // obtain the collector's account lock before locking the profile.
+        let mut approval = (&mut tx).begin().await?;
+        let linkedin = if let Action::AddLinkedinTarget { account, .. } = &action.0 {
+            Some(
+                collector::lock_linkedin_account(&mut approval, account)
+                    .await
+                    .map_err(linkedin_error)?,
+            )
+        } else {
+            None
+        };
+        let current = match preview(&mut approval, &action.0, true).await {
             Ok(current) => current,
             Err(error) if error.0.is_client_error() => Value::Null,
             Err(error) => return Err(error),
         };
         if current != saved {
+            approval.rollback().await?;
             ("stale", Some(json!({"message":stale().1})))
         } else {
-            (
-                "applied",
-                Some(apply(&mut tx, owner, action.0, &current).await?),
-            )
+            let result = apply(&mut approval, owner, action.0, &current, linkedin).await?;
+            approval.commit().await?;
+            ("applied", Some(result))
         }
     };
     let seq = sqlx::query_scalar(
@@ -806,6 +818,7 @@ async fn apply(
     owner: Uuid,
     action: Action,
     current: &Value,
+    linkedin: Option<LockedLinkedinAccount>,
 ) -> Result<Value> {
     let ids = action.people();
     match action {
@@ -931,11 +944,11 @@ async fn apply(
             .await?;
             Ok(json!({"link":format!("/profiles/{profile_id}")}))
         }
-        Action::AddLinkedinTarget {
-            profile_id,
-            account,
-        } => {
-            let saved = save_linkedin_locked(tx, profile_id, &account, owner).await?;
+        Action::AddLinkedinTarget { profile_id, .. } => {
+            let account = linkedin.ok_or_else(stale)?;
+            let saved = collector::save_linkedin_locked(tx, profile_id, account, owner)
+                .await
+                .map_err(linkedin_error)?;
             Ok(
                 json!({"link":format!("/profiles/{profile_id}"),"profile_url":saved["profile_url"],
                 "message":"已关联 LinkedIn 并加入持续采集名单。"}),

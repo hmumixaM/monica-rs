@@ -85,12 +85,16 @@ pub fn canonical_linkedin(value: &str) -> Result<(String, String)> {
     }
     Ok((slug, format!("https://www.linkedin.com/in/{encoded}")))
 }
-pub async fn save_linkedin(
+pub struct LockedLinkedinAccount {
+    id: Uuid,
+    slug: String,
+    url: String,
+}
+
+pub async fn lock_linkedin_account(
     tx: &mut Transaction<'_, Postgres>,
-    profile: Uuid,
     account: &str,
-    actor: Uuid,
-) -> Result<Value> {
+) -> Result<LockedLinkedinAccount> {
     let (slug, url) = canonical_linkedin(account)?;
     let aid = crate::identity::account_id(crate::Provider::Linkedin, &slug)?;
     // Source identity is independent of its optional CRM link. Account lock first
@@ -101,6 +105,26 @@ pub async fn save_linkedin(
         .bind(aid)
         .fetch_one(&mut **tx)
         .await?;
+    Ok(LockedLinkedinAccount { id: aid, slug, url })
+}
+
+pub async fn save_linkedin(
+    tx: &mut Transaction<'_, Postgres>,
+    profile: Uuid,
+    account: &str,
+    actor: Uuid,
+) -> Result<Value> {
+    let account = lock_linkedin_account(tx, account).await?;
+    save_linkedin_locked(tx, profile, account, actor).await
+}
+
+pub async fn save_linkedin_locked(
+    tx: &mut Transaction<'_, Postgres>,
+    profile: Uuid,
+    account: LockedLinkedinAccount,
+    actor: Uuid,
+) -> Result<Value> {
+    let LockedLinkedinAccount { id: aid, slug, url } = account;
     let existing: Option<Uuid> =
         sqlx::query_scalar("SELECT profile_id FROM crm.source_account_links WHERE account_id=$1")
             .bind(aid)
