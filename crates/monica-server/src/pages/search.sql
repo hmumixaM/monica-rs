@@ -27,36 +27,47 @@ WITH accounts AS MATERIALIZED (
     SELECT a.external_id FROM people p JOIN crm.source_account_links l ON l.profile_id=p.profile_id
     JOIN crm.source_accounts a ON a.id=l.account_id AND a.provider='wechat'
 ), candidates AS (
-    (SELECT id,1 AS priority,'caption' AS source,NULL::uuid AS media_id
+    (SELECT id,1 AS priority,'caption' AS source,NULL::uuid AS media_id,NULL::text AS reading_text
      FROM crm.page_posts WHERE text ILIKE $1 ORDER BY occurred_at DESC NULLS LAST,id LIMIT $3)
     UNION ALL
-    SELECT e.id,4,'account',NULL FROM accounts a JOIN crm.timeline_events e ON e.source_account_id=a.id
+    SELECT e.id,4,'account',NULL,NULL FROM accounts a JOIN crm.timeline_events e ON e.source_account_id=a.id
     UNION ALL
-    SELECT x.id,4,'account',NULL FROM people p JOIN crm.page_posts x ON x.profile_id=p.profile_id
+    SELECT x.id,4,'account',NULL,NULL FROM people p JOIN crm.page_posts x ON x.profile_id=p.profile_id
     UNION ALL
-    SELECT id,4,'account',NULL FROM crm.timeline_events
+    SELECT id,4,'account',NULL,NULL FROM crm.timeline_events
     WHERE provider='instagram' AND status NOT IN ('deleted','merged') AND lower(content->>'username')=lower($4)
     UNION ALL
-    SELECT id,3,'mention',NULL FROM crm.timeline_events
+    SELECT id,3,'mention',NULL,NULL FROM crm.timeline_events
     WHERE provider='instagram' AND status NOT IN ('deleted','merged')
       AND crm.instagram_search_mentions(content) @> ARRAY[lower($4)]
     UNION ALL
-    SELECT s.post_id,3,'mention',NULL FROM wechat_targets t JOIN crm.social_interactions s
+    SELECT s.post_id,3,'mention',NULL,NULL FROM wechat_targets t JOIN crm.social_interactions s
       ON coalesce(s.content->>'target_external_id',s.metadata->>'target_external_id')=t.external_id
     WHERE s.provider='wechat' AND s.interaction_type='mention' AND NOT s.is_deleted
     UNION ALL
-    SELECT l.entity_id,2,'ocr',r.media_id
+    SELECT l.entity_id,2,'ocr',r.media_id,NULL
     FROM crm.image_ocr_readings r JOIN crm.media_links l ON l.media_id=r.media_id
     WHERE l.entity_type IN ('social_post','social_story','post','story')
       AND (r.status='complete' OR r.generated_at IS NOT NULL)
-      AND crm.search_grams(r.text) @@ crm.search_gram_query($5) AND r.text ILIKE $1
+      AND crm.ocr_search_grams(r.text) @@ crm.search_gram_query($5) AND r.text ILIKE $1
     UNION ALL
-    SELECT r.entity_id,2,'legacy_ocr',NULL FROM crm.media_readings r
+    SELECT r.entity_id,2,'legacy_ocr',NULL,legacy.text FROM crm.media_readings r
+    CROSS JOIN LATERAL (
+        SELECT item.value->>'text' AS text
+        FROM jsonb_path_query(r.items,'$[*]') WITH ORDINALITY AS item(value,position)
+        WHERE item.value->>'text' ILIKE $1 AND NOT EXISTS (
+            SELECT 1 FROM crm.media_links l JOIN crm.image_ocr_readings current ON current.media_id=l.media_id
+            WHERE l.entity_id=r.entity_id AND l.entity_type=r.entity_type
+              AND l.media_id::text IN (item.value->>'media_id',item.value->>'id')
+              AND (current.status='complete' OR current.generated_at IS NOT NULL)
+              AND current.text<>''
+        )
+        ORDER BY item.position LIMIT 1
+    ) legacy
     WHERE (r.status='complete' OR r.generated_at IS NOT NULL)
-      AND crm.search_grams(crm.post_reading_search_text(r.items)) @@ crm.search_gram_query($5)
-      AND crm.post_reading_search_text(r.items) ILIKE $1
+      AND crm.ocr_search_grams(crm.post_reading_search_text(r.items)) @@ crm.search_gram_query($5)
 ), matched AS (
-    SELECT DISTINCT ON (c.id) c.id,c.source,c.media_id,x.occurred_at
+    SELECT DISTINCT ON (c.id) c.id,c.source,c.media_id,c.reading_text,x.occurred_at
     FROM candidates c JOIN crm.page_posts x ON x.id=c.id
     ORDER BY c.id,c.priority,c.source,c.media_id
 ), post_page AS (
@@ -78,10 +89,8 @@ SELECT to_jsonb(hits) FROM (
      FROM post_page hit JOIN crm.page_posts x ON x.id=hit.id
      LEFT JOIN crm.directory_profiles p ON p.id=x.profile_id
      LEFT JOIN crm.image_ocr_readings o ON o.media_id=hit.media_id
-     LEFT JOIN crm.media_readings saved ON hit.source='legacy_ocr' AND saved.entity_id=x.id
-        AND saved.entity_type=CASE WHEN x.kind='story' THEN 'social_story' ELSE 'social_post' END
      CROSS JOIN LATERAL (
-        SELECT coalesce(o.text,crm.post_reading_search_text(saved.items),x.text) AS text
+        SELECT coalesce(o.text,hit.reading_text,x.text) AS text
      ) detail
      ORDER BY x.occurred_at DESC NULLS LAST,x.id)
     UNION ALL

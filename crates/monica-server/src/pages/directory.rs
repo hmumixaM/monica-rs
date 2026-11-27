@@ -314,9 +314,11 @@ mod tests {
 
         assert!(timeline_hits(&app, "2nd").await.is_empty());
         sqlx::query("INSERT INTO crm.image_ocr_readings(media_id,status,text,generated_at) VALUES($1,'complete',$2,now())")
-            .bind(image).bind(format!("{} 2nd floor 票价", "intro ".repeat(70))).execute(&pool).await.unwrap();
+            .bind(image).bind(format!("{} 2nd floor 票价", "intro ".repeat(3500))).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO crm.media_readings(entity_id,entity_type,status,items) VALUES($1,'social_story','complete',$2)")
             .bind(story).bind(json!([{"text":"2nd entrance"}])).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.media_readings(entity_id,entity_type,status,items) VALUES($1,'social_post','complete',$2)")
+            .bind(post).bind(json!([{"media_id":image,"text":"2nd stale text"}])).execute(&pool).await.unwrap();
         let hits = timeline_hits(&app, "2nd").await;
         assert_eq!(hits.len(), 2, "{hits:?}");
         assert_eq!(hits[0]["summary"], "2nd entrance");

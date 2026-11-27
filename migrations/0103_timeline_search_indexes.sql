@@ -34,9 +34,19 @@ LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
  FROM jsonb_array_elements(CASE WHEN jsonb_typeof(items)='array' THEN items ELSE '[]'::jsonb END)
  WITH ORDINALITY AS reading(item,position) WHERE jsonb_typeof(item->'text')='string'
 $$;
-CREATE INDEX search_image_ocr_text ON crm.image_ocr_readings USING gin(crm.search_grams(text))
+-- The shared function caps a single chunk at 20,000 characters. Overlap by two
+-- characters so even a trigram across a chunk boundary remains searchable.
+CREATE FUNCTION crm.ocr_search_grams(body text) RETURNS tsvector
+LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
+ SELECT CASE WHEN char_length(body)<=20000 THEN crm.search_grams(body) ELSE (
+  SELECT array_to_tsvector(coalesce(array_agg(DISTINCT gram), '{}'))
+  FROM generate_series(1,char_length(body),19998) AS starts(position)
+  CROSS JOIN LATERAL unnest(tsvector_to_array(crm.search_grams(substr(body,position,20000)))) AS grams(gram)
+ ) END
+$$;
+CREATE INDEX search_image_ocr_text ON crm.image_ocr_readings USING gin(crm.ocr_search_grams(text))
  WHERE status='complete' OR generated_at IS NOT NULL;
-CREATE INDEX search_post_reading_text ON crm.media_readings USING gin(crm.search_grams(crm.post_reading_search_text(items)))
+CREATE INDEX search_post_reading_text ON crm.media_readings USING gin(crm.ocr_search_grams(crm.post_reading_search_text(items)))
  WHERE status='complete' OR generated_at IS NOT NULL;
 
 -- These sources can change a hit without changing the indexed post itself.
