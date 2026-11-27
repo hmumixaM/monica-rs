@@ -883,12 +883,6 @@ fn add_event(reply: &mut Reply, event: &[u8]) -> std::result::Result<(), ModelEr
     if let Some(calls) = delta["tool_calls"].as_array() {
         for (position, call) in calls.iter().enumerate() {
             let index = call["index"].as_u64().unwrap_or(position as u64);
-            if index >= 6 {
-                return Err(ModelError::new(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "模型单轮调用了过多脚本。已保存查询进度。",
-                ));
-            }
             let entry = reply.calls.entry(index).or_default();
             if entry.id.is_empty()
                 && let Some(id) = call["id"].as_str()
