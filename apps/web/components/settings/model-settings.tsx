@@ -19,7 +19,7 @@ export function ModelSettings() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const data = query.data;
-  return <Section title="模型设置" className={styles.panel}>
+  return <><Section title="模型设置" className={styles.panel}>
     <p>配置兼容 OpenAI 的模型服务。默认关闭；保存后供这台部署的问答与后台任务共用。API Key 加密保存，已有密钥不会返回浏览器。</p>
     {data?.execution_enabled===false&&<p role="status">此部署已暂停新模型调用。已保存的摘要、OCR 和周报仍可查看。恢复调用需要由部署配置明确开启。</p>}
     {query.isError ? <Failure onRetry={() => void query.refetch()}>无法读取模型设置。</Failure> : !data ? <Skeleton height={120} /> :
@@ -64,6 +64,53 @@ export function ModelSettings() {
         <Field label="回答输出上限（tokens）" hint="限制单次回答长度；不会截断保存的原始资料。"><Input name="max_tokens" type="number" min={1} max={131072} required defaultValue={data.max_tokens} /></Field>
         </div></details>
         <Button type="submit" disabled={busy}>{busy ? '正在保存…' : '保存模型设置'}</Button>
+      </form>}
+    {message && <p role="status">{message}</p>}
+  </Section><WebSearchSettings /></>;
+}
+
+function WebSearchSettings() {
+  const client = useQueryClient();
+  const queryKey = ['ai', 'web-search'] as const;
+  const path = '/api/v1/ai/web-search';
+  const query = useQuery({ queryKey, queryFn: () => fetchJson<{ configured: boolean }>(path) });
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  async function save(body: { api_key: string } | { clear_key: true }) {
+    setBusy(true);
+    setMessage('');
+    try {
+      const settings = await fetchJson<{ configured: boolean }>(path, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      client.setQueryData(queryKey, settings);
+      setMessage(settings.configured ? 'Exa 密钥已保存。' : 'Exa 密钥已删除。');
+      return true;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '无法保存 Exa 设置。');
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <Section title="公开网络搜索" className={styles.panel}>
+    <p>配置 Exa 后，问 Monica 可以检索公开的人物资料、最新消息和地点信息。密钥保存在本部署的加密设置里。</p>
+    {query.isError ? <Failure onRetry={() => void query.refetch()}>无法读取 Exa 设置。</Failure> : !query.data ? <Skeleton height={80} /> :
+      <form className={styles.modelForm} onSubmit={async event => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const apiKey = String(new FormData(form).get('exa_key') || '').trim();
+        if (await save({ api_key: apiKey })) form.reset();
+      }}>
+        <Field label="Exa API Key" hint={query.data.configured ? '已配置。填写新密钥即可替换。' : '保存后启用公开网络搜索。'}>
+          <Input name="exa_key" type="password" autoComplete="new-password" maxLength={1024} required disabled={busy} />
+        </Field>
+        <div className={styles.formGrid}>
+          <Button type="submit" disabled={busy}>保存 Exa 密钥</Button>
+          {query.data.configured && <Button type="button" variant="ghost" disabled={busy} onClick={() => void save({ clear_key: true })}>删除 Exa 密钥</Button>}
+        </div>
       </form>}
     {message && <p role="status">{message}</p>}
   </Section>;

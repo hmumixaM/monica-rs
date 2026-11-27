@@ -243,7 +243,7 @@ async fn forward(
     }
     Ok(stream_response(upstream, resources))
 }
-async fn read_provider_error(
+pub(crate) async fn read_provider_error(
     upstream: &mut monica_core::ai::provider::ForwardResponse,
 ) -> Option<Value> {
     const LIMIT: usize = 32 * 1024;
@@ -269,7 +269,7 @@ fn provider_error_message(error: &Value) -> String {
         .to_ascii_lowercase()
 }
 
-fn context_limit_error(error: &Value) -> bool {
+pub(crate) fn context_limit_error(error: &Value) -> bool {
     let message = provider_error_message(error);
     error["code"].as_str() == Some("context_length_exceeded")
         || error["type"].as_str() == Some("context_length_exceeded")

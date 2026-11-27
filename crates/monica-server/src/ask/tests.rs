@@ -105,6 +105,311 @@ fn events(items: &[(Value, Value)], done: bool) -> Response {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn exa_settings_only_return_status_and_store_encrypted_key(pool: PgPool) {
+    let (state, app) = setup(&pool).await;
+    let path = "/api/v1/ai/web-search";
+    request(
+        &app,
+        "wrong",
+        "GET",
+        path,
+        Value::Null,
+        StatusCode::UNAUTHORIZED,
+    )
+    .await;
+    assert_eq!(
+        request(&app, "owner", "GET", path, Value::Null, StatusCode::OK).await,
+        json!({"configured":false})
+    );
+    assert_eq!(
+        request(
+            &app,
+            "owner",
+            "PATCH",
+            path,
+            json!({"api_key":"synthetic-exa-key"}),
+            StatusCode::OK
+        )
+        .await,
+        json!({"configured":true})
+    );
+    let encrypted: String =
+        sqlx::query_scalar("SELECT exa_credential_ciphertext FROM crm.ai_settings WHERE id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(!encrypted.contains("synthetic-exa-key"));
+    assert_eq!(
+        state.credentials.decrypt(&encrypted).unwrap(),
+        json!({"api_key":"synthetic-exa-key"})
+    );
+    assert_eq!(
+        request(
+            &app,
+            "owner",
+            "PATCH",
+            path,
+            json!({"clear_key":true}),
+            StatusCode::OK
+        )
+        .await,
+        json!({"configured":false})
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn ask_vision_compresses_images_and_retries_without_rejected_input(pool: PgPool) {
+    use base64::Engine;
+    let (mut state, app) = setup(&pool).await;
+    let media_root = tempfile::tempdir().unwrap();
+    state.media_root = media_root.path().to_owned();
+    let png = base64::engine::general_purpose::STANDARD
+        .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC")
+        .unwrap();
+    let mut ids = Vec::new();
+    for index in [0, 1] {
+        let id = Uuid::new_v4();
+        let mut bytes = png.clone();
+        bytes.push(index);
+        let hash = monica_core::identity::bytes_hash(&bytes);
+        let path = monica_core::media::object_path(&hash).unwrap();
+        let file = media_root.path().join(&path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, &bytes).unwrap();
+        sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,source_type) VALUES($1,$2,'image/png',$3,$4,'manual')")
+            .bind(id).bind(hash).bind(bytes.len() as i64).bind(path).execute(&pool).await.unwrap();
+        ids.push(id);
+    }
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}/v1", listener.local_addr().unwrap());
+    let fake = Router::new().route(
+        "/v1/chat/completions",
+        post({
+            let attempts = attempts.clone();
+            move |Json(body): Json<Value>| {
+                let attempt = attempts.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    assert_eq!(body["model"], "vision-fixture");
+                    assert_eq!(body["stream"], false);
+                    let images: Vec<_> = body["messages"][1]["content"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter(|item| item["type"] == "image_url")
+                        .collect();
+                    assert_eq!(images.len(), 2 - attempt);
+                    for image in images {
+                        assert!(
+                            image["image_url"]["url"]
+                                .as_str()
+                                .unwrap()
+                                .starts_with("data:image/jpeg;base64,/9j/")
+                        );
+                    }
+                    if attempt == 0 {
+                        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+                    }
+                    Json(json!({"choices":[{"message":{"content":"A bright pixel."}}]}))
+                        .into_response()
+                }
+            }
+        }),
+    );
+    let upstream = tokio::spawn(async move { axum::serve(listener, fake).await.unwrap() });
+    request(&app, "owner", "PATCH", "/api/v1/ai/settings",
+        json!({"enabled":true,"qa_enabled":true,"base_url":base_url,"vision_model":"vision-fixture","api_key":"synthetic-model-key"}), StatusCode::OK).await;
+    let reply = image_lookup::inspect(
+        &state,
+        &json!({"image_ids":ids,"question":"How bright is the pixel?"}),
+    )
+    .await
+    .unwrap();
+    upstream.abort();
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    assert_eq!(reply["observation"], "A bright pixel.", "{reply}");
+    assert_eq!(reply["inspected"].as_array().unwrap().len(), 1);
+    assert_eq!(reply["skipped"][0]["reason"], "视觉模型输入超限");
+    assert!(!reply.to_string().contains("data:image"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn ask_reads_saved_aggregations_through_the_javascript_tools(pool: PgPool) {
+    let (state, _) = setup(&pool).await;
+    let owner: Uuid =
+        sqlx::query_scalar("SELECT id FROM crm.app_users WHERE email='owner@example.invalid'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let person = Uuid::from_u128(1);
+    let peer = Uuid::from_u128(2);
+    let conversation = Uuid::new_v4();
+    let post = Uuid::new_v4();
+    let week = "2026-02-23";
+    sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Person'),($2,'person','Peer')")
+        .bind(person).bind(peer).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.relationship_edges(id,from_profile_id,to_profile_id,relationship_type) VALUES(gen_random_uuid(),$1,$2,'friend')")
+        .bind(person).bind(peer).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,profile_id,event_type,external_id,occurred_at,content,content_hash,version)
+        VALUES($1,'wechat',$1,$2,'post','museum','2026-02-25T12:00:00Z','{\"location\":{\"name\":\"Museum\",\"lat\":41,\"lng\":-87}}','fixture',1),
+        (gen_random_uuid(),'wechat',gen_random_uuid(),$2,'post','mall','2026-02-24T12:00:00Z','{\"location\":{\"name\":\"Mall\",\"lat\":42,\"lng\":-87}}','fixture',1)")
+        .bind(post).bind(person).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.conversations(id,provider,account,external_id,conversation_type,profile_id) VALUES($1,'wechat','self','peer','direct',$2)")
+        .bind(conversation).bind(person).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,occurred_at,body,message_type,direction) VALUES
+        (gen_random_uuid(),$1,'wechat','self','first','peer','2026-03-01T00:30:00Z','fixture','1','received'),
+        (gen_random_uuid(),$1,'wechat','self','second','peer','2026-03-01T06:30:00Z','fixture','1','sent')")
+        .bind(conversation).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE crm.ai_settings SET enabled=true")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let weekly = json!({"summary":"Visited a museum","sources":[{"kind":"post","id":post,"quote":"Visited a museum"}]});
+    for (kind, subject, output) in [
+        (
+            "ai.profile",
+            person.to_string(),
+            json!({"summary":"Likes museums","facts":[],"gaps":[]}),
+        ),
+        ("ai.person_week", format!("{person}:{week}"), weekly.clone()),
+        (
+            "ai.person_week",
+            format!("{peer}:{week}"),
+            json!({"summary":"Peer update","sources":[]}),
+        ),
+        (
+            "ai.digest",
+            week.into(),
+            json!({"summary":"Week in review","life_events":[{"profile_id":person,"post_id":post,"text":"Museum visit"}]}),
+        ),
+    ] {
+        let job = Uuid::new_v4();
+        sqlx::query("INSERT INTO crm.ai_jobs(id,kind,subject,model,input_hash,input,source_versions,privacy,status)
+            VALUES($1,$2,$3,'fake','fixture','{}','{}','{\"policy\":{\"include_private_notes\":false,\"include_messages\":false}}','complete')")
+            .bind(job).bind(kind).bind(&subject).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO crm.ai_outputs(kind,subject,output,model,input_hash,source_versions,job_id)
+            VALUES($1,$2,$3,'fake','fixture','{}',$4)")
+            .bind(kind).bind(&subject).bind(output).bind(job).execute(&pool).await.unwrap();
+    }
+    sqlx::query("INSERT INTO crm.person_weekly_updates(profile_id,week_start,output,input_hash) VALUES
+        ($1,$3::date,$4,'fixture'),($2,$3::date,'{\"summary\":\"Peer update\",\"sources\":[]}','fixture')")
+        .bind(person).bind(peer).bind(week).bind(weekly).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.weekly_digests(week_start,output,input_hash) VALUES($1::date,'{\"facts\":{\"totals\":{\"messages\":2}}}','fixture')")
+        .bind(week).execute(&pool).await.unwrap();
+
+    let actor = (owner, "owner@example.invalid".into());
+    let script = format!(
+        r#"
+        const profile_id = "{person}", week = "{week}";
+        const people = cli("weekly_people", {{week, limit:1, fields:["name","link"]}});
+        const map = cli("places", {{provider:"wechat",year:2026,kind:"post",limit:1,fields:["label","links"]}});
+        const near = {{latitude:41,longitude:-87,radius_km:120}};
+        const nearest = cli("places", {{near,kind:"post",limit:1,fields:["label","distance_km"]}});
+        return {{summary:cli("profile_summary", {{profile_id,week}}),
+            people, nextPerson:cli("weekly_people", {{week, after:people.next}}),
+            weeks:cli("weekly_review", {{limit:1,fields:["digests.week","digests.link"]}}),
+            review:cli("weekly_review", {{week}}), map,
+            nextPlace:cli("places", {{provider:"wechat",year:2026,kind:"post",offset:map.next_offset,limit:1}}),
+            personMap:cli("places", {{profile_id,query:"museum"}}),
+            nearest, nextNear:cli("places", {{near,kind:"post",limit:1,offset:nearest.next_offset}}),
+            personNear:cli("places", {{profile_id,near:{{...near,radius_km:75}}}}),
+            nearCity:cli("places", {{near:{{city:"Chicago, Illinois, United States",radius_km:70}},kind:"post"}}),
+            combined:cli("places", {{query:"mall",near:{{...near,radius_km:75}}}}),
+            ambiguous:cli("places", {{near:{{city:"Springfield, US",radius_km:70}}}}),
+            globalTimeline:cli("get_posts", {{provider:"wechat", since:"2026-02-25", fields:["name","profile_id","link"]}}),
+            network:cli("relationship_network", {{profile_id,limit:1}}),
+            chat:cli("chat_statistics", {{profile_id,from_month:"2026-02",to_month:"2026-02"}})}};
+    "#
+    );
+    let (response, error, _) =
+        lookup::run(&state, actor.clone(), chrono_tz::America::Chicago, script).await;
+    assert!(!error, "{response}");
+    let result: Value = serde_json::from_str(&response).unwrap();
+    assert_eq!(
+        result["summary"]["memory"]["summary"], "Likes museums",
+        "{result}"
+    );
+    assert_eq!(
+        result["summary"]["recent_weeks"][0]["sources"][0]["link"],
+        format!("/timeline?event={post}")
+    );
+    assert_eq!(
+        result["people"]["people"],
+        json!([{"name":"Person","link":format!("/profiles/{person}")}])
+    );
+    assert_eq!(result["people"]["total"], 2);
+    assert_eq!(result["nextPerson"]["people"][0]["name"], "Peer");
+    assert_eq!(result["nextPerson"]["next"], Value::Null);
+    assert_eq!(
+        result["weeks"]["digests"],
+        json!([{"week":week,"link":format!("/digest?week={week}")}])
+    );
+    assert_eq!(result["review"]["facts"]["totals"]["messages"], 2);
+    assert_eq!(
+        result["review"]["narrative"]["life_events"][0]["link"],
+        format!("/timeline?event={post}")
+    );
+    assert_eq!(result["map"]["points"][0]["label"], "Mall");
+    assert_eq!(result["map"]["total"], 2);
+    assert_eq!(result["nextPlace"]["points"][0]["label"], "Museum");
+    assert_eq!(result["personMap"]["total"], 1);
+    assert_eq!(result["personMap"]["points"][0]["precision"], "coordinate");
+    assert_eq!(
+        result["nearest"]["points"],
+        json!([{"label":"Museum","distance_km":0}])
+    );
+    assert_eq!(result["nearest"]["total"], 2);
+    assert_eq!(result["nextNear"]["points"][0]["label"], "Mall");
+    assert_eq!(result["nextNear"]["next_offset"], Value::Null);
+    assert_eq!(result["personNear"]["points"][0]["label"], "Museum");
+    assert_eq!(result["personNear"]["total"], 1);
+    assert_eq!(result["nearCity"]["near"]["city"], "Chicago · US");
+    assert_eq!(result["nearCity"]["points"][0]["label"], "Mall");
+    assert_eq!(result["nearCity"]["total"], 1);
+    assert_eq!(result["combined"]["total"], 0);
+    assert_eq!(
+        result["globalTimeline"]["posts"],
+        json!([{"name":"Person","profile_id":person,
+        "link":format!("/timeline?event={post}")}])
+    );
+    assert!(
+        result["ambiguous"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("无法唯一识别")
+    );
+    assert_eq!(
+        result["network"]["edges"][0]["to"]["profile_id"],
+        json!(peer)
+    );
+    assert_eq!(
+        result["network"]["edges"][0]["relationship_types"],
+        json!(["friend"])
+    );
+    assert_eq!(
+        result["chat"]["months"],
+        json!([{"month":"2026-02","sent":0,"received":1,"system":0,"unknown":0,"total":1,"records":1}])
+    );
+    assert_eq!(result["chat"]["total"], 1);
+
+    sqlx::query("UPDATE crm.ai_settings SET include_messages=true")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let script = format!(
+        r#"return [cli("profile_summary",{{profile_id:"{person}"}}),cli("weekly_review",{{week:"{week}"}})];"#
+    );
+    let (response, error, _) =
+        lookup::run(&state, actor, chrono_tz::America::Chicago, script).await;
+    assert!(!error, "{response}");
+    let hidden: Value = serde_json::from_str(&response).unwrap();
+    assert_eq!(hidden[0]["memory"], Value::Null);
+    assert_eq!(hidden[0]["recent_weeks"], json!([]));
+    assert_eq!(hidden[1]["narrative"], Value::Null);
+    assert_eq!(hidden[1]["facts"]["totals"]["messages"], 2);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn ask_runs_without_a_browser_and_recovers_a_stream_after_real_tag_lookup(pool: PgPool) {
     let (state, app) = setup(&pool).await;
     let tag = Uuid::new_v4();
@@ -496,6 +801,113 @@ async fn proposed_id(pool: &PgPool, job: &Job, call: &str, action: &Value) -> Uu
         .unwrap();
     assert_eq!(receipt["isError"], false, "{receipt}");
     Uuid::parse_str(receipt["details"]["editId"].as_str().unwrap()).unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn asks_can_read_and_confirm_suggestions_and_list_birthdays(pool: PgPool) {
+    let (state, app) = setup(&pool).await;
+    let path = new_chat(&app).await;
+    let ask_job = fixture_edit_job(&pool, &path).await;
+    let person = Uuid::new_v4();
+    let peer = Uuid::new_v4();
+    let model_job = Uuid::new_v4();
+    sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Person'),($2,'person','Peer')")
+        .bind(person).bind(peer).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.profile_dates(id,profile_id,kind,date_precision,month,day) VALUES(gen_random_uuid(),$1,'birthday','month_day',2,3)")
+        .bind(peer).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE crm.ai_settings SET enabled=true")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO crm.ai_jobs(id,kind,subject,model,input_hash,input,source_versions,privacy,status)
+        VALUES($1,'ai.profile',$2,'fake','fixture','{}','{}','{\"policy\":{\"include_private_notes\":false,\"include_messages\":false}}','complete')")
+        .bind(model_job).bind(person.to_string()).execute(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO crm.ai_outputs(kind,subject,output,model,input_hash,source_versions,job_id)
+        VALUES('ai.profile',$1,'{}','fake','fixture','{}',$2)",
+    )
+    .bind(person.to_string())
+    .bind(model_job)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO crm.profile_suggestions(profile_id,fingerprint,kind,value,evidence,quote,confidence,input_hash) VALUES
+        ($1,'birthday-fixture','birthday','04-05','[]','Born April 5','high','fixture'),
+        ($1,'company-fixture','company','Old Company','[]','Company name','high','fixture'),
+        ($1,'school-fixture','school','Old School','[]','School name','high','fixture')")
+        .bind(person).execute(&pool).await.unwrap();
+    let actions = [
+        json!({"action":"decide_suggestion","profile_id":person,"fingerprint":"birthday-fixture","decision":"accept"}),
+        json!({"action":"decide_suggestion","profile_id":person,"fingerprint":"company-fixture","decision":"accept","value":"Correct Company"}),
+        json!({"action":"decide_suggestion","profile_id":person,"fingerprint":"school-fixture","decision":"ignore"}),
+    ];
+    let mut proposed = Vec::new();
+    for (index, action) in actions.iter().enumerate() {
+        proposed.push(proposed_id(&pool, &ask_job, &format!("suggestion-{index}"), action).await);
+    }
+    let before: i64 = sqlx::query_scalar("SELECT count(*) FROM crm.profile_suggestion_decisions")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(before, 0);
+    let receipt = request(
+        &app,
+        "owner",
+        "GET",
+        &format!("{path}?after_edit=0"),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        receipt["edits"][1]["preview"]["before"]["原建议"],
+        "Old Company"
+    );
+    assert_eq!(
+        receipt["edits"][1]["preview"]["after"]["新值"],
+        "Correct Company"
+    );
+    let actor = (ask_job.owner_id, ask_job.email.clone());
+    let script = format!(
+        r#"return cli("profile_suggestions",{{profile_id:"{person}",kind:"company",fields:["items.fingerprint","items.value"]}});"#
+    );
+    let (reply, error, _) = lookup::run(&state, actor.clone(), chrono_tz::UTC, script).await;
+    assert!(!error, "{reply}");
+    let read: Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(
+        read["people"][0]["items"],
+        json!([{"fingerprint":"company-fixture","value":"Old Company"}])
+    );
+    for (index, id) in proposed.into_iter().enumerate() {
+        let response = request(
+            &app,
+            "owner",
+            "POST",
+            &format!("{path}/edits/{id}"),
+            json!({"confirm":true}),
+            StatusCode::OK,
+        )
+        .await;
+        assert_eq!(response["status"], "applied", "{response}");
+        assert_eq!(
+            response["result"]["decision"],
+            if index == 2 { "ignored" } else { "accepted" }
+        );
+    }
+    let edited: Value = sqlx::query_scalar("SELECT r.value FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1 AND c.field_key='monica.company'")
+        .bind(person).fetch_one(&pool).await.unwrap();
+    assert_eq!(edited, "Correct Company");
+    let (reply,error,_) = lookup::run(&state,actor,chrono_tz::UTC,r#"
+        const first=cli("birthdays",{limit:1});
+        return {first, second:cli("birthdays",{offset:first.next_offset,limit:1}), april:cli("birthdays",{month:4})};
+    "#.into()).await;
+    assert!(!error, "{reply}");
+    let read: Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(read["first"]["total"], 2);
+    assert_eq!(read["first"]["rows"][0]["profile_id"], json!(peer));
+    assert_eq!(read["second"]["rows"][0]["profile_id"], json!(person));
+    assert_eq!(read["second"]["rows"][0]["year"], Value::Null);
+    assert_eq!(read["april"]["rows"][0]["precision"], "month_day");
 }
 
 #[sqlx::test(migrations = "../../migrations")]

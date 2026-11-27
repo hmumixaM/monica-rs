@@ -11,6 +11,14 @@ test('real Rust login, create profile, directory search and deep link',async({pa
  await page.goto('/profiles');await page.getByRole('searchbox',{name:'筛选联系人'}).fill('ceshi');await expect(page.getByText('Rust 测试联系人',{exact:true}).first()).toBeVisible();await page.getByText('Rust 测试联系人',{exact:true}).first().click();await expect(page).toHaveURL(profileUrl);
  await page.screenshot({path:'../../.local-validation/frontend-real-profile.png',fullPage:true});
  await page.goto('/settings');await page.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'AI 与 MCP',exact:true}).click();await expect(page.getByRole('heading',{name:'模型设置',exact:true})).toBeVisible();
+ await page.getByLabel('Exa API Key').fill('synthetic-browser-exa-key');
+ await page.getByRole('button',{name:'保存 Exa 密钥',exact:true}).click();
+ await expect(page.getByText('Exa 密钥已保存。',{exact:true})).toBeVisible();
+ await expect(page.getByLabel('Exa API Key')).toHaveValue('');
+ await page.reload();
+ await expect(page.getByRole('button',{name:'删除 Exa 密钥',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'删除 Exa 密钥',exact:true}).click();
+ await expect(page.getByText('Exa 密钥已删除。',{exact:true})).toBeVisible();
  await page.getByLabel('服务地址',{exact:true}).fill('http://127.0.0.1:1/v1');
  await page.getByLabel(/^默认模型/).fill('synthetic-browser-model');
  await page.getByLabel(/^API Key/).fill('synthetic-browser-model-key');

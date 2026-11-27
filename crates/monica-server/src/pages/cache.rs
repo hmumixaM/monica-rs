@@ -55,6 +55,7 @@ fn dependencies(path: &str) -> (&'static [&'static str], bool) {
         ),
         "/api/v1/home" => (&["profile", "calendar", "weekly-statistics"], true),
         "/api/v1/home/dates" => (&["profile", "calendar", "media"], true),
+        "/api/v1/dates/birthdays" => (&["profile", "calendar"], true),
         "/api/v1/insights/orbit" => (
             &[
                 "profile",

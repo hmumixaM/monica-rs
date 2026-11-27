@@ -2,6 +2,7 @@
 //! can apply the saved payload, and the receipt commits with the actual edit.
 use super::{Result, invalid, missing};
 use crate::{
+    ai::{Decision as SuggestionInput, decide_suggestion_locked, field_key, pending_suggestion},
     auth::{ApiError, AppState, session_user},
     profiles::{self, activities, dates, details, relationships},
 };
@@ -13,7 +14,7 @@ use axum::{
 use chrono::{DateTime, Datelike, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::collections::BTreeSet;
 use uuid::Uuid;
 
@@ -56,6 +57,20 @@ enum Action {
         relationship: String,
         note: Option<String>,
     },
+    DecideSuggestion {
+        profile_id: Uuid,
+        fingerprint: String,
+        decision: SuggestionDecision,
+        value: Option<String>,
+        suggestion_date: Option<chrono::NaiveDate>,
+    },
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum SuggestionDecision {
+    Accept,
+    Ignore,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -124,9 +139,9 @@ impl ProfileField {
 
 pub(super) fn tool() -> Value {
     json!({"type":"function","function":{"name":NAME,
-        "description":"仅当用户明确要求修改 Monica 时，为真实确认界面生成一项待确认的编辑。它只生成预览。add_record 需要 profile_ids、record_type、title，可选 body；活动和通话须提供 occurred_at，普通笔记省略则使用提案创建时间；add_tag 和 create_tag 需要 tag 和 profile_ids（仅创建标签时可为空）；set_profile_field 需要 profile_id、field、value；add_date 需要 profile_id 及 date 对象（kind、precision 和已知的年月日，可选 label）；add_relationship 需要 profile_id、related_profile_id、relationship，可选 note。所有人物用查询或用户选中的真实 UUID，单次最多 50 人。",
+        "description":"仅当用户明确要求修改 Monica 时生成待确认预览。add_record 需要 profile_ids、record_type、title，可选 body；活动和通话须提供 occurred_at；add_tag 和 create_tag 需要 tag 和 profile_ids（只创建标签时可为空）；set_profile_field 需要 profile_id、field、value；add_date 需要 profile_id 和 date；add_relationship 需要 profile_id、related_profile_id、relationship，可选 note。decide_suggestion 需要从 profile_suggestions 读出的 profile_id、fingerprint，及 decision=accept 或 ignore；修改后接受时提供 value，会面日期用 suggestion_date。所有人物使用真实 UUID。",
         "parameters":{"type":"object","required":["action"],"additionalProperties":false,"properties":{
-            "action":{"type":"string","enum":["add_record","add_tag","create_tag","set_profile_field","add_date","add_relationship"]},
+            "action":{"type":"string","enum":["add_record","add_tag","create_tag","set_profile_field","add_date","add_relationship","decide_suggestion"]},
             "profile_id":{"type":"string"}, "related_profile_id":{"type":"string"},
             "profile_ids":{"type":"array","items":{"type":"string"},"maxItems":MAX_PEOPLE},
             "record_type":{"type":"string","enum":["note","activity","call"]},
@@ -141,7 +156,10 @@ pub(super) fn tool() -> Value {
                 "year":{"type":"integer"}, "month":{"type":"integer"}, "day":{"type":"integer"}, "label":{"type":"string"}
             }},
             "relationship":{"type":"string","description":"用户明确给出的关系，从 profile_id 指向 related_profile_id"},
-            "note":{"type":"string"}
+            "note":{"type":"string"},
+            "fingerprint":{"type":"string","description":"待处理资料建议的标识"},
+            "decision":{"type":"string","enum":["accept","ignore"]},
+            "suggestion_date":{"type":"string","format":"date","description":"修改会面建议日期时使用"}
         }}
     }})
 }
@@ -220,6 +238,21 @@ impl Action {
                     return Err(invalid("关系需要关联两个不同的人。"));
                 }
             }
+            Self::DecideSuggestion {
+                fingerprint,
+                decision,
+                value,
+                suggestion_date,
+                ..
+            } => {
+                text(fingerprint, 128)?;
+                optional_text(value, 2000)?;
+                if matches!(decision, SuggestionDecision::Ignore)
+                    && (value.is_some() || suggestion_date.is_some())
+                {
+                    return Err(invalid("拒绝建议无需提供修改内容。"));
+                }
+            }
         }
         let count = action.people().len();
         if count > MAX_PEOPLE || (count == 0 && !matches!(action, Self::CreateTag { .. })) {
@@ -233,7 +266,9 @@ impl Action {
             Self::AddRecord { profile_ids, .. }
             | Self::AddTag { profile_ids, .. }
             | Self::CreateTag { profile_ids, .. } => profile_ids.clone(),
-            Self::SetProfileField { profile_id, .. } | Self::AddDate { profile_id, .. } => {
+            Self::SetProfileField { profile_id, .. }
+            | Self::AddDate { profile_id, .. }
+            | Self::DecideSuggestion { profile_id, .. } => {
                 vec![*profile_id]
             }
             Self::AddRelationship {
@@ -468,6 +503,51 @@ async fn preview(tx: &mut Transaction<'_, Postgres>, action: &Action, lock: bool
                 json!({"已有此关系":exists}),
                 json!({"人物":name(profile_id),"相关人物":name(related_profile_id),"关系":relationship,"备注":note}),
             )
+        }
+        Action::DecideSuggestion {
+            profile_id,
+            fingerprint,
+            decision,
+            value,
+            suggestion_date,
+        } => {
+            let item = pending_suggestion(tx, *profile_id, fingerprint, lock).await?;
+            let kind: String = item.get("kind");
+            let original: String = item.get("value");
+            let original_date: Option<chrono::NaiveDate> = item.get("date");
+            let quote: String = item.get("quote");
+            if suggestion_date.is_some() && kind != "meetup" {
+                return Err(invalid(
+                    "仅会面建议使用 suggestion_date。生日请通过 value 提供。",
+                ));
+            }
+            let current: Option<Value> = match kind.as_str() {
+                "birthday" => sqlx::query_scalar("SELECT to_jsonb(d) FROM crm.profile_dates d WHERE profile_id=$1 AND kind='birthday'")
+                    .bind(profile_id).fetch_optional(&mut **tx).await?,
+                "meetup" => None,
+                _ => sqlx::query_scalar("SELECT to_jsonb(revision_id) FROM crm.field_current WHERE profile_id=$1 AND field_key=$2")
+                    .bind(profile_id).bind(field_key(&kind)).fetch_optional(&mut **tx).await?,
+            };
+            state = json!({"input_hash":item.get::<String,_>("input_hash"),"current":current});
+            let before = json!({"原建议":original,"日期":original_date,"来源摘录":quote});
+            match decision {
+                SuggestionDecision::Ignore => {
+                    ("拒绝资料建议", before, json!({"操作":"忽略此建议"}))
+                }
+                SuggestionDecision::Accept => {
+                    let title = if value.is_some() || suggestion_date.is_some() {
+                        "修改后接受资料建议"
+                    } else {
+                        "接受资料建议"
+                    };
+                    (
+                        title,
+                        before,
+                        json!({"类型":kind,"新值":value.as_deref().unwrap_or(&original),
+                        "日期":suggestion_date.or(original_date)}),
+                    )
+                }
+            }
         }
     };
     Ok(json!({"title":title,"people":people,"before":before,"after":after,"state":state}))
@@ -782,6 +862,34 @@ async fn apply(
             )
             .await?;
             Ok(json!({"link":format!("/profiles/{profile_id}")}))
+        }
+        Action::DecideSuggestion {
+            profile_id,
+            fingerprint,
+            decision,
+            value,
+            suggestion_date,
+        } => {
+            let action = match decision {
+                SuggestionDecision::Accept => "accept",
+                SuggestionDecision::Ignore => "ignore",
+            };
+            let result = decide_suggestion_locked(
+                tx,
+                owner,
+                profile_id,
+                &fingerprint,
+                SuggestionInput {
+                    action: action.into(),
+                    value,
+                    date: suggestion_date.map(|date| date.to_string()),
+                },
+            )
+            .await?;
+            Ok(
+                json!({"link":format!("/profiles/{profile_id}"),"decision":result["decision"],
+                "message":if action=="accept" {"已接受并应用资料建议。"} else {"已拒绝资料建议。"}}),
+            )
         }
     }
 }

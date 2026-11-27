@@ -12,6 +12,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/v1/home", get(home))
         .route("/api/v1/home/dates", get(home_dates))
+        .route("/api/v1/dates/birthdays", get(birthdays))
         .route("/api/v1/insights", get(insights))
         .route("/api/v1/insights/calendar", get(calendar))
         .route("/api/v1/insights/calendar/day", get(day))
@@ -39,6 +40,56 @@ async fn home_dates(State(s): State<AppState>) -> Result<Json<Value>> {
     let dates = upcoming_dates(&mut tx).await?;
     tx.commit().await?;
     Ok(Json(json!({"upcoming_dates":dates})))
+}
+
+#[derive(Deserialize)]
+struct BirthdayPage {
+    month: Option<i32>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+async fn birthdays(
+    State(s): State<AppState>,
+    Query(q): Query<BirthdayPage>,
+) -> Result<Json<Value>> {
+    if q.month.is_some_and(|month| !(1..=12).contains(&month)) {
+        return Err(ApiError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid birthday month",
+        ));
+    }
+    let mut tx = snapshot(&s).await?;
+    let limit = q.limit.unwrap_or(50).clamp(1, 100);
+    let offset = q.offset.unwrap_or(0).max(0);
+    let rows: Vec<Value> = sqlx::query_scalar(
+        r#"SELECT jsonb_build_object(
+        'profile_id',p.id,'name',p.display_name,'year',d.value->'year','month',d.month,'day',d.day,
+        'precision',d.value->'precision','next',d.value->'next','days_until',d.value->'days_until',
+        'link','/profiles/'||p.id::text)
+        FROM crm.profile_dates_presented d JOIN crm.profiles p ON p.id=d.profile_id
+        WHERE d.kind='birthday' AND p.archived_at IS NULL AND p.profile_type='person'
+        AND ($1::int IS NULL OR d.month=$1)
+        ORDER BY d.month NULLS LAST,d.day NULLS LAST,p.display_name,p.id LIMIT $2 OFFSET $3"#,
+    )
+    .bind(q.month)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&mut *tx)
+    .await?;
+    let total: i64 = sqlx::query_scalar(
+        r#"SELECT count(*) FROM crm.profile_dates d
+        JOIN crm.profiles p ON p.id=d.profile_id WHERE d.kind='birthday'
+        AND p.archived_at IS NULL AND p.profile_type='person' AND ($1::int IS NULL OR d.month=$1)"#,
+    )
+    .bind(q.month)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let end = offset.saturating_add(limit);
+    Ok(Json(
+        json!({"rows":rows,"total":total,"next_offset":(end<total).then_some(end)}),
+    ))
 }
 #[derive(Deserialize)]
 struct Insight {
