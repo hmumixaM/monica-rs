@@ -451,9 +451,7 @@ pub(crate) async fn decide_suggestion_locked(
     let applied = if body.action == "ignore" {
         Value::Null
     } else {
-        if value.is_empty() || value.chars().count() > 2000 {
-            return Err(invalid("empty or oversized value"));
-        }
+        validate_suggestion_value(&value)?;
         if kind == "birthday" {
             let (year, month, day) = ai::birthday_at(&value, today)
                 .ok_or(invalid("birthday must be MM-DD or YYYY-MM-DD"))?;
@@ -478,10 +476,7 @@ pub(crate) async fn decide_suggestion_locked(
                 })
                 .and_then(|d| d.parse::<NaiveDate>().ok())
                 .ok_or(invalid("meetup date required"))?;
-            if day < today - chrono::Duration::days(120) || day > today + chrono::Duration::days(60)
-            {
-                return Err(invalid("meetup date outside suggestion window"));
-            }
+            validate_suggestion_meetup(day, today)?;
             let aid = Uuid::new_v4();
             let title = value.chars().take(255).collect::<String>();
             let quote: String = item.get("quote");
@@ -499,7 +494,7 @@ pub(crate) async fn decide_suggestion_locked(
                 .bind(id)
                 .execute(&mut **tx)
                 .await?;
-            json!({"activity_id":aid,"date":day,"title":value})
+            json!({"activity_id":aid,"date":day,"title":title})
         } else {
             let field_key = field_key(&kind);
             // Same transaction as the decision. A direct manual edit still wins
@@ -533,6 +528,20 @@ pub(crate) async fn decide_suggestion_locked(
     sqlx::query("INSERT INTO crm.audit_events(user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'profile',$3,$4)").bind(actor).bind(format!("profile.suggestion.{decision}")).bind(id).bind(json!({"kind":kind,"fingerprint":key})).execute(&mut **tx).await?;
     Ok(json!({"profile_id":id,"fingerprint":key,"decision":decision,"applied":applied}))
 }
+pub(crate) fn validate_suggestion_value(value: &str) -> Result<()> {
+    if value.is_empty() || value.chars().count() > 2000 {
+        return Err(invalid("empty or oversized value"));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_suggestion_meetup(day: NaiveDate, today: NaiveDate) -> Result<()> {
+    if day < today - chrono::Duration::days(120) || day > today + chrono::Duration::days(60) {
+        return Err(invalid("meetup date outside suggestion window"));
+    }
+    Ok(())
+}
+
 async fn undo(
     State(s): State<AppState>,
     h: HeaderMap,

@@ -1,5 +1,5 @@
 use super::{Lookup, arg, array, cut, id, integer, next, optional_id, s};
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use chrono::NaiveDate;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -56,6 +56,50 @@ impl PlaceNear {
 }
 
 impl Lookup {
+    pub(super) async fn image_notes(&self, args: &Value) -> Result<Value> {
+        let note = |item: &Value, id: &Value| {
+            json!({
+                "image_id":id,"summary":cut(&item["summary"],500),"description":cut(&item["description"],600),
+                "text":cut(&item["text"],800),"link":id.as_str().map(|id|format!("/api/v1/media/{id}")),
+            })
+        };
+        match (
+            optional_id(args, "post_id")?,
+            optional_id(args, "image_id")?,
+        ) {
+            (Some(id), None) => {
+                let row = self.get(&format!("/api/v1/timeline/{id}"), &[]).await?;
+                let reading = &row["media_reading"];
+                let notes: Vec<_> = array(&reading["items"])
+                    .iter()
+                    .filter(|item| {
+                        ["summary", "description", "text"]
+                            .iter()
+                            .any(|key| !s(&item[*key]).is_empty())
+                    })
+                    .take(10)
+                    .map(|item| note(item, &item["media_id"]))
+                    .collect();
+                Ok(
+                    json!({"notes":notes,"summary":cut(&reading["summary"],600),"link":format!("/timeline?event={id}")}),
+                )
+            }
+            (None, Some(id)) => {
+                let row = self.get(&format!("/api/v1/media/{id}/ocr"), &[]).await?;
+                let notes = if ["summary", "description", "text"]
+                    .iter()
+                    .any(|key| !s(&row[*key]).is_empty())
+                {
+                    vec![note(&row, &json!(id))]
+                } else {
+                    Vec::new()
+                };
+                Ok(json!({"notes":notes,"link":format!("/api/v1/media/{id}")}))
+            }
+            _ => bail!("请提供 post_id 或 image_id，二选一。"),
+        }
+    }
+
     pub(super) async fn birthdays(&self, args: &Value) -> Result<Value> {
         let month = args
             .get("month")

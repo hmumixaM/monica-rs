@@ -2,7 +2,10 @@
 //! can apply the saved payload, and the receipt commits with the actual edit.
 use super::{Result, invalid, missing};
 use crate::{
-    ai::{Decision as SuggestionInput, decide_suggestion_locked, field_key, pending_suggestion},
+    ai::{
+        Decision as SuggestionInput, decide_suggestion_locked, field_key, pending_suggestion,
+        validate_suggestion_meetup, validate_suggestion_value,
+    },
     auth::{ApiError, AppState, session_user},
     profiles::{self, activities, dates, details, relationships},
 };
@@ -525,16 +528,48 @@ async fn preview(tx: &mut Transaction<'_, Postgres>, action: &Action, lock: bool
                 "birthday" => sqlx::query_scalar("SELECT to_jsonb(d) FROM crm.profile_dates d WHERE profile_id=$1 AND kind='birthday'")
                     .bind(profile_id).fetch_optional(&mut **tx).await?,
                 "meetup" => None,
-                _ => sqlx::query_scalar("SELECT to_jsonb(revision_id) FROM crm.field_current WHERE profile_id=$1 AND field_key=$2")
+                _ => sqlx::query_scalar("SELECT jsonb_build_object('value',r.value,'revision_id',c.revision_id)
+                    FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1 AND c.field_key=$2")
                     .bind(profile_id).bind(field_key(&kind)).fetch_optional(&mut **tx).await?,
             };
             state = json!({"input_hash":item.get::<String,_>("input_hash"),"current":current});
-            let before = json!({"原建议":original,"日期":original_date,"来源摘录":quote});
+            let current_value = current.as_ref().map(|v| {
+                if kind == "birthday" {
+                    json!({"年":v["year"],"月":v["month"],"日":v["day"]})
+                } else {
+                    v["value"].clone()
+                }
+            });
+            let before = json!({"原建议":original,"日期":original_date,"来源摘录":quote,"联系人当前值":current_value});
             match decision {
                 SuggestionDecision::Ignore => {
                     ("拒绝资料建议", before, json!({"操作":"忽略此建议"}))
                 }
                 SuggestionDecision::Accept => {
+                    let mut applied = value.as_deref().unwrap_or(&original).trim().to_owned();
+                    validate_suggestion_value(&applied)?;
+                    let date = suggestion_date.or(original_date);
+                    if matches!(kind.as_str(), "birthday" | "meetup") {
+                        let today: chrono::NaiveDate = sqlx::query_scalar(
+                            "SELECT (now() AT TIME ZONE 'America/Chicago')::date",
+                        )
+                        .fetch_one(&mut **tx)
+                        .await?;
+                        if kind == "birthday" {
+                            if current.is_some() {
+                                return Err(invalid("联系人已有生日，请在联系人页修改。"));
+                            }
+                            if monica_core::ai::birthday_at(&applied, today).is_none() {
+                                return Err(invalid("生日格式须为 MM-DD 或 YYYY-MM-DD。"));
+                            }
+                        } else {
+                            validate_suggestion_meetup(
+                                date.ok_or_else(|| invalid("请提供会面日期。"))?,
+                                today,
+                            )?;
+                            applied = applied.chars().take(255).collect();
+                        }
+                    }
                     let title = if value.is_some() || suggestion_date.is_some() {
                         "修改后接受资料建议"
                     } else {
@@ -543,8 +578,7 @@ async fn preview(tx: &mut Transaction<'_, Postgres>, action: &Action, lock: bool
                     (
                         title,
                         before,
-                        json!({"类型":kind,"新值":value.as_deref().unwrap_or(&original),
-                        "日期":suggestion_date.or(original_date)}),
+                        json!({"类型":kind,"新值":applied,"日期":date}),
                     )
                 }
             }

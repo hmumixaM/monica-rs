@@ -60,7 +60,9 @@ pub(super) async fn inspect(s: &AppState, args: &Value) -> Result<Value> {
     let model: String = sqlx::query_scalar("SELECT o.model FROM crm.image_ocr_settings o CROSS JOIN crm.ai_settings a WHERE o.id AND a.id AND a.enabled AND a.execution_enabled AND a.qa_enabled")
         .fetch_optional(&s.pool).await?.context("请先启用 Ask Monica。")?;
     let assets: HashMap<Uuid, String> = sqlx::query_as(
-        "SELECT id,sha256 FROM crm.media_assets WHERE id=ANY($1) AND media_type LIKE 'image/%'",
+        "SELECT m.id,m.sha256 FROM crm.media_assets m CROSS JOIN crm.image_ocr_settings o
+         WHERE o.id AND m.id=ANY($1) AND m.media_type LIKE 'image/%'
+         AND crm.ai_ocr_media_allowed(m.id,o.include_chat)",
     )
     .bind(&ids)
     .fetch_all(&s.pool)
@@ -96,7 +98,9 @@ pub(super) async fn inspect(s: &AppState, args: &Value) -> Result<Value> {
                     images.push((id, url));
                 }
                 Some(_) => skipped.push(json!({"image_id":id,"reason":"压缩后仍超限"})),
-                None => skipped.push(json!({"image_id":id,"reason":"图片不可用或无法解码"})),
+                None => {
+                    skipped.push(json!({"image_id":id,"reason":"图片未获许可、不可用或无法解码"}))
+                }
             }
         }
         (images, skipped)
@@ -116,6 +120,26 @@ pub(super) async fn inspect(s: &AppState, args: &Value) -> Result<Value> {
         .context("视觉模型尚未配置。")?;
     let mut answer = None;
     while !images.is_empty() {
+        let ids: Vec<_> = images.iter().map(|(id, _)| *id).collect();
+        let allowed: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT media.id FROM unnest($1::uuid[]) AS media(id) WHERE EXISTS(
+            SELECT 1 FROM crm.image_ocr_settings o CROSS JOIN crm.ai_settings a
+            WHERE o.id AND a.id AND a.enabled AND a.execution_enabled AND a.qa_enabled
+            AND crm.ai_ocr_media_allowed(media.id,o.include_chat))",
+        )
+        .bind(ids)
+        .fetch_all(&s.pool)
+        .await?;
+        images.retain(|(id, _)| {
+            let permitted = allowed.contains(id);
+            if !permitted {
+                skipped.push(json!({"image_id":id,"reason":"图片授权或来源已变更"}));
+            }
+            permitted
+        });
+        if images.is_empty() {
+            break;
+        }
         let mut content = vec![json!({"type":"text","text":question})];
         for (id, url) in &images {
             content.push(json!({"type":"text","text":format!("图片 {id}")}));

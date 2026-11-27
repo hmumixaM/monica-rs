@@ -53,9 +53,7 @@ impl Filter {
 }
 
 impl Radius {
-    fn distance_to(&self, point: &Value) -> Option<f64> {
-        let latitude = point["latitude"].as_f64()?;
-        let longitude = point["longitude"].as_f64()?;
+    fn distance_to(&self, latitude: f64, longitude: f64) -> Option<f64> {
         let delta_latitude = (latitude - self.latitude).to_radians();
         let delta_longitude = (longitude - self.longitude).to_radians();
         let haversine = (delta_latitude / 2.0).sin().powi(2)
@@ -65,6 +63,11 @@ impl Radius {
         let distance_km = 2.0 * 6371.0088 * haversine.clamp(0.0, 1.0).sqrt().asin();
         (distance_km <= self.radius_km).then_some(distance_km)
     }
+}
+
+fn matches_point(point: &Coordinates, query: &str, radius: Option<Radius>) -> bool {
+    (query.is_empty() || point.label.to_lowercase().contains(query))
+        && radius.is_none_or(|r| r.distance_to(point.latitude, point.longitude).is_some())
 }
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -105,7 +108,7 @@ pub(super) async fn build(
     q: &Filter,
 ) -> Result<Value> {
     if let Some(id) = id {
-        return profile_summary(tx, id).await;
+        return profile_summary(tx, id, q).await;
     }
     let kind = q.kind.as_deref().unwrap_or("all");
     let mut entries = Vec::new();
@@ -244,6 +247,9 @@ pub(super) async fn build(
             }
         }
     }
+    let radius = q.radius()?;
+    let query = q.query.as_deref().unwrap_or_default().to_lowercase();
+    entries.retain(|entry| matches_point(&entry.point, &query, radius));
     entries.sort_by(|a, b| b.at.cmp(&a.at).then_with(|| b.url.cmp(&a.url)));
     let mut points = BTreeMap::<(i64, i64, String), Point>::new();
     let mut people = BTreeSet::new();
@@ -350,10 +356,9 @@ async fn profile(
 }
 
 fn map_page(value: Value, q: &Filter, radius: Option<Radius>) -> Value {
-    if q.limit.is_none() && radius.is_none() {
+    if q.query.is_none() && q.limit.is_none() && q.offset.is_none() && radius.is_none() {
         return value;
     }
-    let query = q.query.as_deref().unwrap_or_default().to_lowercase();
     let offset = q.offset.unwrap_or_default();
     let limit = q.limit.unwrap_or(20).clamp(1, 50);
     let end = offset.saturating_add(limit);
@@ -361,16 +366,12 @@ fn map_page(value: Value, q: &Filter, radius: Option<Radius>) -> Value {
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|point| {
-            point["label"]
-                .as_str()
-                .unwrap_or_default()
-                .to_lowercase()
-                .contains(&query)
-        })
         .filter_map(|point| {
             let distance = match radius {
-                Some(radius) => Some(radius.distance_to(point)?),
+                Some(radius) => Some(
+                    radius
+                        .distance_to(point["latitude"].as_f64()?, point["longitude"].as_f64()?)?,
+                ),
                 None => None,
             };
             Some((point, distance))
@@ -402,7 +403,11 @@ fn map_page(value: Value, q: &Filter, radius: Option<Radius>) -> Value {
 
 // A profile's map has the pinned coordinate-only contract. A city-center lookup
 // belongs to the global atlas; it must not become a fictitious visited place.
-async fn profile_summary(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result<Value> {
+async fn profile_summary(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    q: &Filter,
+) -> Result<Value> {
     let kind: String = sqlx::query_scalar("SELECT profile_type FROM crm.profiles WHERE id=$1")
         .bind(id)
         .fetch_one(&mut **tx)
@@ -444,10 +449,15 @@ async fn profile_summary(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result
         }
     }
     let mut points = BTreeMap::<(String, i64, i64), Value>::new();
+    let radius = q.radius()?;
+    let query = q.query.as_deref().unwrap_or_default().to_lowercase();
     for row in rows {
         let Some(point) = coordinates(&row["location"], row["coordinate_format"].as_str()) else {
             continue;
         };
+        if !matches_point(&point, &query, radius) {
+            continue;
+        }
         let key = (
             point.label.clone(),
             (point.latitude * 100000.).round_ties_even() as i64,

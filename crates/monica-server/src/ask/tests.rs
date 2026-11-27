@@ -158,7 +158,7 @@ async fn exa_settings_only_return_status_and_store_encrypted_key(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn ask_vision_compresses_images_and_retries_without_rejected_input(pool: PgPool) {
+async fn ask_worker_executes_compressed_vision_and_rejects_non_user_search_terms(pool: PgPool) {
     use base64::Engine;
     let (mut state, app) = setup(&pool).await;
     let media_root = tempfile::tempdir().unwrap();
@@ -166,8 +166,25 @@ async fn ask_vision_compresses_images_and_retries_without_rejected_input(pool: P
     let png = base64::engine::general_purpose::STANDARD
         .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC")
         .unwrap();
+    let person = Uuid::new_v4();
+    let post_id = Uuid::new_v4();
+    let conversation = Uuid::new_v4();
+    let message = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Fixture')",
+    )
+    .bind(person)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,profile_id,event_type,external_id,content,content_hash,version) VALUES($1,'wechat',$1,$2,'post','vision-fixture','{}','vision-fixture',1)")
+        .bind(post_id).bind(person).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.conversations(id,provider,account,external_id,conversation_type,profile_id) VALUES($1,'wechat','self','peer','direct',$2)")
+        .bind(conversation).bind(person).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,occurred_at,body) VALUES($1,$2,'wechat','self','vision-fixture','peer',now(),'fixture')")
+        .bind(message).bind(conversation).execute(&pool).await.unwrap();
     let mut ids = Vec::new();
-    for index in [0, 1] {
+    for index in [0, 1, 2] {
         let id = Uuid::new_v4();
         let mut bytes = png.clone();
         bytes.push(index);
@@ -178,8 +195,42 @@ async fn ask_vision_compresses_images_and_retries_without_rejected_input(pool: P
         std::fs::write(file, &bytes).unwrap();
         sqlx::query("INSERT INTO crm.media_assets(id,sha256,media_type,byte_length,object_path,source_type) VALUES($1,$2,'image/png',$3,$4,'manual')")
             .bind(id).bind(hash).bind(bytes.len() as i64).bind(path).execute(&pool).await.unwrap();
+        let (entity, kind, role) = if index == 2 {
+            (message, "message_event", "attachment".to_owned())
+        } else {
+            (post_id, "social_post", format!("media-{}", index + 1))
+        };
+        sqlx::query(
+            "INSERT INTO crm.media_links(media_id,entity_type,entity_id,role) VALUES($1,$2,$3,$4)",
+        )
+        .bind(id)
+        .bind(kind)
+        .bind(entity)
+        .bind(role)
+        .execute(&pool)
+        .await
+        .unwrap();
         ids.push(id);
     }
+    sqlx::query("INSERT INTO crm.image_ocr_readings(media_id,status,text) VALUES($1,'complete','Saved photo text')")
+        .bind(ids[0]).execute(&pool).await.unwrap();
+    let actor: (Uuid, String) =
+        sqlx::query_as("SELECT id,email FROM crm.app_users WHERE email='owner@example.invalid'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let (notes, error, _) = lookup::run(
+        &state,
+        actor,
+        chrono_tz::UTC,
+        format!(r#"return cli("image_notes",{{post_id:"{post_id}"}});"#),
+    )
+    .await;
+    assert!(!error, "{notes}");
+    assert_eq!(
+        serde_json::from_str::<Value>(&notes).unwrap()["notes"][0]["text"],
+        "Saved photo text"
+    );
     let attempts = Arc::new(AtomicUsize::new(0));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base_url = format!("http://{}/v1", listener.local_addr().unwrap());
@@ -187,9 +238,34 @@ async fn ask_vision_compresses_images_and_retries_without_rejected_input(pool: P
         "/v1/chat/completions",
         post({
             let attempts = attempts.clone();
+            let ids = ids.clone();
             move |Json(body): Json<Value>| {
-                let attempt = attempts.fetch_add(1, Ordering::SeqCst);
+                let attempts = attempts.clone();
+                let ids = ids.clone();
                 async move {
+                    if body["model"] == "ask-fixture" {
+                        let messages = body["messages"].as_array().unwrap();
+                        if !messages.iter().any(|m|m["role"]=="tool") {
+                            let calls = json!([
+                                {"index":0,"id":"vision-fixture","function":{"name":"inspect_images","arguments":json!({"image_ids":ids,"question":"How bright is the pixel?"}).to_string()}},
+                                {"index":1,"id":"private-search","function":{"name":"search_public_web","arguments":json!({"query":"private chat token"}).to_string()}}
+                            ]);
+                            return events(&[(json!({"tool_calls":calls}),json!("tool_calls"))],true);
+                        }
+                        let tool = |id| {
+                            let value = messages.iter().find(|m|m["tool_call_id"]==id).unwrap();
+                            serde_json::from_str::<Value>(value["content"].as_str().unwrap()).unwrap()
+                        };
+                        let observed = tool("vision-fixture");
+                        assert_eq!(observed["observation"], "A bright pixel.", "{observed}");
+                        assert_eq!(observed["inspected"].as_array().unwrap().len(),1);
+                        assert_eq!(observed["skipped"][0]["image_id"],json!(ids[2]));
+                        assert_eq!(observed["skipped"][1]["reason"],"视觉模型输入超限");
+                        assert!(!observed.to_string().contains("data:image"));
+                        assert!(tool("private-search")["error"].as_str().unwrap().contains("本轮提问"));
+                        return events(&[(json!({"content":"Done"}),json!("stop"))],true);
+                    }
+                    let attempt = attempts.fetch_add(1, Ordering::SeqCst);
                     assert_eq!(body["model"], "vision-fixture");
                     assert_eq!(body["stream"], false);
                     let images: Vec<_> = body["messages"][1]["content"]
@@ -218,24 +294,70 @@ async fn ask_vision_compresses_images_and_retries_without_rejected_input(pool: P
     );
     let upstream = tokio::spawn(async move { axum::serve(listener, fake).await.unwrap() });
     request(&app, "owner", "PATCH", "/api/v1/ai/settings",
-        json!({"enabled":true,"qa_enabled":true,"base_url":base_url,"vision_model":"vision-fixture","api_key":"synthetic-model-key"}), StatusCode::OK).await;
-    let reply = image_lookup::inspect(
-        &state,
-        &json!({"image_ids":ids,"question":"How bright is the pixel?"}),
+        json!({"enabled":true,"qa_enabled":true,"model":"ask-fixture","base_url":base_url,"vision_model":"vision-fixture","api_key":"synthetic-model-key"}), StatusCode::OK).await;
+    request(
+        &app,
+        "owner",
+        "PATCH",
+        "/api/v1/ai/web-search",
+        json!({"api_key":"synthetic-exa-key"}),
+        StatusCode::OK,
     )
+    .await;
+    let path = new_chat(&app).await;
+    let run = Uuid::new_v4();
+    request(
+        &app,
+        "owner",
+        "POST",
+        &format!("{path}/runs"),
+        json!({"request_id":run,"question":"How bright is the pixel?","model":"ask-fixture"}),
+        StatusCode::ACCEPTED,
+    )
+    .await;
+    let worker = crate::ask::launch(state, pool.clone());
+    timeout(Duration::from_secs(20), async {
+        loop {
+            let status: String = sqlx::query_scalar("SELECT status FROM crm.ask_runs WHERE id=$1")
+                .bind(run)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            if status == "done" {
+                break;
+            }
+            assert_ne!(status, "failed", "Ask did not complete");
+            sleep(Duration::from_millis(40)).await;
+        }
+    })
     .await
     .unwrap();
+    worker.abort();
     upstream.abort();
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
-    assert_eq!(reply["observation"], "A bright pixel.", "{reply}");
-    assert_eq!(reply["inspected"].as_array().unwrap().len(), 1);
-    assert_eq!(reply["skipped"][0]["reason"], "视觉模型输入超限");
-    assert!(!reply.to_string().contains("data:image"));
+    let mut checkpoint: sqlx::types::Json<Checkpoint> =
+        sqlx::query_scalar("SELECT checkpoint FROM crm.ask_runs WHERE id=$1")
+            .bind(run)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        checkpoint
+            .0
+            .reserve_external(image_lookup::NAME, "vision-fixture")
+            .is_err()
+    );
+    assert!(
+        checkpoint
+            .0
+            .reserve_external(web_search::NAME, "private-search")
+            .is_err()
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn ask_reads_saved_aggregations_through_the_javascript_tools(pool: PgPool) {
-    let (state, _) = setup(&pool).await;
+    let (state, app) = setup(&pool).await;
     let owner: Uuid =
         sqlx::query_scalar("SELECT id FROM crm.app_users WHERE email='owner@example.invalid'")
             .fetch_one(&pool)
@@ -254,6 +376,21 @@ async fn ask_reads_saved_aggregations_through_the_javascript_tools(pool: PgPool)
         VALUES($1,'wechat',$1,$2,'post','museum','2026-02-25T12:00:00Z','{\"location\":{\"name\":\"Museum\",\"lat\":41,\"lng\":-87}}','fixture',1),
         (gen_random_uuid(),'wechat',gen_random_uuid(),$2,'post','mall','2026-02-24T12:00:00Z','{\"location\":{\"name\":\"Mall\",\"lat\":42,\"lng\":-87}}','fixture',1)")
         .bind(post).bind(person).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO crm.timeline_events(id,provider,object_id,profile_id,event_type,external_id,occurred_at,content,content_hash,version) VALUES
+        (gen_random_uuid(),'instagram',gen_random_uuid(),$1,'post','nearby','2026-02-25T12:00:00Z','{\"location\":{\"name\":\"Nearby studio\",\"lat\":35.0001,\"lng\":139}}','fixture',1),
+        (gen_random_uuid(),'instagram',gen_random_uuid(),$1,'post','outside','2026-02-26T12:00:00Z','{\"location\":{\"name\":\"Outside studio\",\"lat\":35.0004,\"lng\":139}}','fixture',1)")
+        .bind(peer).execute(&pool).await.unwrap();
+    let filtered = request(
+        &app,
+        "owner",
+        "GET",
+        "/api/v1/metrics/locations?query=Nearby",
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(filtered["total"], 1);
+    assert_eq!(filtered["points"][0]["label"], "Nearby studio");
     sqlx::query("INSERT INTO crm.conversations(id,provider,account,external_id,conversation_type,profile_id) VALUES($1,'wechat','self','peer','direct',$2)")
         .bind(conversation).bind(person).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,occurred_at,body,message_type,direction) VALUES
@@ -317,6 +454,7 @@ async fn ask_reads_saved_aggregations_through_the_javascript_tools(pool: PgPool)
             combined:cli("places", {{query:"mall",near:{{...near,radius_km:75}}}}),
             ambiguous:cli("places", {{near:{{city:"Springfield, US",radius_km:70}}}}),
             globalTimeline:cli("get_posts", {{provider:"wechat", since:"2026-02-25", fields:["name","profile_id","link"]}}),
+            withinBucket:cli("places", {{near:{{latitude:35,longitude:139,radius_km:0.015}}}}),
             network:cli("relationship_network", {{profile_id,limit:1}}),
             chat:cli("chat_statistics", {{profile_id,from_month:"2026-02",to_month:"2026-02"}})}};
     "#
@@ -367,6 +505,11 @@ async fn ask_reads_saved_aggregations_through_the_javascript_tools(pool: PgPool)
     assert_eq!(result["nearCity"]["points"][0]["label"], "Mall");
     assert_eq!(result["nearCity"]["total"], 1);
     assert_eq!(result["combined"]["total"], 0);
+    assert_eq!(
+        result["withinBucket"]["points"][0]["label"],
+        "Nearby studio"
+    );
+    assert_eq!(result["withinBucket"]["points"][0]["count"], 1);
     assert_eq!(
         result["globalTimeline"]["posts"],
         json!([{"name":"Person","profile_id":person,
@@ -836,6 +979,15 @@ async fn asks_can_read_and_confirm_suggestions_and_list_birthdays(pool: PgPool) 
         ($1,'company-fixture','company','Old Company','[]','Company name','high','fixture'),
         ($1,'school-fixture','school','Old School','[]','School name','high','fixture')")
         .bind(person).execute(&pool).await.unwrap();
+    request(
+        &app,
+        "owner",
+        "PATCH",
+        &format!("/api/v1/profiles/{person}/fields"),
+        json!({"field_key":"monica.company","value":"Existing Company"}),
+        StatusCode::OK,
+    )
+    .await;
     let actions = [
         json!({"action":"decide_suggestion","profile_id":person,"fingerprint":"birthday-fixture","decision":"accept"}),
         json!({"action":"decide_suggestion","profile_id":person,"fingerprint":"company-fixture","decision":"accept","value":"Correct Company"}),
@@ -862,6 +1014,10 @@ async fn asks_can_read_and_confirm_suggestions_and_list_birthdays(pool: PgPool) 
     assert_eq!(
         receipt["edits"][1]["preview"]["before"]["原建议"],
         "Old Company"
+    );
+    assert_eq!(
+        receipt["edits"][1]["preview"]["before"]["联系人当前值"],
+        "Existing Company"
     );
     assert_eq!(
         receipt["edits"][1]["preview"]["after"]["新值"],

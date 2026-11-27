@@ -74,17 +74,14 @@ async fn save(
 pub(crate) fn tool() -> Value {
     json!({"type":"function","function":{
         "name":NAME,
-        "description":"通过 Exa 检索公开网页，主要用于核实好友已公开的职业或主页、最新消息以及地点名称、地址或营业信息。私人往来和本地资料优先用 Monica 查询。只发送所需的公开搜索词，禁止发送私聊、私人笔记、未公开联系方式、住址或 Monica 内部 ID。返回网页链接、日期和摘录；同名人物需核对身份。",
+        "description":"通过 Exa 检索公开网页，主要用于核实好友已公开的职业或主页、最新消息以及地点信息。只提取本轮用户问题中的公开关键词，用空格分隔。私人往来和本地资料用 Monica 查询。返回网页链接、日期和摘录；同名人物需核对身份。",
         "parameters":{"type":"object","properties":{"query":{"type":"string","maxLength":500,"description":"只包含核实公开信息所需的关键词"}},"required":["query"],"additionalProperties":false}
     }})
 }
 
-pub(crate) async fn search(s: &AppState, args: &Value) -> anyhow::Result<Value> {
+pub(crate) async fn search(s: &AppState, args: &Value, question: &str) -> anyhow::Result<Value> {
     let query = args["query"].as_str().map(str::trim).unwrap_or_default();
-    ensure!(
-        !query.is_empty() && query.chars().count() <= 500,
-        "公开搜索词须为 1 至 500 个字符。"
-    );
+    validate_query(query, question)?;
     let encrypted: Option<String> = sqlx::query_scalar("SELECT exa_credential_ciphertext FROM crm.ai_settings WHERE id AND enabled AND execution_enabled AND qa_enabled")
         .fetch_optional(&s.pool).await?.flatten();
     let credentials = s
@@ -95,6 +92,21 @@ pub(crate) async fn search(s: &AppState, args: &Value) -> anyhow::Result<Value> 
         .as_str()
         .context("Exa 密钥不可用。")?;
     search_at(client(), EXA_SEARCH, key, query).await
+}
+
+fn validate_query(query: &str, question: &str) -> anyhow::Result<()> {
+    ensure!(
+        !query.is_empty() && query.chars().count() <= 500,
+        "公开搜索词须为 1 至 500 个字符。"
+    );
+    let question = question.to_lowercase();
+    ensure!(
+        query
+            .split_whitespace()
+            .all(|term| question.contains(&term.to_lowercase())),
+        "公开搜索只能使用本轮提问中出现的关键词。请使用用户明确提供的公开词。"
+    );
+    Ok(())
 }
 
 fn client() -> &'static reqwest::Client {
@@ -164,6 +176,24 @@ async fn search_at(
 mod tests {
     use super::*;
     use axum::routing::post;
+
+    #[test]
+    fn public_query_uses_only_current_question_terms() {
+        assert!(
+            validate_query(
+                "芝加哥艺术博物馆 营业时间",
+                "请查芝加哥艺术博物馆的公开营业时间"
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_query(
+                "芝加哥艺术博物馆 私聊地址",
+                "请查芝加哥艺术博物馆的公开营业时间"
+            )
+            .is_err()
+        );
+    }
 
     #[tokio::test]
     async fn exa_sends_only_search_terms_and_projects_public_sources() {

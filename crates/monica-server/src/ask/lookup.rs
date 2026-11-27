@@ -139,7 +139,14 @@ const COMMANDS: &[CommandSpec] = &[
         parameters: "profile_id?, provider?, since?, before?, media?, cursor?, limit?",
         description: "浏览全局时间线或人物时间线。可按来源（如 wechat、instagram、linkedin、manual）和起止时间筛选，media=ready 仅看有可用媒体的记录。按 next 传回 cursor，保留相同筛选，limit 最大 30。",
         list: Some("posts"),
-        fields: "at provider title name profile_id text images image_ids place likes comments link",
+        fields: "post_id at provider title name profile_id text images image_ids place likes comments link",
+    },
+    CommandSpec {
+        name: "image_notes",
+        parameters: "post_id? 或 image_id?",
+        description: "读取已保存的图像识别文字和描述。动态传 get_posts 返回的 post_id，单张图片传 image_id，二选一。优先使用已保存识别结果，只有确需核实图像细节时才识图。",
+        list: Some("notes"),
+        fields: "image_id summary description text link",
     },
     CommandSpec {
         name: "profile_suggestions",
@@ -576,6 +583,7 @@ impl Lookup {
             "chat_statistics" => self.chat_statistics(args).await,
             "birthdays" => self.birthdays(args).await,
             "profile_suggestions" => self.profile_suggestions(args).await,
+            "image_notes" => self.image_notes(args).await,
             "search_messages" | "read_messages" => self.messages(name, args).await,
             "get_posts" => {
                 let profile = optional_id(args, "profile_id")?
@@ -600,7 +608,7 @@ impl Lookup {
                 Ok(page(&rows, "posts", "next", "cursor", limit, |row| {
                     json!({
                         "at":self.date(&row["occurred_at"],true),"provider":row["provider"],"text":cut(&row["summary"],500),
-                        "profile_id":row["profile_id"],"name":row["profile_name"],"title":row["title"],
+                        "post_id":row["id"],"profile_id":row["profile_id"],"name":row["profile_name"],"title":row["title"],
                         "images":array(&row["media"]).iter().filter_map(|media| media["description"].as_str()).take(4).map(|text| truncate(text,800)).collect::<Vec<_>>(),
                         "image_ids":image_lookup::image_ids(&row["media"]),
                         "place":row["location"].get("name").unwrap_or(&row["location"]["poiName"]),"likes":row["like_count"],"comments":row["comment_count"],
