@@ -13,16 +13,15 @@ use std::{collections::HashMap, time::Duration};
 use uuid::Uuid;
 
 pub(super) const NAME: &str = "inspect_images";
-const MAX_IMAGES: usize = 3;
 const MAX_IMAGE_BYTES: usize = 384 * 1024;
 const MAX_TOTAL_BYTES: usize = 768 * 1024;
 
 pub(super) fn tool() -> Value {
     json!({"type":"function","function":{
         "name":NAME,
-        "description":"仅在问题必须核实图像细节，且已有配文、OCR 或摘要不足时，读取最多三张 Monica 已保存图片。使用查询结果中的 image_ids。图片会先压缩，超限或不可读取的图片会跳过。返回视觉模型对指定问题的观察。",
+        "description":"仅在问题必须核实图像细节，且已有配文、OCR 或摘要不足时，读取 Monica 已保存图片。使用查询结果中的 image_ids。图片会先压缩，超限或不可读取的图片会跳过。返回视觉模型对指定问题的观察。",
         "parameters":{"type":"object","properties":{
-            "image_ids":{"type":"array","minItems":1,"maxItems":MAX_IMAGES,"uniqueItems":true,"items":{"type":"string","format":"uuid"}},
+            "image_ids":{"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","format":"uuid"}},
             "question":{"type":"string","maxLength":1000,"description":"需要根据图像核实的具体问题"}
         },"required":["image_ids","question"],"additionalProperties":false}
     }})
@@ -48,9 +47,8 @@ pub(super) async fn inspect(s: &AppState, args: &Value) -> Result<Value> {
     let ids: Vec<Uuid> = serde_json::from_value(args["image_ids"].clone())
         .context("请提供已读取记录中的图片 UUID。")?;
     ensure!(
-        (1..=MAX_IMAGES).contains(&ids.len())
-            && ids.iter().enumerate().all(|(i, id)| !ids[..i].contains(id)),
-        "每次可读取 1 至 3 张不同的图片。"
+        !ids.is_empty() && ids.iter().enumerate().all(|(i, id)| !ids[..i].contains(id)),
+        "请提供不同的图片。"
     );
     let question = args["question"].as_str().map(str::trim).unwrap_or_default();
     ensure!(

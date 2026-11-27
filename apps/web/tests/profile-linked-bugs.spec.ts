@@ -20,7 +20,14 @@ for(const width of [390,1440])test(`imported months and explicit merge remain us
   if(path.endsWith('/ribbon'))return route.fulfill({json:{timezone:'America/Chicago',months:[]}});
   return route.fulfill({json:[]});
  });
- await page.goto(`/profiles/${source}?tab=messages`);
+ await page.goto(`/profiles/${source}?tab=messages&merge_with=${target}`);
+ const dialog=page.getByRole('dialog',{name:'合并同一个人的资料'});
+ await expect(dialog.getByRole('option',{name:'保留人物'})).toHaveCount(1);
+ await expect(dialog.getByLabel('保留这份人物资料')).toHaveValue(target);
+ await expect(dialog.getByRole('button',{name:'合并并保留历史'})).toBeDisabled();
+ expect(posted).toBeUndefined();
+ await dialog.getByRole('button',{name:'关闭'}).click();
+ await expect(page).toHaveURL(new RegExp(`/profiles/${source}\\?tab=messages$`));
  await expect(page.getByText('2026年1月',{exact:true})).toBeVisible({timeout:15000});
  await expect(page.getByRole('link',{name:'2026-01，3 条，我发送 2，对方发送 1',exact:true})).toBeVisible();
  await expect(page.getByText('系统消息',{exact:true})).toBeVisible();
@@ -28,7 +35,6 @@ for(const width of [390,1440])test(`imported months and explicit merge remain us
  if(width<768){await page.getByRole('button',{name:'更多操作'}).click();await page.getByRole('menuitem',{name:'编辑资料'}).click();}
  else await page.getByRole('button',{name:'编辑',exact:true}).click();
  await page.getByRole('button',{name:'合并到其他人物'}).click();
- const dialog=page.getByRole('dialog',{name:'合并同一个人的资料'});
  await dialog.getByPlaceholder('输入姓名').fill('保留');
  await expect(dialog.getByRole('option',{name:'保留人物'})).toHaveCount(1);
  await dialog.getByLabel('保留这份人物资料').selectOption(target);

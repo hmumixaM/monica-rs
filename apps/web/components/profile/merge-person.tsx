@@ -12,9 +12,9 @@ type Preview = { source: Person; target: Person; counts: Record<string, number>;
 const labels: Record<string, string> = { accounts: "来源账号", fields: "当前字段", confirmed_faces: "已确认人脸", suggested_faces: "人脸建议", media_links: "媒体关联", dates: "重要日期" };
 const conflicts: Record<string, string> = { group_memberships: "群成员身份或入退群时间", reconnect_decisions: "稍后联系决定", suggestion_decisions: "资料建议决定", manual_fields: "人工字段", birthday: "生日", face_decisions: "人脸确认与拒绝", summary: "人工简介", structured_fields: "结构化经历", link_decisions: "账号关联决定", relationship_values: "关系备注或时间" };
 
-export function MergePerson({ sourceId, onClose, onMerged }: { sourceId: string; onClose: () => void; onMerged: (id: string) => void }) {
+export function MergePerson({ sourceId, initialTarget = "", onClose, onMerged }: { sourceId: string; initialTarget?: string; onClose: () => void; onMerged: (id: string) => void }) {
   const [query, setQuery] = useState("");
-  const [target, setTarget] = useState("");
+  const [target, setTarget] = useState(initialTarget);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -22,8 +22,9 @@ export function MergePerson({ sourceId, onClose, onMerged }: { sourceId: string;
   const people = useQuery({ queryKey: ["merge-people", query], enabled: query.trim().length > 0,
     queryFn: ({ signal }) => fetchJson<{ profile_id: string; display_name: string }[]>(`/api/v1/link-review/contacts?q=${encodeURIComponent(query.trim())}`, { signal }) });
   const preview = useQuery({ queryKey: ["merge-preview", sourceId, target], enabled: !!target,
-    queryFn: ({ signal }) => fetchJson<Preview>(`/api/v1/profiles/${sourceId}/merge-preview?target_id=${target}`, { signal }) });
+    queryFn: ({ signal }) => fetchJson<Preview>(`/api/v1/profiles/${sourceId}/merge-preview?target_id=${encodeURIComponent(target)}`, { signal }) });
   const data = preview.data;
+  const choices = people.data?.filter(person => person.profile_id !== sourceId) ?? [];
   async function merge() {
     if (!data?.can_merge || !confirmed) return;
     setBusy(true); setError("");
@@ -39,7 +40,9 @@ export function MergePerson({ sourceId, onClose, onMerged }: { sourceId: string;
     <Field label="查找要保留的人物"><SearchInput value={query} disabled={busy} onChange={event => setQuery(event.target.value)} placeholder="输入姓名" /></Field>
     {people.isError && <Failure onRetry={() => void people.refetch()}>无法搜索人物。</Failure>}
     <Field label="保留这份人物资料"><Select value={target} disabled={busy} onChange={event => { setTarget(event.target.value); setConfirmed(false); setOperation(crypto.randomUUID()); setError(""); }}>
-      <option value="">请选择</option>{people.data?.filter(person => person.profile_id !== sourceId).map(person => <option value={person.profile_id} key={person.profile_id}>{person.display_name}</option>)}
+      <option value="">请选择</option>
+      {target && !choices.some(person => person.profile_id === target) && <option value={target}>{data?.target.display_name ?? "已选人物"}</option>}
+      {choices.map(person => <option value={person.profile_id} key={person.profile_id}>{person.display_name}</option>)}
     </Select></Field>
     {preview.isFetching && <Muted>正在检查关联内容和冲突…</Muted>}
     {preview.isError && <Failure onRetry={() => void preview.refetch()}>无法读取合并预检。</Failure>}

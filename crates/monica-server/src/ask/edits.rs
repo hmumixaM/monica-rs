@@ -7,6 +7,7 @@ use crate::{
         validate_suggestion_meetup, validate_suggestion_value,
     },
     auth::{ApiError, AppState, session_user},
+    collector::save_linkedin_locked,
     profiles::{self, activities, dates, details, relationships},
 };
 use axum::{
@@ -59,6 +60,10 @@ enum Action {
         related_profile_id: Uuid,
         relationship: String,
         note: Option<String>,
+    },
+    AddLinkedinTarget {
+        profile_id: Uuid,
+        account: String,
     },
     DecideSuggestion {
         profile_id: Uuid,
@@ -142,9 +147,9 @@ impl ProfileField {
 
 pub(super) fn tool() -> Value {
     json!({"type":"function","function":{"name":NAME,
-        "description":"仅当用户明确要求修改 Monica 时生成待确认预览。add_record 需要 profile_ids、record_type、title，可选 body；活动和通话须提供 occurred_at；add_tag 和 create_tag 需要 tag 和 profile_ids（只创建标签时可为空）；set_profile_field 需要 profile_id、field、value；add_date 需要 profile_id 和 date；add_relationship 需要 profile_id、related_profile_id、relationship，可选 note。decide_suggestion 需要从 profile_suggestions 读出的 profile_id、fingerprint，及 decision=accept 或 ignore；修改后接受时提供 value，会面日期用 suggestion_date。所有人物使用真实 UUID。",
+        "description":"仅当用户明确要求修改 Monica 时生成待确认预览。add_record 需要 profile_ids、record_type、title，可选 body；活动和通话须提供 occurred_at；add_tag 和 create_tag 需要 tag 和 profile_ids（只创建标签时可为空）；set_profile_field 需要 profile_id、field、value；add_date 需要 profile_id 和 date；add_relationship 需要 profile_id、related_profile_id、relationship，可选 note。add_linkedin_target 需要 profile_id 和 account，确认后关联 LinkedIn 个人主页并加入持续采集。decide_suggestion 需要从 profile_suggestions 读出的 profile_id、fingerprint，及 decision=accept 或 ignore；修改后接受时提供 value，会面日期用 suggestion_date。所有人物使用真实 UUID。",
         "parameters":{"type":"object","required":["action"],"additionalProperties":false,"properties":{
-            "action":{"type":"string","enum":["add_record","add_tag","create_tag","set_profile_field","add_date","add_relationship","decide_suggestion"]},
+            "action":{"type":"string","enum":["add_record","add_tag","create_tag","set_profile_field","add_date","add_relationship","add_linkedin_target","decide_suggestion"]},
             "profile_id":{"type":"string"}, "related_profile_id":{"type":"string"},
             "profile_ids":{"type":"array","items":{"type":"string"},"maxItems":MAX_PEOPLE},
             "record_type":{"type":"string","enum":["note","activity","call"]},
@@ -160,6 +165,7 @@ pub(super) fn tool() -> Value {
             }},
             "relationship":{"type":"string","description":"用户明确给出的关系，从 profile_id 指向 related_profile_id"},
             "note":{"type":"string"},
+            "account":{"type":"string","description":"LinkedIn 个人主页链接或 /in/ 后的账号"},
             "fingerprint":{"type":"string","description":"待处理资料建议的标识"},
             "decision":{"type":"string","enum":["accept","ignore"]},
             "suggestion_date":{"type":"string","format":"date","description":"修改会面建议日期时使用"}
@@ -241,6 +247,7 @@ impl Action {
                     return Err(invalid("关系需要关联两个不同的人。"));
                 }
             }
+            Self::AddLinkedinTarget { account, .. } => text(account, 2048)?,
             Self::DecideSuggestion {
                 fingerprint,
                 decision,
@@ -271,6 +278,7 @@ impl Action {
             | Self::CreateTag { profile_ids, .. } => profile_ids.clone(),
             Self::SetProfileField { profile_id, .. }
             | Self::AddDate { profile_id, .. }
+            | Self::AddLinkedinTarget { profile_id, .. }
             | Self::DecideSuggestion { profile_id, .. } => {
                 vec![*profile_id]
             }
@@ -342,7 +350,8 @@ async fn preview(tx: &mut Transaction<'_, Postgres>, action: &Action, lock: bool
         "SELECT id,display_name,profile_type FROM crm.profiles
          WHERE id=ANY($1) AND archived_at IS NULL ORDER BY id",
     );
-    if lock {
+    // The LinkedIn collector locks the source account before the profile.
+    if lock && !matches!(action, Action::AddLinkedinTarget { .. }) {
         sql.push_str(" FOR UPDATE");
     }
     let people: Vec<(Uuid, String, String)> =
@@ -505,6 +514,31 @@ async fn preview(tx: &mut Transaction<'_, Postgres>, action: &Action, lock: bool
                 "记录人物关系",
                 json!({"已有此关系":exists}),
                 json!({"人物":name(profile_id),"相关人物":name(related_profile_id),"关系":relationship,"备注":note}),
+            )
+        }
+        Action::AddLinkedinTarget {
+            profile_id,
+            account,
+        } => {
+            let (slug, url) = monica_core::collector::canonical_linkedin(account)
+                .map_err(|_| invalid("请输入 LinkedIn 个人主页链接或 /in/ 后的账号。"))?;
+            let (linked, following): (Option<Uuid>, bool) = sqlx::query_as(
+                "SELECT l.profile_id,t.account_id IS NOT NULL FROM crm.source_accounts a
+                 LEFT JOIN crm.source_account_links l ON l.account_id=a.id
+                 LEFT JOIN crm.linkedin_collection_targets t ON t.account_id=a.id
+                 WHERE a.provider='linkedin' AND a.external_id=$1",
+            )
+            .bind(slug)
+            .fetch_optional(&mut **tx)
+            .await?
+            .unwrap_or_default();
+            if linked.is_some_and(|id| id != *profile_id) {
+                return Err(invalid("此 LinkedIn 账号已关联其他人物。"));
+            }
+            (
+                "添加 LinkedIn 并持续采集",
+                json!({"已关联":linked.is_some(),"持续采集":following}),
+                json!({"LinkedIn 主页":url,"持续采集":true}),
             )
         }
         Action::DecideSuggestion {
@@ -896,6 +930,16 @@ async fn apply(
             )
             .await?;
             Ok(json!({"link":format!("/profiles/{profile_id}")}))
+        }
+        Action::AddLinkedinTarget {
+            profile_id,
+            account,
+        } => {
+            let saved = save_linkedin_locked(tx, profile_id, &account, owner).await?;
+            Ok(
+                json!({"link":format!("/profiles/{profile_id}"),"profile_url":saved["profile_url"],
+                "message":"已关联 LinkedIn 并加入持续采集名单。"}),
+            )
         }
         Action::DecideSuggestion {
             profile_id,

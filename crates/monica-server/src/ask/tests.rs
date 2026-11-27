@@ -184,7 +184,7 @@ async fn ask_worker_executes_compressed_vision_and_rejects_empty_search(pool: Pg
     sqlx::query("INSERT INTO crm.message_search(message_id,conversation_id,provider,account,external_id,sender,occurred_at,body) VALUES($1,$2,'wechat','self','vision-fixture','peer',now(),'fixture')")
         .bind(message).bind(conversation).execute(&pool).await.unwrap();
     let mut ids = Vec::new();
-    for index in [0, 1, 2] {
+    for index in [0, 1, 2, 3] {
         let id = Uuid::new_v4();
         let mut bytes = png.clone();
         bytes.push(index);
@@ -258,7 +258,7 @@ async fn ask_worker_executes_compressed_vision_and_rejects_empty_search(pool: Pg
                         };
                         let observed = tool("vision-fixture");
                         assert_eq!(observed["observation"], "A bright pixel.", "{observed}");
-                        assert_eq!(observed["inspected"].as_array().unwrap().len(),1);
+                        assert_eq!(observed["inspected"].as_array().unwrap().len(),2);
                         assert_eq!(observed["skipped"][0]["image_id"],json!(ids[2]));
                         assert_eq!(observed["skipped"][1]["reason"],"视觉模型输入超限");
                         assert!(!observed.to_string().contains("data:image"));
@@ -274,7 +274,7 @@ async fn ask_worker_executes_compressed_vision_and_rejects_empty_search(pool: Pg
                         .iter()
                         .filter(|item| item["type"] == "image_url")
                         .collect();
-                    assert_eq!(images.len(), 2 - attempt);
+                    assert_eq!(images.len(), 3 - attempt);
                     for image in images {
                         assert!(
                             image["image_url"]["url"]
@@ -1218,6 +1218,77 @@ async fn asks_can_read_and_confirm_suggestions_and_list_birthdays(pool: PgPool) 
     assert_eq!(read["second"]["rows"][0]["profile_id"], json!(person));
     assert_eq!(read["second"]["rows"][0]["year"], Value::Null);
     assert_eq!(read["april"]["rows"][0]["precision"], "month_day");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn ask_confirms_linkedin_tracking_and_previews_profile_merges(pool: PgPool) {
+    let (state, app) = setup(&pool).await;
+    let path = new_chat(&app).await;
+    let job = fixture_edit_job(&pool, &path).await;
+    let [source, target] = [Uuid::new_v4(), Uuid::new_v4()];
+    sqlx::query("INSERT INTO crm.profiles(id,profile_type,display_name) VALUES($1,'person','Source'),($2,'person','Target')")
+        .bind(source).bind(target).execute(&pool).await.unwrap();
+    let url = "https://www.linkedin.com/in/test-person";
+    let action = json!({
+        "action":"add_linkedin_target","profile_id":source,
+        "account":"https://uk.linkedin.com/in/Test-Person/?trk=fixture"
+    });
+    let edit = proposed_id(&pool, &job, "linkedin", &action).await;
+    let endpoint = format!("{path}/edits/{edit}");
+    assert_eq!(
+        monica_core::collector::targets(&pool).await.unwrap()["targets"],
+        json!([])
+    );
+    request(
+        &app,
+        "other",
+        "POST",
+        &endpoint,
+        json!({"confirm":true}),
+        StatusCode::NOT_FOUND,
+    )
+    .await;
+    let receipt = request(
+        &app,
+        "owner",
+        "POST",
+        &endpoint,
+        json!({"confirm":true}),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(receipt["status"], "applied");
+    assert_eq!(receipt["result"]["profile_url"], url);
+    assert_eq!(
+        monica_core::collector::targets(&pool).await.unwrap()["targets"][0]["profile_url"],
+        url
+    );
+    let script = format!(
+        r#"
+        return {{person:cli("get_person",{{profile_id:"{source}",fields:["sources.linkedin.profile_url"]}}),
+          merge:cli("profile_merge_preview",{{source_profile_id:"{source}",target_profile_id:"{target}"}})}};
+    "#
+    );
+    let (reply, error, _) =
+        lookup::run(&state, (job.owner_id, job.email), chrono_tz::UTC, script).await;
+    assert!(!error, "{reply}");
+    let reply: Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(reply["person"]["sources"]["linkedin"]["profile_url"], url);
+    assert_eq!(reply["merge"]["source"]["name"], "Source");
+    assert_eq!(reply["merge"]["target"]["name"], "Target");
+    assert_eq!(reply["merge"]["counts"]["accounts"], 1);
+    assert_eq!(reply["merge"]["can_merge"], true);
+    assert_eq!(
+        reply["merge"]["link"],
+        format!("/profiles/{source}?merge_with={target}")
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM crm.profile_merges")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]

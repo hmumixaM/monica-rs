@@ -37,7 +37,6 @@ const MAX_WINDOW_BYTES: usize = 1_200_000;
 const MAX_STREAM_BYTES: usize = 512 * 1024;
 const MAX_STORED_CONTEXT_MESSAGES: i64 = 400;
 const MAX_HISTORY_BYTES: usize = 6 * 1024 * 1024;
-const MAX_WEB_SEARCHES: usize = 4;
 const MAX_IMAGE_READS: usize = 3;
 const LOOKUP_LIMIT: &str = "本轮查询已到上限。请根据已核实的资料回答，并说明还有哪些范围没查完。";
 const CONTINUE: &str = "继续根据已有资料回答。如果资料不够，先缩小范围再查。";
@@ -69,17 +68,20 @@ struct Checkpoint {
 
 impl Checkpoint {
     fn reserve_external(&mut self, name: &str, id: &str) -> Result<()> {
-        let (calls, limit) = if name == web_search::NAME {
-            (&mut self.web_searches, MAX_WEB_SEARCHES)
+        let calls = if name == web_search::NAME {
+            &mut self.web_searches
         } else {
-            (&mut self.image_reads, MAX_IMAGE_READS)
+            &mut self.image_reads
         };
         let id = monica_core::identity::bytes_hash(id.as_bytes());
         ensure!(
             !calls.contains(&id),
             "这次外部查询中断。请根据已有结果继续，或仅在必要时重新查询。"
         );
-        ensure!(calls.len() < limit, "本轮已达到此工具的调用上限。");
+        ensure!(
+            name == web_search::NAME || calls.len() < MAX_IMAGE_READS,
+            "本轮已达到此工具的调用上限。"
+        );
         calls.push(id);
         Ok(())
     }

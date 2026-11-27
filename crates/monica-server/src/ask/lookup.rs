@@ -81,6 +81,13 @@ const COMMANDS: &[CommandSpec] = &[
         fields: "profile_id name city note summary tags chat ai_enabled ai_error memory.summary memory.facts recent_weeks career sources relationships groups link",
     },
     CommandSpec {
+        name: "profile_merge_preview",
+        parameters: "source_profile_id, target_profile_id",
+        description: "为同一人的两份资料提出合并建议。source 是要合入的资料，target 是保留的资料。返回影响范围、冲突和打开确认界面的链接。",
+        list: None,
+        fields: "source target counts conflicts can_merge link",
+    },
+    CommandSpec {
         name: "profile_summary",
         parameters: "profile_id, week?",
         description: "优先读取已保存的 AI 人物总结（Memory）和每周近况。默认最近 12 份已保存周报，也可用 week（YYYY-MM-DD，通常为周一）指定一周。含生成时间和周报来源链接。",
@@ -640,6 +647,22 @@ impl Lookup {
                 Ok(json!(array(&rows).iter().map(|row| json!({"profile_id":row["id"],"name":row["display_name"],"summary":cut(&row["summary"],120)})).collect::<Vec<_>>()))
             }
             "get_person" => self.person(id(args, "profile_id")?).await,
+            "profile_merge_preview" => {
+                let source = id(args, "source_profile_id")?;
+                let target = id(args, "target_profile_id")?;
+                let report = self
+                    .get(
+                        &format!("/api/v1/profiles/{source}/merge-preview"),
+                        &[("target_id", &target.to_string())],
+                    )
+                    .await?;
+                Ok(json!({
+                    "source":{"id":source,"name":report["source"]["display_name"]},
+                    "target":{"id":target,"name":report["target"]["display_name"]},
+                    "counts":report["counts"],"conflicts":report["conflicts"],"can_merge":report["can_merge"],
+                    "link":format!("/profiles/{source}?merge_with={target}")
+                }))
+            }
             "profile_summary" => self.profile_summary(args).await,
             "weekly_review" => self.weekly_review(args).await,
             "weekly_people" => self.weekly_people(args).await,
@@ -771,7 +794,7 @@ impl Lookup {
             Err(error) => (Value::Null, Some(error.to_string())),
         };
         let header = &overview["header"];
-        let sources = profile["presentation"]["sources"]
+        let mut sources = profile["presentation"]["sources"]
             .as_object()
             .into_iter()
             .flatten()
@@ -779,18 +802,33 @@ impl Lookup {
                 let fields = fields
                     .as_object()?
                     .iter()
-                    .filter(|(key, value)| {
-                        !key.contains("url")
-                            && !key.ends_with("_id")
-                            && value
-                                .as_str()
-                                .is_some_and(|text| !text.is_empty() && text.len() <= 400)
+                    .filter(|(_, value)| {
+                        value
+                            .as_str()
+                            .is_some_and(|text| !text.is_empty() && text.len() <= 400)
                     })
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect::<serde_json::Map<_, _>>();
                 (!fields.is_empty()).then(|| (provider.clone(), Value::Object(fields)))
             })
             .collect::<serde_json::Map<_, _>>();
+        if let Some(url) = array(&profile["identities"])
+            .iter()
+            .filter(|identity| identity["provider"] == "linkedin")
+            .find_map(|identity| {
+                identity["profile_url"]
+                    .as_str()
+                    .filter(|url| !url.is_empty())
+            })
+        {
+            sources
+                .entry("linkedin")
+                .or_insert_with(|| json!({}))
+                .as_object_mut()
+                .unwrap()
+                .entry("profile_url")
+                .or_insert_with(|| json!(url));
+        }
         let facts = array(&profile["presentation"]["facts"])
             .iter()
             .take(12)

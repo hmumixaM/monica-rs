@@ -81,7 +81,18 @@ async fn save_linkedin(
     collector::canonical_linkedin(&body.account)
         .map_err(|_| invalid("请输入 LinkedIn 个人主页链接或 /in/ 后的账号"))?;
     let mut tx = s.pool.begin().await?;
-    let saved = collector::save_linkedin(&mut tx, id, &body.account, actor)
+    let saved = save_linkedin_locked(&mut tx, id, &body.account, actor).await?;
+    tx.commit().await?;
+    Ok(Json(saved))
+}
+
+pub(crate) async fn save_linkedin_locked(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    id: Uuid,
+    account: &str,
+    actor: Uuid,
+) -> Result<Value> {
+    collector::save_linkedin(tx, id, account, actor)
         .await
         .map_err(|e| {
             if e.to_string().contains("belongs to another person") {
@@ -92,9 +103,7 @@ async fn save_linkedin(
             } else {
                 operation(e)
             }
-        })?;
-    tx.commit().await?;
-    Ok(Json(saved))
+        })
 }
 async fn remove_linkedin(
     State(s): State<AppState>,

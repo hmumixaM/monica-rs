@@ -111,7 +111,7 @@ pub async fn save_linkedin(
         "LinkedIn account belongs to another person"
     );
     let kind: Option<String> = sqlx::query_scalar(
-        "SELECT profile_type FROM crm.profiles WHERE id=$1 AND archived_at IS NULL",
+        "SELECT profile_type FROM crm.profiles WHERE id=$1 AND archived_at IS NULL FOR UPDATE",
     )
     .bind(profile)
     .fetch_optional(&mut **tx)

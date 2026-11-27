@@ -72,6 +72,7 @@ export function ProfileView({ profileId }: { profileId: string }) {
   </Page>;
 
   const person = profile.profile_type === "person";
+  const mergeTarget = params.get("merge_with");
   const tabs = tabsFor(person);
   const requested = params.get("tab") || "overview";
   const tab = tabs.some((item) => item.id === requested) ? requested : "overview";
@@ -85,12 +86,20 @@ export function ProfileView({ profileId }: { profileId: string }) {
     if (id === tab) return;
     transitionTo(() => router.replace(`/profiles/${profileId}?tab=${id}`, { scroll: false }), { readySelector: `[data-tab-panel="${id}"]` });
   };
+  const closeMerge = () => {
+    setMerging(false);
+    if (mergeTarget) {
+      const next = new URLSearchParams(params);
+      next.delete("merge_with");
+      router.replace(`/profiles/${canonicalId}${next.size ? `?${next}` : ""}`, { scroll: false });
+    }
+  };
 
   return <Page className={styles.page}>
     <ProfileHero profile={profile} hasMessages={!!overview.data?.messages || !person} editing={editing}
       onEdit={() => setEditing((value) => !value)} onPhoto={setPhoto} onLinksChanged={refresh} />
     {person && editing && <Button onClick={() => setMerging(true)}>合并到其他人物</Button>}
-    {merging && <MergePerson sourceId={canonicalId} onClose={() => setMerging(false)} onMerged={(id) => { void client.invalidateQueries(); setMerging(false); router.replace(`/profiles/${id}`); }} />}
+    {person && (merging || mergeTarget) && <MergePerson key={mergeTarget || canonicalId} sourceId={canonicalId} initialTarget={mergeTarget || ""} onClose={closeMerge} onMerged={(id) => { void client.invalidateQueries(); setMerging(false); router.replace(`/profiles/${id}`); }} />}
     {editing && detail.data && <FieldEditor profileId={profileId} profile={profile} onSaved={refresh} onCancel={() => setEditing(false)} />}
     {person && <RelationshipPulse profileId={profileId} overview={overview.data} dates={profile.significant_dates ?? []} groupCount={groupCount} />}
     <Tabs className={styles.tabs} label="资料分区" items={tabs} value={tab} onSelect={select} />
