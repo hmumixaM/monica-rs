@@ -324,7 +324,7 @@ async fn ask_leases_fence_restarts_cancellation_and_deletion(pool: PgPool) {
     assert_eq!((a.id, b.id), (first_run, second_run));
     let saved_call = json!({"role":"assistant","content":[{"type":"toolCall","id":"saved-call","name":"monica_cli","arguments":{"title":"已排队的操作","script":"return 123;"}}]});
     let cp = Checkpoint {
-        rounds: 1,
+        continuations: 1,
         ..Default::default()
     };
     save(&pool, &a, &cp, Some(&saved_call), None).await.unwrap();
@@ -336,7 +336,7 @@ async fn ask_leases_fence_restarts_cancellation_and_deletion(pool: PgPool) {
     let recovered = claim(&pool).await.unwrap().unwrap();
     assert_eq!(recovered.id, a.id);
     assert_ne!(recovered.lease_id, a.lease_id);
-    assert_eq!(recovered.checkpoint.0.rounds, 1);
+    assert_eq!(recovered.checkpoint.0.continuations, 1);
     let result = json!({"role":"toolResult","toolName":"monica_cli","toolCallId":"saved-call","content":[{"type":"text","text":"123"}]});
     assert!(save(&pool, &a, &cp, Some(&result), None).await.is_err());
     save(&pool, &recovered, &cp, Some(&result), None)

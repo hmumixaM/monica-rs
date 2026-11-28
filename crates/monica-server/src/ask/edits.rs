@@ -2,7 +2,12 @@
 //! can apply the saved payload, and the receipt commits with the actual edit.
 use super::{Result, invalid, missing};
 use crate::{
+    ai::{
+        Decision as SuggestionInput, decide_suggestion_locked, field_key, pending_suggestion,
+        validate_suggestion_meetup, validate_suggestion_value,
+    },
     auth::{ApiError, AppState, session_user},
+    collector::linkedin_error,
     profiles::{self, activities, dates, details, relationships},
 };
 use axum::{
@@ -11,9 +16,10 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 use chrono::{DateTime, Datelike, Utc};
+use monica_core::collector::{self, LockedLinkedinAccount};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{Acquire, PgPool, Postgres, Row, Transaction};
 use std::collections::BTreeSet;
 use uuid::Uuid;
 
@@ -56,6 +62,24 @@ enum Action {
         relationship: String,
         note: Option<String>,
     },
+    AddLinkedinTarget {
+        profile_id: Uuid,
+        account: String,
+    },
+    DecideSuggestion {
+        profile_id: Uuid,
+        fingerprint: String,
+        decision: SuggestionDecision,
+        value: Option<String>,
+        suggestion_date: Option<chrono::NaiveDate>,
+    },
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum SuggestionDecision {
+    Accept,
+    Ignore,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -124,9 +148,9 @@ impl ProfileField {
 
 pub(super) fn tool() -> Value {
     json!({"type":"function","function":{"name":NAME,
-        "description":"仅当用户明确要求修改 Monica 时，为真实确认界面生成一项待确认的编辑。它只生成预览。add_record 需要 profile_ids、record_type、title，可选 body；活动和通话须提供 occurred_at，普通笔记省略则使用提案创建时间；add_tag 和 create_tag 需要 tag 和 profile_ids（仅创建标签时可为空）；set_profile_field 需要 profile_id、field、value；add_date 需要 profile_id 及 date 对象（kind、precision 和已知的年月日，可选 label）；add_relationship 需要 profile_id、related_profile_id、relationship，可选 note。所有人物用查询或用户选中的真实 UUID，单次最多 50 人。",
+        "description":"仅当用户明确要求修改 Monica 时生成待确认预览。add_record 需要 profile_ids、record_type、title，可选 body；活动和通话须提供 occurred_at；add_tag 和 create_tag 需要 tag 和 profile_ids（只创建标签时可为空）；set_profile_field 需要 profile_id、field、value；add_date 需要 profile_id 和 date；add_relationship 需要 profile_id、related_profile_id、relationship，可选 note。add_linkedin_target 需要 profile_id 和 account，确认后关联 LinkedIn 个人主页并加入持续采集。decide_suggestion 需要从 profile_suggestions 读出的 profile_id、fingerprint，及 decision=accept 或 ignore；修改后接受时提供 value，会面日期用 suggestion_date。所有人物使用真实 UUID。",
         "parameters":{"type":"object","required":["action"],"additionalProperties":false,"properties":{
-            "action":{"type":"string","enum":["add_record","add_tag","create_tag","set_profile_field","add_date","add_relationship"]},
+            "action":{"type":"string","enum":["add_record","add_tag","create_tag","set_profile_field","add_date","add_relationship","add_linkedin_target","decide_suggestion"]},
             "profile_id":{"type":"string"}, "related_profile_id":{"type":"string"},
             "profile_ids":{"type":"array","items":{"type":"string"},"maxItems":MAX_PEOPLE},
             "record_type":{"type":"string","enum":["note","activity","call"]},
@@ -141,7 +165,11 @@ pub(super) fn tool() -> Value {
                 "year":{"type":"integer"}, "month":{"type":"integer"}, "day":{"type":"integer"}, "label":{"type":"string"}
             }},
             "relationship":{"type":"string","description":"用户明确给出的关系，从 profile_id 指向 related_profile_id"},
-            "note":{"type":"string"}
+            "note":{"type":"string"},
+            "account":{"type":"string","description":"LinkedIn 个人主页链接或 /in/ 后的账号"},
+            "fingerprint":{"type":"string","description":"待处理资料建议的标识"},
+            "decision":{"type":"string","enum":["accept","ignore"]},
+            "suggestion_date":{"type":"string","format":"date","description":"修改会面建议日期时使用"}
         }}
     }})
 }
@@ -220,6 +248,22 @@ impl Action {
                     return Err(invalid("关系需要关联两个不同的人。"));
                 }
             }
+            Self::AddLinkedinTarget { account, .. } => text(account, 2048)?,
+            Self::DecideSuggestion {
+                fingerprint,
+                decision,
+                value,
+                suggestion_date,
+                ..
+            } => {
+                text(fingerprint, 128)?;
+                optional_text(value, 2000)?;
+                if matches!(decision, SuggestionDecision::Ignore)
+                    && (value.is_some() || suggestion_date.is_some())
+                {
+                    return Err(invalid("拒绝建议无需提供修改内容。"));
+                }
+            }
         }
         let count = action.people().len();
         if count > MAX_PEOPLE || (count == 0 && !matches!(action, Self::CreateTag { .. })) {
@@ -233,7 +277,10 @@ impl Action {
             Self::AddRecord { profile_ids, .. }
             | Self::AddTag { profile_ids, .. }
             | Self::CreateTag { profile_ids, .. } => profile_ids.clone(),
-            Self::SetProfileField { profile_id, .. } | Self::AddDate { profile_id, .. } => {
+            Self::SetProfileField { profile_id, .. }
+            | Self::AddDate { profile_id, .. }
+            | Self::AddLinkedinTarget { profile_id, .. }
+            | Self::DecideSuggestion { profile_id, .. } => {
                 vec![*profile_id]
             }
             Self::AddRelationship {
@@ -469,6 +516,107 @@ async fn preview(tx: &mut Transaction<'_, Postgres>, action: &Action, lock: bool
                 json!({"人物":name(profile_id),"相关人物":name(related_profile_id),"关系":relationship,"备注":note}),
             )
         }
+        Action::AddLinkedinTarget {
+            profile_id,
+            account,
+        } => {
+            let (slug, url) = monica_core::collector::canonical_linkedin(account)
+                .map_err(|_| invalid("请输入 LinkedIn 个人主页链接或 /in/ 后的账号。"))?;
+            let (linked, following): (Option<Uuid>, bool) = sqlx::query_as(
+                "SELECT l.profile_id,t.account_id IS NOT NULL FROM crm.source_accounts a
+                 LEFT JOIN crm.source_account_links l ON l.account_id=a.id
+                 LEFT JOIN crm.linkedin_collection_targets t ON t.account_id=a.id
+                 WHERE a.provider='linkedin' AND a.external_id=$1",
+            )
+            .bind(slug)
+            .fetch_optional(&mut **tx)
+            .await?
+            .unwrap_or_default();
+            if linked.is_some_and(|id| id != *profile_id) {
+                return Err(invalid("此 LinkedIn 账号已关联其他人物。"));
+            }
+            (
+                "添加 LinkedIn 并持续采集",
+                json!({"已关联":linked.is_some(),"持续采集":following}),
+                json!({"LinkedIn 主页":url,"持续采集":true}),
+            )
+        }
+        Action::DecideSuggestion {
+            profile_id,
+            fingerprint,
+            decision,
+            value,
+            suggestion_date,
+        } => {
+            let item = pending_suggestion(tx, *profile_id, fingerprint, lock).await?;
+            let kind: String = item.get("kind");
+            let original: String = item.get("value");
+            let original_date: Option<chrono::NaiveDate> = item.get("date");
+            let quote: String = item.get("quote");
+            if suggestion_date.is_some() && kind != "meetup" {
+                return Err(invalid(
+                    "仅会面建议使用 suggestion_date。生日请通过 value 提供。",
+                ));
+            }
+            let current: Option<Value> = match kind.as_str() {
+                "birthday" => sqlx::query_scalar("SELECT to_jsonb(d) FROM crm.profile_dates d WHERE profile_id=$1 AND kind='birthday'")
+                    .bind(profile_id).fetch_optional(&mut **tx).await?,
+                "meetup" => None,
+                _ => sqlx::query_scalar("SELECT jsonb_build_object('value',r.value,'revision_id',c.revision_id)
+                    FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1 AND c.field_key=$2")
+                    .bind(profile_id).bind(field_key(&kind)).fetch_optional(&mut **tx).await?,
+            };
+            state = json!({"input_hash":item.get::<String,_>("input_hash"),"current":current});
+            let current_value = current.as_ref().map(|v| {
+                if kind == "birthday" {
+                    json!({"年":v["year"],"月":v["month"],"日":v["day"]})
+                } else {
+                    v["value"].clone()
+                }
+            });
+            let before = json!({"原建议":original,"日期":original_date,"来源摘录":quote,"联系人当前值":current_value});
+            match decision {
+                SuggestionDecision::Ignore => {
+                    ("拒绝资料建议", before, json!({"操作":"忽略此建议"}))
+                }
+                SuggestionDecision::Accept => {
+                    let mut applied = value.as_deref().unwrap_or(&original).trim().to_owned();
+                    validate_suggestion_value(&applied)?;
+                    let date = suggestion_date.or(original_date);
+                    if matches!(kind.as_str(), "birthday" | "meetup") {
+                        let today: chrono::NaiveDate = sqlx::query_scalar(
+                            "SELECT (now() AT TIME ZONE 'America/Chicago')::date",
+                        )
+                        .fetch_one(&mut **tx)
+                        .await?;
+                        if kind == "birthday" {
+                            if current.is_some() {
+                                return Err(invalid("联系人已有生日，请在联系人页修改。"));
+                            }
+                            if monica_core::ai::birthday_at(&applied, today).is_none() {
+                                return Err(invalid("生日格式须为 MM-DD 或 YYYY-MM-DD。"));
+                            }
+                        } else {
+                            validate_suggestion_meetup(
+                                date.ok_or_else(|| invalid("请提供会面日期。"))?,
+                                today,
+                            )?;
+                            applied = applied.chars().take(255).collect();
+                        }
+                    }
+                    let title = if value.is_some() || suggestion_date.is_some() {
+                        "修改后接受资料建议"
+                    } else {
+                        "接受资料建议"
+                    };
+                    (
+                        title,
+                        before,
+                        json!({"类型":kind,"新值":applied,"日期":date}),
+                    )
+                }
+            }
+        }
     };
     Ok(json!({"title":title,"people":people,"before":before,"after":after,"state":state}))
 }
@@ -614,18 +762,30 @@ async fn resolve(
                 .execute(&mut *tx)
                 .await?;
         }
-        let current = match preview(&mut tx, &action.0, true).await {
+        // A stale LinkedIn approval must roll back any account created to
+        // obtain the collector's account lock before locking the profile.
+        let mut approval = (&mut tx).begin().await?;
+        let linkedin = if let Action::AddLinkedinTarget { account, .. } = &action.0 {
+            Some(
+                collector::lock_linkedin_account(&mut approval, account)
+                    .await
+                    .map_err(linkedin_error)?,
+            )
+        } else {
+            None
+        };
+        let current = match preview(&mut approval, &action.0, true).await {
             Ok(current) => current,
             Err(error) if error.0.is_client_error() => Value::Null,
             Err(error) => return Err(error),
         };
         if current != saved {
+            approval.rollback().await?;
             ("stale", Some(json!({"message":stale().1})))
         } else {
-            (
-                "applied",
-                Some(apply(&mut tx, owner, action.0, &current).await?),
-            )
+            let result = apply(&mut approval, owner, action.0, &current, linkedin).await?;
+            approval.commit().await?;
+            ("applied", Some(result))
         }
     };
     let seq = sqlx::query_scalar(
@@ -658,6 +818,7 @@ async fn apply(
     owner: Uuid,
     action: Action,
     current: &Value,
+    linkedin: Option<LockedLinkedinAccount>,
 ) -> Result<Value> {
     let ids = action.people();
     match action {
@@ -782,6 +943,44 @@ async fn apply(
             )
             .await?;
             Ok(json!({"link":format!("/profiles/{profile_id}")}))
+        }
+        Action::AddLinkedinTarget { profile_id, .. } => {
+            let account = linkedin.ok_or_else(stale)?;
+            let saved = collector::save_linkedin_locked(tx, profile_id, account, owner)
+                .await
+                .map_err(linkedin_error)?;
+            Ok(
+                json!({"link":format!("/profiles/{profile_id}"),"profile_url":saved["profile_url"],
+                "message":"已关联 LinkedIn 并加入持续采集名单。"}),
+            )
+        }
+        Action::DecideSuggestion {
+            profile_id,
+            fingerprint,
+            decision,
+            value,
+            suggestion_date,
+        } => {
+            let action = match decision {
+                SuggestionDecision::Accept => "accept",
+                SuggestionDecision::Ignore => "ignore",
+            };
+            let result = decide_suggestion_locked(
+                tx,
+                owner,
+                profile_id,
+                &fingerprint,
+                SuggestionInput {
+                    action: action.into(),
+                    value,
+                    date: suggestion_date.map(|date| date.to_string()),
+                },
+            )
+            .await?;
+            Ok(
+                json!({"link":format!("/profiles/{profile_id}"),"decision":result["decision"],
+                "message":if action=="accept" {"已接受并应用资料建议。"} else {"已拒绝资料建议。"}}),
+            )
         }
     }
 }

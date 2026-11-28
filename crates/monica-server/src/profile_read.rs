@@ -333,6 +333,7 @@ struct History {
     limit: Option<i64>,
     before: Option<chrono::DateTime<chrono::Utc>>,
     before_id: Option<Uuid>,
+    compact: Option<bool>,
 }
 async fn structured_history(
     State(s): State<AppState>,
@@ -352,8 +353,11 @@ async fn structured_history(
     {
         return Err(super::invalid("unsupported structured fact type"));
     }
-    let rows:Vec<Value>=sqlx::query_scalar("WITH candidates AS ((SELECT r.* FROM crm.profile_aliases($1) owner JOIN LATERAL (SELECT r.* FROM crm.source_structured_revisions r WHERE r.notebook_profile_id=owner AND ($2::text IS NULL OR r.fact_type=$2) AND ($4::timestamptz IS NULL OR (observed_at,id)<($4,$5::uuid)) ORDER BY observed_at DESC,id DESC LIMIT $3) r ON true) UNION ALL SELECT r.* FROM crm.source_account_links l JOIN LATERAL (SELECT r.* FROM crm.source_structured_revisions r WHERE r.notebook_profile_id IS NULL AND r.source_account_id=l.account_id AND ($2::text IS NULL OR r.fact_type=$2) AND ($4::timestamptz IS NULL OR (observed_at,id)<($4,$5::uuid)) ORDER BY observed_at DESC,id DESC LIMIT $3) r ON true WHERE l.profile_id=$1), page AS (SELECT * FROM candidates ORDER BY observed_at DESC,id DESC LIMIT $3) SELECT jsonb_build_object('id',r.id,'profile_id',$1::uuid,'source_account_id',r.source_account_id,'fact_type',r.fact_type,'fact_key',r.fact_key,'content_hash',r.content_hash,'source_type',r.source_type,'source_record_id',r.source_record_id,'observed_at',r.observed_at,'is_conflict',r.is_conflict,'value',r.value,'entity_name',e.name) FROM page r LEFT JOIN crm.organizations e ON e.id=r.entity_id ORDER BY r.observed_at DESC,r.id DESC")
+    let mut rows:Vec<Value>=sqlx::query_scalar("WITH candidates AS ((SELECT r.* FROM crm.profile_aliases($1) owner JOIN LATERAL (SELECT r.* FROM crm.source_structured_revisions r WHERE r.notebook_profile_id=owner AND ($2::text IS NULL OR r.fact_type=$2) AND ($4::timestamptz IS NULL OR (observed_at,id)<($4,$5::uuid)) ORDER BY observed_at DESC,id DESC LIMIT $3) r ON true) UNION ALL SELECT r.* FROM crm.source_account_links l JOIN LATERAL (SELECT r.* FROM crm.source_structured_revisions r WHERE r.notebook_profile_id IS NULL AND r.source_account_id=l.account_id AND ($2::text IS NULL OR r.fact_type=$2) AND ($4::timestamptz IS NULL OR (observed_at,id)<($4,$5::uuid)) ORDER BY observed_at DESC,id DESC LIMIT $3) r ON true WHERE l.profile_id=crm.canonical_profile($1)), page AS (SELECT * FROM candidates ORDER BY observed_at DESC,id DESC LIMIT $3) SELECT jsonb_build_object('id',r.id,'profile_id',$1::uuid,'source_account_id',r.source_account_id,'fact_type',r.fact_type,'fact_key',r.fact_key,'content_hash',r.content_hash,'source_type',r.source_type,'source_record_id',r.source_record_id,'observed_at',r.observed_at,'is_conflict',r.is_conflict,'value',r.value,'entity_name',e.name) FROM page r LEFT JOIN crm.organizations e ON e.id=r.entity_id ORDER BY r.observed_at DESC,r.id DESC")
         .bind(id).bind(q.fact_type).bind(q.limit.unwrap_or(100).clamp(1,200)).bind(q.before).bind(q.before_id).fetch_all(&s.pool).await?;
+    if q.compact == Some(true) {
+        rows.iter_mut().for_each(super::compact_revision);
+    }
     Ok(Json(json!(rows)))
 }
 

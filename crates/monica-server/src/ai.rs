@@ -10,12 +10,14 @@ use chrono::NaiveDate;
 use monica_core::ai;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sqlx::Row;
+use sqlx::{Postgres, Row, Transaction, postgres::PgRow};
 use uuid::Uuid;
 #[path = "ai_browser.rs"]
 pub(crate) mod browser;
 #[path = "ai_settings.rs"]
 mod settings;
+#[path = "ai_web_search.rs"]
+pub(crate) mod web_search;
 type Result<T> = std::result::Result<T, ApiError>;
 fn invalid(message: &'static str) -> ApiError {
     ApiError(StatusCode::UNPROCESSABLE_ENTITY, message)
@@ -34,11 +36,13 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .merge(browser::routes())
         .merge(settings::routes())
+        .merge(web_search::routes())
         .route("/api/v1/ai/status", get(status))
         .route("/api/v1/ai/jobs/{kind}", post(dispatch))
         .route("/api/v1/jobs/status", get(jobs))
         .route("/api/v1/ai/image-ocr", patch(ocr_controls))
         .route("/api/v1/ai/profiles/{id}", get(profile))
+        .route("/api/v1/ai/profiles/{id}/summary", get(profile_summary))
         .route("/api/v1/ai/profiles/{id}/refresh", post(refresh))
         .route("/api/v1/ai/suggestions", get(suggestions))
         .route(
@@ -203,7 +207,7 @@ fn label(kind: &str) -> &str {
         _ => kind,
     }
 }
-fn field_key(kind: &str) -> String {
+pub(crate) fn field_key(kind: &str) -> String {
     if kind == "food" {
         "monica.food_preferences".into()
     } else {
@@ -268,9 +272,8 @@ async fn profile(
     if !enabled(&s).await? {
         return Ok(Json(json!({"enabled":false})));
     }
-    let memory:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('summary',output->'summary','facts',output->'facts','gaps',output->'gaps','generated_at',generated_at) FROM crm.ai_visible_outputs WHERE kind IN ('ai.profile','ai.profile_overview') AND subject=$1 ORDER BY (kind='ai.profile') DESC LIMIT 1").bind(id.to_string()).fetch_optional(&s.pool).await?;
+    let (memory, weeks) = saved_profile_ai(&s, id, None).await?;
     let queued:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.ai_subject_heads h JOIN crm.ai_jobs j ON j.id=h.job_id WHERE (h.subject=$1 OR (h.subject~>=~($1||':') AND h.subject~<~($1||';'))) AND j.status IN ('queued','running'))").bind(id.to_string()).fetch_one(&s.pool).await?;
-    let weeks:Vec<Value>=sqlx::query_scalar("SELECT output||jsonb_build_object('week_start',week_start,'generated_at',generated_at) FROM crm.person_weekly_updates w WHERE profile_id=$1 AND EXISTS(SELECT 1 FROM crm.ai_visible_outputs o WHERE o.kind='ai.person_week' AND o.subject=w.profile_id::text||':'||w.week_start::text AND o.input_hash=w.input_hash) ORDER BY week_start DESC LIMIT 12").bind(id).fetch_all(&s.pool).await?;
     let suggestions = pending(&s, Some(id))
         .await?
         .first()
@@ -280,9 +283,46 @@ async fn profile(
         json!({"enabled":true,"queued":queued,"memory":memory,"weekly_updates":weeks,"suggestions":suggestions}),
     ))
 }
+
+#[derive(Deserialize)]
+struct ProfileWeek {
+    week: Option<NaiveDate>,
+}
+
+async fn profile_summary(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+    Query(q): Query<ProfileWeek>,
+) -> Result<Json<Value>> {
+    user(&s, &h).await?;
+    let mut tx = s.pool.begin().await?;
+    let id = crate::pages::canonical(&mut tx, id).await?;
+    tx.commit().await?;
+    let enabled = enabled(&s).await?;
+    let (memory, weeks) = if enabled {
+        saved_profile_ai(&s, id, q.week).await?
+    } else {
+        (None, Vec::new())
+    };
+    Ok(Json(
+        json!({"profile_id":id,"enabled":enabled,"memory":memory,"weekly_updates":weeks}),
+    ))
+}
+
+async fn saved_profile_ai(
+    s: &AppState,
+    id: Uuid,
+    week: Option<NaiveDate>,
+) -> Result<(Option<Value>, Vec<Value>)> {
+    let memory:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('summary',output->'summary','facts',output->'facts','gaps',output->'gaps','generated_at',generated_at) FROM crm.ai_visible_outputs WHERE kind IN ('ai.profile','ai.profile_overview') AND subject=$1 ORDER BY (kind='ai.profile') DESC LIMIT 1").bind(id.to_string()).fetch_optional(&s.pool).await?;
+    let weeks:Vec<Value>=sqlx::query_scalar("SELECT output||jsonb_build_object('week_start',week_start,'generated_at',generated_at) FROM crm.person_weekly_updates w WHERE profile_id=$1 AND ($2::date IS NULL OR w.week_start=$2) AND EXISTS(SELECT 1 FROM crm.ai_visible_outputs o WHERE o.kind='ai.person_week' AND o.subject=w.profile_id::text||':'||w.week_start::text AND o.input_hash=w.input_hash) ORDER BY week_start DESC LIMIT 12").bind(id).bind(week).fetch_all(&s.pool).await?;
+    Ok((memory, weeks))
+}
 #[derive(Deserialize)]
 struct SuggestionQuery {
     kind: Option<String>,
+    profile_id: Option<Uuid>,
     offset: Option<usize>,
     limit: Option<usize>,
 }
@@ -297,7 +337,7 @@ async fn suggestions(
             json!({"enabled":false,"total":0,"items":0,"kinds":{},"people":[]}),
         ));
     }
-    let mut people = pending(&s, None).await?;
+    let mut people = pending(&s, q.profile_id).await?;
     let mut counts = serde_json::Map::new();
     let mut items = 0;
     for person in &mut people {
@@ -322,10 +362,10 @@ async fn suggestions(
     ))
 }
 #[derive(Deserialize)]
-struct Decision {
-    action: String,
-    value: Option<String>,
-    date: Option<String>,
+pub(crate) struct Decision {
+    pub action: String,
+    pub value: Option<String>,
+    pub date: Option<String>,
 }
 async fn decide(
     State(s): State<AppState>,
@@ -334,17 +374,52 @@ async fn decide(
     Json(body): Json<Decision>,
 ) -> Result<Json<Value>> {
     let (actor, _) = user(&s, &h).await?;
-    if !["accept", "ignore"].contains(&body.action.as_str()) {
-        return Err(invalid("invalid action"));
-    }
-    let today = ai::today(&s.pool).await.map_err(service)?;
     let mut tx = s.pool.begin().await?;
     sqlx::query("SELECT id FROM crm.profiles WHERE id=$1 AND archived_at IS NULL FOR UPDATE")
         .bind(id)
         .fetch_optional(&mut *tx)
         .await?
         .ok_or(missing("profile not found"))?;
-    let item=sqlx::query("SELECT * FROM crm.profile_suggestions v WHERE profile_id=$1 AND fingerprint=$2 AND EXISTS(SELECT 1 FROM crm.ai_visible_outputs o WHERE o.kind IN ('ai.profile','ai.profile_updates') AND o.subject=v.profile_id::text AND o.input_hash=v.input_hash) AND NOT EXISTS(SELECT 1 FROM crm.profile_suggestion_decisions d WHERE d.profile_id=v.profile_id AND d.fingerprint=v.fingerprint) FOR UPDATE").bind(id).bind(&key).fetch_optional(&mut *tx).await?.ok_or(missing("No pending suggestion"))?;
+    let value = decide_suggestion_locked(&mut tx, actor, id, &key, body).await?;
+    tx.commit().await?;
+    Ok(Json(value))
+}
+
+pub(crate) async fn pending_suggestion(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    key: &str,
+    lock: bool,
+) -> Result<PgRow> {
+    let query = "SELECT v.* FROM crm.profile_suggestions v WHERE profile_id=$1 AND fingerprint=$2 AND EXISTS(SELECT 1 FROM crm.ai_visible_outputs o WHERE o.kind IN ('ai.profile','ai.profile_updates') AND o.subject=v.profile_id::text AND o.input_hash=v.input_hash) AND NOT EXISTS(SELECT 1 FROM crm.profile_suggestion_decisions d WHERE d.profile_id=v.profile_id AND d.fingerprint=v.fingerprint)";
+    let sql = if lock {
+        format!("{query} FOR UPDATE")
+    } else {
+        query.into()
+    };
+    sqlx::query(&sql)
+        .bind(id)
+        .bind(key)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or(missing("No pending suggestion"))
+}
+
+pub(crate) async fn decide_suggestion_locked(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: Uuid,
+    id: Uuid,
+    key: &str,
+    body: Decision,
+) -> Result<Value> {
+    if !["accept", "ignore"].contains(&body.action.as_str()) {
+        return Err(invalid("invalid action"));
+    }
+    let today: NaiveDate =
+        sqlx::query_scalar("SELECT (now() AT TIME ZONE 'America/Chicago')::date")
+            .fetch_one(&mut **tx)
+            .await?;
+    let item = pending_suggestion(tx, id, key, true).await?;
     let kind: String = item.get("kind");
     let suggested: String = item.get("value");
     let already_known = if kind == "meetup" {
@@ -354,12 +429,12 @@ async fn decide(
             "SELECT month,day FROM crm.profile_dates WHERE profile_id=$1 AND kind='birthday'",
         )
         .bind(id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await?;
         ai::birthday_at(&suggested, today)
             .is_some_and(|(_, m, d)| parts == Some((Some(m as i32), Some(d as i32))))
     } else {
-        let known:Option<Value>=sqlx::query_scalar("SELECT r.value FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1 AND c.field_key=$2").bind(id).bind(field_key(&kind)).fetch_optional(&mut *tx).await?;
+        let known:Option<Value>=sqlx::query_scalar("SELECT r.value FROM crm.field_current c JOIN crm.field_revisions r ON r.id=c.revision_id WHERE c.profile_id=$1 AND c.field_key=$2").bind(id).bind(field_key(&kind)).fetch_optional(&mut **tx).await?;
         known
             .as_ref()
             .and_then(Value::as_str)
@@ -376,22 +451,20 @@ async fn decide(
     let applied = if body.action == "ignore" {
         Value::Null
     } else {
-        if value.is_empty() || value.chars().count() > 2000 {
-            return Err(invalid("empty or oversized value"));
-        }
+        validate_suggestion_value(&value)?;
         if kind == "birthday" {
             let (year, month, day) = ai::birthday_at(&value, today)
                 .ok_or(invalid("birthday must be MM-DD or YYYY-MM-DD"))?;
-            let exists:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.profile_dates WHERE profile_id=$1 AND kind='birthday')").bind(id).fetch_one(&mut *tx).await?;
+            let exists:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM crm.profile_dates WHERE profile_id=$1 AND kind='birthday')").bind(id).fetch_one(&mut **tx).await?;
             if exists {
                 return Err(ApiError(StatusCode::CONFLICT, "birthday_exists"));
             }
             let date_id = Uuid::new_v4();
             let precision = if year.is_some() { "exact" } else { "month_day" };
-            sqlx::query("INSERT INTO crm.profile_dates(id,profile_id,kind,date_precision,year,month,day,updated_by) VALUES($1,$2,'birthday',$3,$4,$5,$6,$7)").bind(date_id).bind(id).bind(precision).bind(year).bind(month as i32).bind(day as i32).bind(actor).execute(&mut *tx).await?;
+            sqlx::query("INSERT INTO crm.profile_dates(id,profile_id,kind,date_precision,year,month,day,updated_by) VALUES($1,$2,'birthday',$3,$4,$5,$6,$7)").bind(date_id).bind(id).bind(precision).bind(year).bind(month as i32).bind(day as i32).bind(actor).execute(&mut **tx).await?;
             sqlx::query("UPDATE crm.profiles SET generation=generation+1 WHERE id=$1")
                 .bind(id)
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await?;
             json!({"date_id":date_id,"precision":precision,"year":year,"month":month,"day":day})
         } else if kind == "meetup" {
@@ -403,37 +476,30 @@ async fn decide(
                 })
                 .and_then(|d| d.parse::<NaiveDate>().ok())
                 .ok_or(invalid("meetup date required"))?;
-            if day < today - chrono::Duration::days(120) || day > today + chrono::Duration::days(60)
-            {
-                return Err(invalid("meetup date outside suggestion window"));
-            }
+            validate_suggestion_meetup(day, today)?;
             let aid = Uuid::new_v4();
             let title = value.chars().take(255).collect::<String>();
             let quote: String = item.get("quote");
             let hash = monica_core::identity::content_hash(
                 &json!({"title":title,"body":quote,"date":day}),
             );
-            sqlx::query("INSERT INTO crm.activities(id,activity_type,occurred_at,title,body,source_type,created_by,content_hash) VALUES($1,'activity',($2::date+time '12:00') AT TIME ZONE 'America/Chicago',$3,$4,'manual',$5,$6)").bind(aid).bind(day).bind(&title).bind(quote).bind(actor).bind(hash).execute(&mut *tx).await?;
+            sqlx::query("INSERT INTO crm.activities(id,activity_type,occurred_at,title,body,source_type,created_by,content_hash) VALUES($1,'activity',($2::date+time '12:00') AT TIME ZONE 'America/Chicago',$3,$4,'manual',$5,$6)").bind(aid).bind(day).bind(&title).bind(quote).bind(actor).bind(hash).execute(&mut **tx).await?;
             sqlx::query("INSERT INTO crm.activity_participants VALUES($1,$2)")
                 .bind(aid)
                 .bind(id)
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await?;
-            sqlx::query("INSERT INTO crm.activity_revisions(activity_id,operation,payload,content_hash,actor_user_id) SELECT id,'created',to_jsonb(a),content_hash,$2 FROM crm.activities a WHERE id=$1").bind(aid).bind(actor).execute(&mut *tx).await?;
+            sqlx::query("INSERT INTO crm.activity_revisions(activity_id,operation,payload,content_hash,actor_user_id) SELECT id,'created',to_jsonb(a),content_hash,$2 FROM crm.activities a WHERE id=$1").bind(aid).bind(actor).execute(&mut **tx).await?;
             sqlx::query("UPDATE crm.profiles SET generation=generation+1 WHERE id=$1")
                 .bind(id)
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await?;
-            json!({"activity_id":aid,"date":day,"title":value})
+            json!({"activity_id":aid,"date":day,"title":title})
         } else {
-            let field_key = if kind == "food" {
-                "monica.food_preferences".to_string()
-            } else {
-                format!("monica.{kind}")
-            };
+            let field_key = field_key(&kind);
             // Same transaction as the decision. A direct manual edit still wins
             // until the user explicitly accepts this suggestion.
-            let content = monica_core::content::register(&mut tx, "field_value", &json!(value))
+            let content = monica_core::content::register(tx, "field_value", &json!(value))
                 .await
                 .map_err(service)?;
             let previous: Option<Uuid> = sqlx::query_scalar(
@@ -441,14 +507,14 @@ async fn decide(
             )
             .bind(id)
             .bind(&field_key)
-            .fetch_optional(&mut *tx)
+            .fetch_optional(&mut **tx)
             .await?;
             let revision = Uuid::new_v4();
-            sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,field_key,value,content_hash,source_type,operation,previous_revision_id,content_object_id) VALUES($1,$2,$3,$4,$5,'manual','manual_edit',$6,$7)").bind(revision).bind(id).bind(&field_key).bind(json!(value)).bind(content.hash).bind(previous).bind(content.id).execute(&mut *tx).await?;
-            sqlx::query("INSERT INTO crm.field_current VALUES($1,$2,$3) ON CONFLICT(profile_id,field_key) DO UPDATE SET revision_id=excluded.revision_id").bind(id).bind(&field_key).bind(revision).execute(&mut *tx).await?;
+            sqlx::query("INSERT INTO crm.field_revisions(id,profile_id,field_key,value,content_hash,source_type,operation,previous_revision_id,content_object_id) VALUES($1,$2,$3,$4,$5,'manual','manual_edit',$6,$7)").bind(revision).bind(id).bind(&field_key).bind(json!(value)).bind(content.hash).bind(previous).bind(content.id).execute(&mut **tx).await?;
+            sqlx::query("INSERT INTO crm.field_current VALUES($1,$2,$3) ON CONFLICT(profile_id,field_key) DO UPDATE SET revision_id=excluded.revision_id").bind(id).bind(&field_key).bind(revision).execute(&mut **tx).await?;
             sqlx::query("UPDATE crm.profiles SET generation=generation+1 WHERE id=$1")
                 .bind(id)
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await?;
             json!({"field_key":field_key,"value":value})
         }
@@ -458,13 +524,24 @@ async fn decide(
     } else {
         "accepted"
     };
-    sqlx::query("INSERT INTO crm.profile_suggestion_decisions(profile_id,fingerprint,kind,decision,applied) VALUES($1,$2,$3,$4,$5)").bind(id).bind(&key).bind(&kind).bind(decision).bind(&applied).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO crm.audit_events(user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'profile',$3,$4)").bind(actor).bind(format!("profile.suggestion.{decision}")).bind(id).bind(json!({"kind":kind,"fingerprint":key})).execute(&mut *tx).await?;
-    tx.commit().await?;
-    Ok(Json(
-        json!({"profile_id":id,"fingerprint":key,"decision":decision,"applied":applied}),
-    ))
+    sqlx::query("INSERT INTO crm.profile_suggestion_decisions(profile_id,fingerprint,kind,decision,applied) VALUES($1,$2,$3,$4,$5)").bind(id).bind(key).bind(&kind).bind(decision).bind(&applied).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO crm.audit_events(user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'profile',$3,$4)").bind(actor).bind(format!("profile.suggestion.{decision}")).bind(id).bind(json!({"kind":kind,"fingerprint":key})).execute(&mut **tx).await?;
+    Ok(json!({"profile_id":id,"fingerprint":key,"decision":decision,"applied":applied}))
 }
+pub(crate) fn validate_suggestion_value(value: &str) -> Result<()> {
+    if value.is_empty() || value.chars().count() > 2000 {
+        return Err(invalid("empty or oversized value"));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_suggestion_meetup(day: NaiveDate, today: NaiveDate) -> Result<()> {
+    if day < today - chrono::Duration::days(120) || day > today + chrono::Duration::days(60) {
+        return Err(invalid("meetup date outside suggestion window"));
+    }
+    Ok(())
+}
+
 async fn undo(
     State(s): State<AppState>,
     h: HeaderMap,

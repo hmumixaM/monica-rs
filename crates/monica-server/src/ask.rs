@@ -1,5 +1,6 @@
 mod agent;
 mod edits;
+mod image_lookup;
 mod lookup;
 mod sandbox;
 mod script_worker;

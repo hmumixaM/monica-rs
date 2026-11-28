@@ -13,6 +13,61 @@ pub(super) struct Filter {
     provider: Option<String>,
     year: Option<i32>,
     kind: Option<String>,
+    query: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+    center_latitude: Option<f64>,
+    center_longitude: Option<f64>,
+    radius_km: Option<f64>,
+}
+
+#[derive(Clone, Copy)]
+struct Radius {
+    latitude: f64,
+    longitude: f64,
+    radius_km: f64,
+}
+
+impl Filter {
+    fn radius(&self) -> Result<Option<Radius>> {
+        match (self.center_latitude, self.center_longitude, self.radius_km) {
+            (None, None, None) => Ok(None),
+            (Some(latitude), Some(longitude), Some(radius_km))
+                if (-90.0..=90.0).contains(&latitude)
+                    && (-180.0..=180.0).contains(&longitude)
+                    && radius_km.is_finite()
+                    && radius_km > 0.0 =>
+            {
+                Ok(Some(Radius {
+                    latitude,
+                    longitude,
+                    radius_km,
+                }))
+            }
+            _ => Err(ApiError(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "invalid location radius",
+            )),
+        }
+    }
+}
+
+impl Radius {
+    fn distance_to(&self, latitude: f64, longitude: f64) -> Option<f64> {
+        let delta_latitude = (latitude - self.latitude).to_radians();
+        let delta_longitude = (longitude - self.longitude).to_radians();
+        let haversine = (delta_latitude / 2.0).sin().powi(2)
+            + self.latitude.to_radians().cos()
+                * latitude.to_radians().cos()
+                * (delta_longitude / 2.0).sin().powi(2);
+        let distance_km = 2.0 * 6371.0088 * haversine.clamp(0.0, 1.0).sqrt().asin();
+        (distance_km <= self.radius_km).then_some(distance_km)
+    }
+}
+
+fn matches_point(point: &Coordinates, query: &str, radius: Option<Radius>) -> bool {
+    (query.is_empty() || point.label.to_lowercase().contains(query))
+        && radius.is_none_or(|r| r.distance_to(point.latitude, point.longitude).is_some())
 }
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -53,7 +108,7 @@ pub(super) async fn build(
     q: &Filter,
 ) -> Result<Value> {
     if let Some(id) = id {
-        return profile_summary(tx, id).await;
+        return profile_summary(tx, id, q).await;
     }
     let kind = q.kind.as_deref().unwrap_or("all");
     let mut entries = Vec::new();
@@ -192,6 +247,9 @@ pub(super) async fn build(
             }
         }
     }
+    let radius = q.radius()?;
+    let query = q.query.as_deref().unwrap_or_default().to_lowercase();
+    entries.retain(|entry| matches_point(&entry.point, &query, radius));
     entries.sort_by(|a, b| b.at.cmp(&a.at).then_with(|| b.url.cmp(&a.url)));
     let mut points = BTreeMap::<(i64, i64, String), Point>::new();
     let mut people = BTreeSet::new();
@@ -278,22 +336,78 @@ async fn atlas(State(s): State<AppState>, Query(q): Query<Filter>) -> Result<Jso
             "invalid location filter",
         ));
     }
+    let radius = q.radius()?;
     let mut tx = snapshot(&s).await?;
     let value = build(&mut tx, None, &q).await?;
     tx.commit().await?;
-    Ok(Json(value))
+    Ok(Json(map_page(value, &q, radius)))
 }
-async fn profile(State(s): State<AppState>, Path(id): Path<Uuid>) -> Result<Json<Value>> {
+async fn profile(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    Query(q): Query<Filter>,
+) -> Result<Json<Value>> {
+    let radius = q.radius()?;
     let mut tx = snapshot(&s).await?;
     let id = canonical(&mut tx, id).await?;
-    let value = build(&mut tx, Some(id), &Filter::default()).await?;
+    let value = build(&mut tx, Some(id), &q).await?;
     tx.commit().await?;
-    Ok(Json(value))
+    Ok(Json(map_page(value, &q, radius)))
+}
+
+fn map_page(value: Value, q: &Filter, radius: Option<Radius>) -> Value {
+    if q.query.is_none() && q.limit.is_none() && q.offset.is_none() && radius.is_none() {
+        return value;
+    }
+    let offset = q.offset.unwrap_or_default();
+    let limit = q.limit.unwrap_or(20).clamp(1, 50);
+    let end = offset.saturating_add(limit);
+    let mut matching: Vec<_> = value["points"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|point| {
+            let distance = match radius {
+                Some(radius) => Some(
+                    radius
+                        .distance_to(point["latitude"].as_f64()?, point["longitude"].as_f64()?)?,
+                ),
+                None => None,
+            };
+            Some((point, distance))
+        })
+        .collect();
+    if radius.is_some() {
+        matching.sort_by(|a, b| a.1.unwrap_or_default().total_cmp(&b.1.unwrap_or_default()));
+    }
+    let total = matching.len();
+    let rows: Vec<_> = matching.into_iter().skip(offset).take(limit).map(|(point, distance)| {
+        let people: Vec<_> = point["people"].as_array().into_iter().flatten()
+            .take(5).collect();
+        let links: Vec<_> = point["events"].as_array().into_iter().flatten()
+            .filter_map(|event| event["url"].as_str()).take(3).collect();
+            json!({"label":point["label"],"count":point["count"],
+            "latitude":point["latitude"],"longitude":point["longitude"],"precision":point["precision"],
+            "distance_km":distance.map(|km| (km * 100.0).round() / 100.0),
+            "source_kind":point["source_kind"],"sources":point["sources"],"people_count":point["people_count"],
+            "people":people,"first_seen":point["first_seen"],"last_seen":point["last_seen"],"links":links})
+    }).collect();
+    json!({"points":rows,"total":total,"next_offset":(end<total).then_some(end),
+        "near":radius.map(|r| json!({"latitude":r.latitude,"longitude":r.longitude,"radius_km":r.radius_km})),
+        "profile_id":value["profile_id"],"place_count":value["place_count"],
+        "total_posts_with_location":value["total_posts_with_location"],
+        "located_records":value["located_records"],"post_records":value["post_records"],
+        "profile_records":value["profile_records"],"source_counts":value["source_counts"],
+        "years":value["years"],"unresolved_place_count":value["unresolved"].as_array().map(Vec::len)})
 }
 
 // A profile's map has the pinned coordinate-only contract. A city-center lookup
 // belongs to the global atlas; it must not become a fictitious visited place.
-async fn profile_summary(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result<Value> {
+async fn profile_summary(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    q: &Filter,
+) -> Result<Value> {
     let kind: String = sqlx::query_scalar("SELECT profile_type FROM crm.profiles WHERE id=$1")
         .bind(id)
         .fetch_one(&mut **tx)
@@ -335,16 +449,21 @@ async fn profile_summary(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result
         }
     }
     let mut points = BTreeMap::<(String, i64, i64), Value>::new();
+    let radius = q.radius()?;
+    let query = q.query.as_deref().unwrap_or_default().to_lowercase();
     for row in rows {
         let Some(point) = coordinates(&row["location"], row["coordinate_format"].as_str()) else {
             continue;
         };
+        if !matches_point(&point, &query, radius) {
+            continue;
+        }
         let key = (
             point.label.clone(),
             (point.latitude * 100000.).round_ties_even() as i64,
             (point.longitude * 100000.).round_ties_even() as i64,
         );
-        let entry=points.entry(key).or_insert_with(|| json!({"label":point.label,"latitude":point.latitude,"longitude":point.longitude,"count":0,"first_seen":null,"last_seen":null,"sources":[],"events":[],"map_url":format!("https://www.openstreetmap.org/?mlat={}&mlon={}#map=14/{}/{}",point.latitude,point.longitude,point.latitude,point.longitude)}));
+        let entry=points.entry(key).or_insert_with(|| json!({"label":point.label,"latitude":point.latitude,"longitude":point.longitude,"precision":point.precision,"count":0,"first_seen":null,"last_seen":null,"sources":[],"events":[],"map_url":format!("https://www.openstreetmap.org/?mlat={}&mlon={}#map=14/{}/{}",point.latitude,point.longitude,point.latitude,point.longitude)}));
         entry["count"] =
             json!(entry["count"].as_i64().unwrap() + row["count"].as_i64().unwrap_or(1));
         let provider = row["provider"].as_str().unwrap_or("wechat");

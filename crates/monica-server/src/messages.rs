@@ -413,7 +413,11 @@ async fn summary(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
     user(&s, &h).await?;
-    let mut tx = s.pool.begin().await?;
+    let mut tx = s
+        .pool
+        .begin_with("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        .await?;
+    let id = crate::pages::canonical(&mut tx, id).await?;
     let mut result = crate::profiles::summary::contact_events(&mut tx, id).await?;
     tx.commit().await?;
     if result.get("calls").is_none() {
@@ -423,6 +427,7 @@ async fn summary(
         result["money"] = json!({"total":0,"transfer":0,"red_packet":0,"unknown_amount":0,"unknown_direction":0,"currencies":{}});
     }
     result["snapshot_at"] = Value::Null;
+    result["profile_id"] = json!(id);
     Ok(Json(result))
 }
 

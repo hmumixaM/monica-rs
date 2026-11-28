@@ -83,18 +83,20 @@ async fn save_linkedin(
     let mut tx = s.pool.begin().await?;
     let saved = collector::save_linkedin(&mut tx, id, &body.account, actor)
         .await
-        .map_err(|e| {
-            if e.to_string().contains("belongs to another person") {
-                ApiError(
-                    StatusCode::CONFLICT,
-                    "此 LinkedIn 账号已关联其他人物，请先在来源账号中核对归属",
-                )
-            } else {
-                operation(e)
-            }
-        })?;
+        .map_err(linkedin_error)?;
     tx.commit().await?;
     Ok(Json(saved))
+}
+
+pub(crate) fn linkedin_error(error: anyhow::Error) -> ApiError {
+    if error.to_string().contains("belongs to another person") {
+        ApiError(
+            StatusCode::CONFLICT,
+            "此 LinkedIn 账号已关联其他人物，请先在来源账号中核对归属",
+        )
+    } else {
+        operation(error)
+    }
 }
 async fn remove_linkedin(
     State(s): State<AppState>,

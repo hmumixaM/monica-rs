@@ -24,7 +24,8 @@ const LABEL: Record<Kind, string> = { all: "全部", people: "联系人", tags: 
 const PREVIEW: Record<Exclude<Kind, "all">, number> = { people: 8, tags: 16, messages: 6, posts: 6, records: 5 };
 
 interface PersonHit { id: string; name: string; type: "person" | "group"; avatarMediaId: string | null; detail: string; lastContactAt?: string | null }
-interface PostHit { id: string; profileId: string | null; author: string; avatarMediaId: string | null; provider: string; occurredAt: string | null; text: string }
+interface PostHit { id: string; profileId: string | null; author: string; avatarMediaId: string | null; provider: string; occurredAt: string | null; text: string; match?: string }
+const POST_MATCH = { caption: "", account: "关联账号", mention: "动态提及", ocr: "图片文字" };
 
 function Group({ kind, count, shown, onMore, children, icon }: {
   kind: Exclude<Kind, "all">; count: number; shown: number; onMore?: () => void; children: ReactNode; icon?: ReactNode;
@@ -96,7 +97,8 @@ export function SearchView() {
     for (const hit of remote.filter((row) => row.entity_type === "timeline" && !seen.has(row.id))) {
       rows.push({ id: hit.id, profileId: hit.profile_id ?? null, author: hit.profile_name ?? author(hit.profile_id ?? null)?.name ?? "",
         avatarMediaId: hit.avatar_media_id ?? author(hit.profile_id ?? null)?.avatarMediaId ?? null,
-        provider: hit.provider ?? hit.title.split(" · ")[0], occurredAt: hit.occurred_at ?? null, text: hit.summary });
+        provider: hit.provider ?? hit.title.split(" · ")[0], occurredAt: hit.occurred_at ?? null, text: hit.summary,
+        match: hit.match_source ? POST_MATCH[hit.match_source] : undefined });
     }
     return rows.sort((a, b) => (b.occurredAt ?? "").localeCompare(a.occurredAt ?? ""));
   }, [posts.results, remote, directory]);
@@ -158,7 +160,7 @@ export function SearchView() {
               <span className={styles.text}>
                 <span className={styles.byline}><strong>{post.author || "未关联的作者"}</strong><SourceMark provider={post.provider} size={10} />
                   {post.occurredAt && <time>{formatDateTime(post.occurredAt, false)}</time>}</span>
-                <p><Highlight text={excerpt(post.text, query)} query={query} /></p>
+                <p>{post.match && <small>{post.match} · </small>}<Highlight text={excerpt(post.text, query)} query={query} /></p>
               </span>
             </Link>
           </li>)}</ul>

@@ -149,6 +149,7 @@ export interface SearchHit {
   kind?: string | null;
   avatar_media_id?: string | null;
   provider?: string | null;
+  match_source?: "caption" | "account" | "mention" | "ocr" | null;
 }
 
 export interface ConversationItem {

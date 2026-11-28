@@ -1,6 +1,6 @@
 //! The only bridge reachable by a generated script. Paths, methods and response
 //! projections are selected here, never supplied by the script.
-use super::{Actor, script_worker};
+use super::{Actor, image_lookup, script_worker};
 use crate::auth::{AppState, delegated_routes};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use axum::{
@@ -21,7 +21,11 @@ use tokio::sync::OnceCell;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-const MAX_LOOKUPS: usize = 240;
+#[path = "aggregations.rs"]
+mod aggregations;
+#[path = "contact_insights.rs"]
+mod contact_insights;
+
 const LOOKUP_BYTES: usize = 256 * 1024;
 const DIRECTORY_BYTES: usize = 32 * 1024 * 1024;
 const TRACE_BYTES: usize = 64 * 1024;
@@ -71,30 +75,163 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "get_person",
         parameters: "profile_id",
-        description: "查人物资料、标签、工作教育经历、近况、来源和往来统计。",
+        description: "查人物资料、标签、工作教育经历、来源和往来统计。只需要人物总结或每周近况时，用 profile_summary。",
         list: None,
-        fields: "profile_id name city note summary tags chat memory.summary memory.facts recent_weeks career sources relationships groups link",
+        fields: "profile_id name city note summary tags chat ai_enabled ai_error memory.summary memory.facts recent_weeks career sources relationships groups link",
+    },
+    CommandSpec {
+        name: "profile_merge_preview",
+        parameters: "source_profile_id, target_profile_id",
+        description: "为同一人的两份资料提出合并建议。source 是要合入的资料，target 是保留的资料。返回影响范围、冲突和打开确认界面的链接。",
+        list: None,
+        fields: "source target counts conflicts can_merge link",
+    },
+    CommandSpec {
+        name: "profile_summary",
+        parameters: "profile_id, week?",
+        description: "优先读取已保存的 AI 人物总结（Memory）和每周近况。默认最近 12 份已保存周报，也可用 week（YYYY-MM-DD，通常为周一）指定一周。含生成时间和周报来源链接。",
+        list: None,
+        fields: "profile_id enabled memory.summary memory.facts memory.gaps memory.generated_at recent_weeks.week recent_weeks.summary recent_weeks.sources link",
+    },
+    CommandSpec {
+        name: "weekly_review",
+        parameters: "week?, limit?, offset?",
+        description: "查看整体周报。省略 week 时分页列出最近 104 份已保存的周报（limit 最大 30）；指定 week（YYYY-MM-DD，通常为周一）读取该周统计、重点联系人、重要近况和建议。",
+        list: None,
+        fields: "enabled digests week generated_at facts narrative link",
+    },
+    CommandSpec {
+        name: "weekly_people",
+        parameters: "week?, after?, limit?",
+        description: "按周分页读取已保存的人物近况，默认上一完整周。week 为 YYYY-MM-DD，通常为周一。limit 最大 25。继续时传返回的 week 和 next（作为 after）。",
+        list: Some("people"),
+        fields: "profile_id name week summary generated_at sources link",
+    },
+    CommandSpec {
+        name: "places",
+        parameters: "profile_id?, query?, near?, provider?, year?, kind?, limit?, offset?",
+        description: "查询足迹地图。query 匹配地点名称。near 接受 {city, radius_km} 或 {latitude, longitude, radius_km}，按距中心的直线距离筛选并从近到远排序。重名城市用逗号补充州或国家。全局还支持 provider（wechat、instagram、linkedin）、year 和 kind（post、profile、all）；查某年动态地点时用 kind=post。指定 profile_id 时查该人物的记录坐标。按 next_offset 翻页时保留相同筛选，limit 最大 50。",
+        list: Some("points"),
+        fields: "label count latitude longitude distance_km precision source_kind sources people_count people first_seen last_seen links",
+    },
+    CommandSpec {
+        name: "relationship_network",
+        parameters: "profile_id?, limit?",
+        description: "查看关系图中的互动、已记录关系、共同小群和共同受众。指定 profile_id 聚焦某人。返回权重较高的关系样本及范围，limit 最大 50。",
+        list: Some("edges"),
+        fields: "from to interactions_a_to_b interactions_b_to_a shared_groups shared_audience relationship_types last_at",
+    },
+    CommandSpec {
+        name: "chat_statistics",
+        parameters: "profile_id, from_month?, to_month?",
+        description: "读取人物已导入且未删除的私聊月统计，含收发、系统和方向未知的记录。用 YYYY-MM 筛选月份，含起止月。只看数量和趋势时优先用此命令。",
+        list: Some("months"),
+        fields: "month sent received total system unknown records",
+    },
+    CommandSpec {
+        name: "contact_calendar",
+        parameters: "year? 或 day?, limit?, offset?",
+        description: "按年看每天联系了几个人，或用 day（YYYY-MM-DD）查看当天联系的对象、私聊条数与通话次数。按 America/Chicago 归日，私聊来自每周统计快照。可用 next_offset 翻页。",
+        list: Some("rows"),
+        fields: "date people profile_id name messages calls link",
+    },
+    CommandSpec {
+        name: "contact_activity",
+        parameters: "profile_id, from_month?, to_month?",
+        description: "查看某人的私聊收发、通话和社交互动月趋势，按 America/Chicago 归月。用 YYYY-MM 指定起止月（含起止）。",
+        list: Some("months"),
+        fields: "month sent received calls interactions",
+    },
+    CommandSpec {
+        name: "contact_events_summary",
+        parameters: "profile_id",
+        description: "读取人物已收录通话与收支的全部汇总。通话有语音、视频、方向和时长，收支金额按币种区分。",
+        list: None,
+        fields: "profile_id calls money money_amount_unit link",
+    },
+    CommandSpec {
+        name: "source_coverage",
+        parameters: "profile_id, provider?",
+        description: "查看人物各已关联来源的已收录记录数量、时间范围和同步状态。可选 provider；覆盖范围只描述已收录记录。",
+        list: Some("sources"),
+        fields: "connection_id provider name state enabled last_success_at records earliest_at latest_at",
+    },
+    CommandSpec {
+        name: "import_daily",
+        parameters: "provider?, connection_id?, days?, limit?, offset?",
+        description: "查看最近每天的导入记录、处理量、变化和失败数。可按来源或连接筛选，days 默认 7，最大 366；按 next_offset 翻页。",
+        list: Some("records"),
+        fields: "date provider connection_id stream records processed inserted changed unchanged failures",
+    },
+    CommandSpec {
+        name: "group_members",
+        parameters: "group_id, limit?, offset?",
+        description: "列出群的已记录现任成员、角色和加入时间。群 ID 从 directory 的 group 结果取得；按 next_offset 翻页。",
+        list: Some("members"),
+        fields: "profile_id name role joined_at link",
+    },
+    CommandSpec {
+        name: "social_statistics",
+        parameters: "profile_id?, provider?, from_month?, to_month?",
+        description: "查看个人或全局按平台汇总的发帖、获赞和评论量及发帖月趋势。provider 可用 wechat、instagram、linkedin；起止月仅筛月趋势，totals 为全部时间。UTC 归月。",
+        list: Some("providers"),
+        fields: "provider totals monthly first_at latest_at",
+    },
+    CommandSpec {
+        name: "profile_history",
+        parameters: "profile_id, field_key?, before?, limit?",
+        description: "浏览人物资料字段历史版本，含资料来源、观测时间、冲突和删除状态。可用 field_key（如 monica.company）筛选；把 next 原样作为 before 继续。值过长会截短。",
+        list: Some("revisions"),
+        fields: "id field_key value value_truncated source_type source_account_id source_record_id operation observed_at is_conflict link",
+    },
+    CommandSpec {
+        name: "profile_fact_history",
+        parameters: "profile_id, fact_type?, before?, before_id?, limit?",
+        description: "浏览人物结构化经历的来源历史，包括 employment（工作）、education（教育）和 address（地址）。保留原始观测时间和来源。翻页时把 next.before 和 next.before_id 原样传回。",
+        list: Some("revisions"),
+        fields: "id fact_type fact_key organization value value_truncated source_type source_account_id source_record_id observed_at is_conflict link",
     },
     CommandSpec {
         name: "search_messages",
         parameters: "query, profile_id?, chat?, since?, before?",
-        description: "搜索私聊和群聊，查询词用 | 分隔，最多 6 个，每项按原文匹配。可按人物、direct/group 或时间筛选。",
+        description: "搜索私聊和群聊，查询词用 | 分隔，每项按原文匹配。可按人物、direct/group 或时间筛选。",
         list: Some("messages"),
-        fields: "at from text link group chat_with profile_id",
+        fields: "at from text link group chat_with profile_id image_ids",
     },
     CommandSpec {
         name: "read_messages",
         parameters: "profile_id, since?, until?, before?",
         description: "按时间阅读人物的私聊和群里发言。用返回的 earlier 继续往前翻。",
         list: Some("messages"),
-        fields: "at from text link group chat_with profile_id",
+        fields: "at from text link group chat_with profile_id image_ids",
     },
     CommandSpec {
         name: "get_posts",
-        parameters: "profile_id, cursor?",
-        description: "查人物的朋友圈、Instagram 和 LinkedIn 动态，按 next 翻页。",
+        parameters: "profile_id?, provider?, since?, before?, media?, cursor?, limit?",
+        description: "浏览全局时间线或人物时间线。可按来源（如 wechat、instagram、linkedin、manual）和起止时间筛选，media=ready 仅看有可用媒体的记录。按 next 传回 cursor，保留相同筛选，limit 最大 30。",
         list: Some("posts"),
-        fields: "at provider text images place likes comments link",
+        fields: "post_id at provider title name profile_id text images image_ids place likes comments link",
+    },
+    CommandSpec {
+        name: "image_notes",
+        parameters: "post_id? 或 image_id?",
+        description: "读取已保存的图像识别文字和描述。动态传 get_posts 返回的 post_id，单张图片传 image_id，二选一。优先使用已保存识别结果，只有确需核实图像细节时才识图。",
+        list: Some("notes"),
+        fields: "image_id summary description text link",
+    },
+    CommandSpec {
+        name: "profile_suggestions",
+        parameters: "profile_id?, kind?, limit?, offset?",
+        description: "读取待处理的 AI 资料建议，可按人物和类型筛选。保留 fingerprint 与来源；只有用户要求处理建议时才用 propose_monica_edit 提出操作。",
+        list: Some("people"),
+        fields: "profile_id name generated_at items items.fingerprint items.kind items.value items.date items.quote items.evidence link",
+    },
+    CommandSpec {
+        name: "birthdays",
+        parameters: "month?, limit?, offset?",
+        description: "分页读取已记录生日的完整联系人列表，可按月份筛选。保留近似或仅月日的精度；按 next_offset 继续，limit 最大 100。",
+        list: Some("rows"),
+        fields: "profile_id name year month day precision next days_until link",
     },
     CommandSpec {
         name: "search_records",
@@ -146,7 +283,7 @@ pub(super) fn tool() -> Value {
         .join("\n");
     json!({"type":"function","function":{
         "name":"monica_cli",
-        "description":format!("运行 JavaScript 查询 Monica。用同步函数 cli(command, args) 读取，再 return 需要的信息。可用 cli(\"batch\", [{{command,args}}], (result, index) => ...) 分批并行查阅并提取数据，结果顺序与输入一致。程序最多执行 240 项只读查询。cli(\"help\", {{command}}) 查看说明。{FIELDS_HELP}\n{descriptions}"),
+        "description":format!("运行 JavaScript 查询 Monica。用同步函数 cli(command, args) 读取，再 return 需要的信息。可用 cli(\"batch\", [{{command,args}}], (result, index) => ...) 分批并行查阅并提取数据，结果顺序与输入一致。cli(\"help\", {{command}}) 查看说明。{FIELDS_HELP}\n{descriptions}"),
         "parameters":{"type":"object","properties":{
             "title":{"type":"string","description":"用简短中文概括这段脚本要查什么，如「筛选 QD 标签并读取近况」"},
             "script":{"type":"string","description":"JavaScript 函数体，最后 return 查询结果"}},
@@ -172,7 +309,6 @@ struct Lookup {
     router: Router,
     zone: Tz,
     directory: OnceCell<Value>,
-    attempts: AtomicUsize,
     good: AtomicUsize,
     failed: AtomicUsize,
 }
@@ -205,7 +341,6 @@ pub(super) async fn run(
         router: delegated_routes(state.clone(), owner),
         zone,
         directory: OnceCell::new(),
-        attempts: AtomicUsize::new(0),
         good: AtomicUsize::new(0),
         failed: AtomicUsize::new(0),
     };
@@ -362,10 +497,6 @@ impl Lookup {
 
     async fn checked(&self, name: &str, args: &Value) -> Value {
         let result = async {
-            ensure!(
-                self.attempts.fetch_add(1, Ordering::Relaxed) < MAX_LOOKUPS,
-                "本脚本的查询次数已用完。请分批查询。"
-            );
             ensure!(args.is_object(), "查询参数必须是对象。");
             let fields = requested_fields(args)?;
             let mut value = self.command(name, args).await?;
@@ -509,23 +640,67 @@ impl Lookup {
                 Ok(json!(array(&rows).iter().map(|row| json!({"profile_id":row["id"],"name":row["display_name"],"summary":cut(&row["summary"],120)})).collect::<Vec<_>>()))
             }
             "get_person" => self.person(id(args, "profile_id")?).await,
+            "profile_merge_preview" => {
+                let source = id(args, "source_profile_id")?;
+                let target = id(args, "target_profile_id")?;
+                let report = self
+                    .get(
+                        &format!("/api/v1/profiles/{source}/merge-preview"),
+                        &[("target_id", &target.to_string())],
+                    )
+                    .await?;
+                Ok(json!({
+                    "source":{"id":source,"name":report["source"]["display_name"]},
+                    "target":{"id":target,"name":report["target"]["display_name"]},
+                    "counts":report["counts"],"conflicts":report["conflicts"],"can_merge":report["can_merge"],
+                    "link":format!("/profiles/{source}?merge_with={target}")
+                }))
+            }
+            "profile_summary" => self.profile_summary(args).await,
+            "weekly_review" => self.weekly_review(args).await,
+            "weekly_people" => self.weekly_people(args).await,
+            "places" => self.places(args).await,
+            "relationship_network" => self.relationship_network(args).await,
+            "chat_statistics" => self.chat_statistics(args).await,
+            "contact_calendar" => self.contact_calendar(args).await,
+            "contact_activity" => self.contact_activity(args).await,
+            "contact_events_summary" => self.contact_events_summary(args).await,
+            "source_coverage" => self.source_coverage(args).await,
+            "import_daily" => self.import_daily(args).await,
+            "group_members" => self.group_members(args).await,
+            "social_statistics" => self.social_statistics(args).await,
+            "profile_history" => self.profile_history(args, false).await,
+            "profile_fact_history" => self.profile_history(args, true).await,
+            "birthdays" => self.birthdays(args).await,
+            "profile_suggestions" => self.profile_suggestions(args).await,
+            "image_notes" => self.image_notes(args).await,
             "search_messages" | "read_messages" => self.messages(name, args).await,
             "get_posts" => {
-                let id = id(args, "profile_id")?.to_string();
+                let profile = optional_id(args, "profile_id")?
+                    .map(|id| id.to_string())
+                    .unwrap_or_default();
+                let limit = integer(args, "limit", 20, 1, 30)?;
+                let limit_str = limit.to_string();
                 let rows = self
                     .get(
                         "/api/v1/timeline",
                         &[
-                            ("profile_id", &id),
-                            ("limit", "20"),
+                            ("profile_id", &profile),
+                            ("provider", arg(args, "provider")?),
+                            ("after", &self.instant(args, "since")?),
+                            ("before", &self.instant(args, "before")?),
+                            ("media", arg(args, "media")?),
+                            ("limit", &limit_str),
                             ("cursor", arg(args, "cursor")?),
                         ],
                     )
                     .await?;
-                Ok(page(&rows, "posts", "next", "cursor", 20, |row| {
+                Ok(page(&rows, "posts", "next", "cursor", limit, |row| {
                     json!({
                         "at":self.date(&row["occurred_at"],true),"provider":row["provider"],"text":cut(&row["summary"],500),
+                        "post_id":row["id"],"profile_id":row["profile_id"],"name":row["profile_name"],"title":row["title"],
                         "images":array(&row["media"]).iter().filter_map(|media| media["description"].as_str()).take(4).map(|text| truncate(text,800)).collect::<Vec<_>>(),
+                        "image_ids":image_lookup::image_ids(&row["media"]),
                         "place":row["location"].get("name").unwrap_or(&row["location"]["poiName"]),"likes":row["like_count"],"comments":row["comment_count"],
                         "link":format!("/timeline?event={}",s(&row["id"]))
                     })
@@ -600,15 +775,19 @@ impl Lookup {
     async fn person(&self, id: Uuid) -> Result<Value> {
         let path = format!("/api/v1/profiles/{id}");
         let overview = format!("{path}/overview");
-        let ai = format!("/api/v1/ai/profiles/{id}");
+        let ai = format!("/api/v1/ai/profiles/{id}/summary");
         let (overview, profile, ai) = tokio::join!(
             self.get(&overview, &[]),
             self.get(&path, &[]),
             self.get(&ai, &[])
         );
-        let (overview, profile, ai) = (overview?, profile?, ai.unwrap_or(Value::Null));
+        let (overview, profile) = (overview?, profile?);
+        let (ai, ai_error) = match ai {
+            Ok(value) => (value, None),
+            Err(error) => (Value::Null, Some(error.to_string())),
+        };
         let header = &overview["header"];
-        let sources = profile["presentation"]["sources"]
+        let mut sources = profile["presentation"]["sources"]
             .as_object()
             .into_iter()
             .flatten()
@@ -616,18 +795,39 @@ impl Lookup {
                 let fields = fields
                     .as_object()?
                     .iter()
-                    .filter(|(key, value)| {
-                        !key.contains("url")
-                            && !key.ends_with("_id")
-                            && value
-                                .as_str()
-                                .is_some_and(|text| !text.is_empty() && text.len() <= 400)
+                    .filter(|(_, value)| {
+                        value
+                            .as_str()
+                            .is_some_and(|text| !text.is_empty() && text.len() <= 400)
                     })
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect::<serde_json::Map<_, _>>();
                 (!fields.is_empty()).then(|| (provider.clone(), Value::Object(fields)))
             })
             .collect::<serde_json::Map<_, _>>();
+        let linkedin_urls = array(&profile["identities"])
+            .iter()
+            .filter(|identity| identity["provider"] == "linkedin")
+            .filter_map(|identity| {
+                identity["profile_url"]
+                    .as_str()
+                    .filter(|url| !url.is_empty())
+            })
+            .collect::<Vec<_>>();
+        if let Some(first) = linkedin_urls.first() {
+            let linkedin = sources
+                .entry("linkedin")
+                .or_insert_with(|| json!({}))
+                .as_object_mut()
+                .unwrap();
+            let previous = linkedin.get("profile_url").and_then(Value::as_str);
+            if !previous.is_some_and(|url| linkedin_urls.contains(&url))
+                && let Some(previous) = linkedin.insert("profile_url".into(), json!(first))
+            {
+                linkedin.insert("source_profile_url".into(), previous);
+            }
+            linkedin.insert("linked_profile_urls".into(), json!(linkedin_urls));
+        }
         let facts = array(&profile["presentation"]["facts"])
             .iter()
             .take(12)
@@ -673,6 +873,7 @@ impl Lookup {
                 "note":header["note"],"city":header["city"],"summary":cut(&header["summary"],400),
                 "tags":array(&overview["tags"]).iter().map(|row| &row["name"]).collect::<Vec<_>>(),
                 "chat":{"total":contact["total"],"sent_by_me":contact["sent"],"received":contact["received"],"first":self.date(&contact["first_contact_at"],false),"last":self.date(&contact["last_contact_at"],false)},
+                "ai_enabled":ai["enabled"],"ai_error":ai_error,
                 "memory":if ai["memory"].is_object() { json!({"summary":ai["memory"]["summary"],"facts":ai["memory"]["facts"]}) } else { Value::Null },
                 "recent_weeks":array(&ai["weekly_updates"]).iter().filter(|row| row["summary"].is_string()).take(4).map(|row| json!({"week":row["week_start"],"summary":row["summary"]})).collect::<Vec<_>>(),
                 "career":facts,"sources":sources,
@@ -724,7 +925,6 @@ impl Lookup {
             .split(['|', '｜'])
             .map(str::trim)
             .filter(|q| !q.is_empty() && unique.insert(*q))
-            .take(6)
             .collect::<Vec<_>>();
         ensure!(!terms.is_empty(), "请提供要搜索的关键词。");
         let mut pages = Vec::new();
@@ -780,6 +980,10 @@ impl Lookup {
             "from":if row["direction"]=="sent" { "我" } else { row["sender_name"].as_str().unwrap_or("TA") },
             "text":text,"link":if row["evidence_id"].is_string() { evidence(&row["evidence_id"],&row["evidence_revision"]) }
                 else { format!("/messages?conversation={}&message={}",s(&row["conversation_id"]), s(&row["id"])) }});
+        let images = image_lookup::image_ids(&row["media"]);
+        if !images.is_empty() {
+            output["image_ids"] = json!(images);
+        }
         if row["conversation_type"] == "group" {
             output["group"] = row["conversation_name"].clone();
         } else if row["conversation_name"].is_string() {
@@ -834,6 +1038,16 @@ fn required<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
     let text = arg(args, key)?;
     ensure!(!text.is_empty(), "请提供 {key}。");
     Ok(text)
+}
+fn integer(args: &Value, key: &str, fallback: usize, min: usize, max: usize) -> Result<usize> {
+    let Some(value) = args.get(key) else {
+        return Ok(fallback);
+    };
+    value
+        .as_u64()
+        .and_then(|x| usize::try_from(x).ok())
+        .filter(|x| (min..=max).contains(x))
+        .with_context(|| format!("{key} 必须是 {min} 到 {max} 之间的整数。"))
 }
 fn optional_id(args: &Value, key: &str) -> Result<Option<Uuid>> {
     args.get(key)
@@ -917,18 +1131,8 @@ fn around(text: &str, terms: &[&str]) -> String {
 }
 
 fn directory_command(root: &Value, name: &str, args: &Value, today: &str) -> Result<Value> {
-    let integer = |key: &str, fallback: usize, min: usize, max: usize| -> Result<usize> {
-        let Some(value) = args.get(key) else {
-            return Ok(fallback);
-        };
-        value
-            .as_u64()
-            .and_then(|x| usize::try_from(x).ok())
-            .filter(|x| (min..=max).contains(x))
-            .with_context(|| format!("{key} 分页参数无效。"))
-    };
-    let offset = integer("offset", 0, 0, usize::MAX)?;
-    let limit = integer("limit", 100, 1, 500)?;
+    let offset = integer(args, "offset", 0, 0, usize::MAX)?;
+    let limit = integer(args, "limit", 100, 1, 500)?;
     let query = arg(args, "query")?.to_lowercase();
     if name == "directory_facets" {
         let kind = required(args, "kind")?;

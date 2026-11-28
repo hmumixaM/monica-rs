@@ -36,6 +36,7 @@ struct Filter {
     cursor: Option<String>,
     limit: Option<i64>,
     media: Option<String>,
+    posts_only: Option<bool>,
 }
 async fn list(
     State(s): State<AppState>,
@@ -293,7 +294,17 @@ async fn metrics(
     Query(q): Query<Filter>,
 ) -> Result<Json<Value>> {
     user(&s, &h).await?;
-    Ok(Json(social_metrics::read(&s.pool, q.profile_id).await?))
+    let posts_only = q.posts_only.unwrap_or(false);
+    let provider = q.provider.as_deref().filter(|_| posts_only);
+    if provider.is_some_and(|provider| !social_metrics::PROVIDERS.contains(&provider)) {
+        return Err(ApiError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "unsupported social provider",
+        ));
+    }
+    Ok(Json(
+        social_metrics::read(&s.pool, q.profile_id, provider, posts_only).await?,
+    ))
 }
 
 fn display_text(value: &Value) -> Value {

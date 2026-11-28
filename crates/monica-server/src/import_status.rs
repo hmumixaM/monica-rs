@@ -25,6 +25,7 @@ struct Filter {
     before: Option<String>,
     before_id: Option<String>,
     limit: Option<i64>,
+    offset: Option<i64>,
     days: Option<i32>,
     timezone: Option<String>,
 }
@@ -125,8 +126,9 @@ async fn daily(
             "Invalid IANA timezone",
         ));
     }
-    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('date',(bucket AT TIME ZONE $1)::date,'provider',provider,'connection_id',nullif(account,'legacy'),'stream',stream,'records',sum(records),'processed',sum(processed),'inserted',sum(inserted),'changed',sum(changed),'unchanged',sum(unchanged),'failures',sum(failures)) FROM crm.import_activity_daily WHERE bucket>=((date_trunc('day',now() AT TIME ZONE $1) - make_interval(days=>$2-1)) AT TIME ZONE $1) AND ($3::text IS NULL OR provider=$3) AND ($4::uuid IS NULL OR account=$4::text) GROUP BY (bucket AT TIME ZONE $1)::date,provider,account,stream ORDER BY (bucket AT TIME ZONE $1)::date DESC,provider,account,stream")
- .bind(&tz).bind(q.days.unwrap_or(7).clamp(1,366)).bind(q.provider).bind(q.connection_id).fetch_all(&s.pool).await?;
+    let rows:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('date',(bucket AT TIME ZONE $1)::date,'provider',provider,'connection_id',nullif(account,'legacy'),'stream',stream,'records',sum(records),'processed',sum(processed),'inserted',sum(inserted),'changed',sum(changed),'unchanged',sum(unchanged),'failures',sum(failures)) FROM crm.import_activity_daily WHERE bucket>=((date_trunc('day',now() AT TIME ZONE $1) - make_interval(days=>$2-1)) AT TIME ZONE $1) AND ($3::text IS NULL OR provider=$3) AND ($4::uuid IS NULL OR account=$4::text) GROUP BY (bucket AT TIME ZONE $1)::date,provider,account,stream ORDER BY (bucket AT TIME ZONE $1)::date DESC,provider,account,stream LIMIT $5 OFFSET $6")
+ .bind(&tz).bind(q.days.unwrap_or(7).clamp(1,366)).bind(q.provider).bind(q.connection_id)
+ .bind(q.limit.map(|limit|limit.clamp(1,101))).bind(q.offset.unwrap_or(0).max(0)).fetch_all(&s.pool).await?;
     Ok(Json(
         json!({"timezone":tz,"records":rows,"missing_days":"无记录"}),
     ))

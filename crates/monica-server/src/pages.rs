@@ -15,6 +15,7 @@ mod engagement;
 mod maps;
 mod metrics;
 mod overview;
+pub(crate) use cities::resolve as resolve_city;
 type Result<T> = std::result::Result<T, ApiError>;
 pub fn routes(state: AppState) -> Router<AppState> {
     Router::new()
